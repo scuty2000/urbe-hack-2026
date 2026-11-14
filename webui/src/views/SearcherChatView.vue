@@ -165,6 +165,12 @@ async function loadClaim(claimId: string, quiet = false) {
     claim.value = found;
     lookupId.value = found.id;
     done.value = true;
+    // Keep the claim id in the URL so a reload re-fetches it. This is what
+    // makes the pass button survive the institution approval step: the searcher
+    // can refresh this page instead of losing the claim card.
+    if (route.query.claim !== found.id) {
+      await router.replace({ query: { ...route.query, claim: found.id } });
+    }
   } catch (cause) {
     claim.value = null;
     if (cause instanceof ApiError && cause.status === 404) {
@@ -221,6 +227,11 @@ function resetConversation() {
   error.value = "";
   notice.value = "";
   lookupId.value = "";
+  if (route.query.claim) {
+    const query = { ...route.query };
+    delete query.claim;
+    void router.replace({ query });
+  }
   void scrollToBottom();
 }
 </script>

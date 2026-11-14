@@ -105,9 +105,12 @@ informazioni** with a **Media** confidence band. Say: "L'assistente non vede il
 profilo privato e non approva da solo: servono altre informazioni e decide una
 persona."
 
-4. Switch to **Comune di Roma**, open the phone item, paste the claim code in
-   **Verifica della richiesta** (the code is on the searcher's claim card), and
-   click **Approva**.
+4. Switch to **Comune di Roma** and open the direct item URL
+   `/dashboard/institution/items/item-phone?claim=<claim code>` (the claim code
+   is printed on the searcher's claim card). The pickup dashboard does not list
+   an in-custody item, so use this URL rather than looking for it in the queue.
+   The claim panel is already open; click **Approva richiesta**, then
+   **Conferma**.
 
 Say: "La revisione umana vede il report, le risposte e i flag; il searcher non
 vede mai il profilo privato."
@@ -117,9 +120,11 @@ dipendere da un provider esterno: la demo funziona anche offline."
 
 ### 2:10 — Pass and QR (25 s)
 
-1. Return to the searcher window and **reload the page** (F5), or reopen
-   `/searcher?claim=<claim code>`. The page keeps the old `more_info` claim
-   until it is reloaded, so the pass button would otherwise stay hidden.
+1. Return to the searcher window. The claim id is kept in the URL after the
+   chat creates it, so **reloading the page (F5)** re-fetches
+   `/api/claims/:id` and the approved state (and the pass button) appears. If the
+   URL does not contain the claim id, open
+   `/dashboard/searcher?claim=<claim code>` instead.
 2. Click **Genera pass di ritiro**. Show the QR and the one-time token.
 3. Switch to **Bar X**, open **Scansiona pass** (`/intermediary/scan`).
 4. Scan the QR, or paste the token in the manual field.
@@ -155,8 +160,8 @@ monouso, zero dati personali esposti."
 - **API or tunnel down:** use the recorded video. For a live recovery, run the
   API locally with `go run ./cmd/webapi/ -c demo/config.yml` and open
   `http://localhost:3000/dashboard/`.
-- **Chat, claim or review stalls:** open `/searcher?claim=claim-phone`; the
-  seeded approved claim lets you generate the pass immediately. This is the
+- **Chat, claim or review stalls:** open `/dashboard/searcher?claim=claim-phone`;
+  the seeded approved claim lets you generate the pass immediately. This is the
   intended fast path for a short recording.
 - **Dataset dirty:** `scripts/demo-reset.sh --seed` (or `scripts/demo-reset.sh`
   against the running API). Reset before every rehearsal and recording.
