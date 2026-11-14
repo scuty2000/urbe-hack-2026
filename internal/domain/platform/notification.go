@@ -31,6 +31,18 @@ const (
 // user in a single request.
 const NotificationLimit = 50
 
+// notificationTypes is the closed set of notification type values.
+var notificationTypes = map[string]struct{}{
+	NotificationMatch:           {},
+	NotificationCustodyAccepted: {},
+	NotificationPickupDue:       {},
+	NotificationPassIssued:      {},
+	NotificationHandover:        {},
+	NotificationTransfer:        {},
+	NotificationSensitive:       {},
+	NotificationFeePaid:         {},
+}
+
 // Notification is the role-safe read model of an in-app message.
 type Notification struct {
 	ID        string
@@ -85,6 +97,9 @@ func (s *service) Notify(
 	notificationType = trimmed(notificationType)
 	if userID == "" || notificationType == "" {
 		return fmt.Errorf("notify: recipient and type are required: %w", errs.ErrInvalidInput)
+	}
+	if _, ok := notificationTypes[notificationType]; !ok {
+		return fmt.Errorf("notify: unknown type %q: %w", notificationType, errs.ErrInvalidInput)
 	}
 
 	id, err := newID()
@@ -291,7 +306,9 @@ func TryNotifyAccount(
 	if notifier == nil || trimmed(userID) == "" {
 		return
 	}
-	if err := notifier.NotifyAccount(ctx, userID, notificationType, payload); err != nil {
+	hookCtx, cancel := detachedContext(ctx)
+	defer cancel()
+	if err := notifier.NotifyAccount(hookCtx, userID, notificationType, payload); err != nil {
 		slog.Default().Warn("notification hook failed",
 			slog.String("operation", operation),
 			slog.String("recipient", userID),
@@ -311,7 +328,9 @@ func TryNotifyRole(
 	if notifier == nil || trimmed(role) == "" {
 		return
 	}
-	if err := notifier.NotifyRole(ctx, role, notificationType, payload); err != nil {
+	hookCtx, cancel := detachedContext(ctx)
+	defer cancel()
+	if err := notifier.NotifyRole(hookCtx, role, notificationType, payload); err != nil {
 		slog.Default().Warn("notification role hook failed",
 			slog.String("operation", operation),
 			slog.String("role", role),

@@ -459,6 +459,109 @@ func TestNotifyAccountSkipsUnknownUsers(t *testing.T) {
 	}
 }
 
+func TestNotifyRejectsUnknownType(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	if err := auth.SeedDemoUsers(context.Background(), db); err != nil {
+		t.Fatalf("seeding demo users: %v", err)
+	}
+	svc := platform.New(db)
+
+	err := svc.Notify(context.Background(), "bar-x", "bogus_type", nil)
+	if !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("Notify(unknown type) error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestPostCommitHooksIgnoreCancelledRequestContext(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	hooks := &observingHooks{}
+	platform.TryNotifyAccount(cancelled, hooks, "test", "bar-x",
+		platform.NotificationMatch, map[string]any{"itemId": "item-phone"})
+	platform.TryNotifyRole(cancelled, hooks, "test", platform.RoleInstitution,
+		platform.NotificationPickupDue, nil)
+	platform.TryAudit(cancelled, hooks, "test", "bar-x", "login", "user", "bar-x", nil)
+
+	if !hooks.accountLive || !hooks.accountHasDeadline {
+		t.Fatalf("TryNotifyAccount passed a cancelled/unbounded context: live=%v deadline=%v",
+			hooks.accountLive, hooks.accountHasDeadline)
+	}
+	if !hooks.roleLive || !hooks.roleHasDeadline {
+		t.Fatalf("TryNotifyRole passed a cancelled/unbounded context: live=%v deadline=%v",
+			hooks.roleLive, hooks.roleHasDeadline)
+	}
+	if !hooks.auditLive || !hooks.auditHasDeadline {
+		t.Fatalf("TryAudit passed a cancelled/unbounded context: live=%v deadline=%v",
+			hooks.auditLive, hooks.auditHasDeadline)
+	}
+}
+
+func TestPostCommitHooksPersistWithCancelledRequestContext(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	if err := auth.SeedDemoUsers(context.Background(), db); err != nil {
+		t.Fatalf("seeding demo users: %v", err)
+	}
+	svc := platform.New(db)
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	platform.TryNotifyAccount(cancelled, svc, "test", "bar-x", platform.NotificationMatch,
+		map[string]any{"itemId": "item-phone"})
+	platform.TryAudit(cancelled, svc, "test", "bar-x", "login", "user", "bar-x", nil)
+
+	notifications, err := svc.ListNotifications(context.Background(), "bar-x")
+	if err != nil {
+		t.Fatalf("ListNotifications() error = %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("notifications = %+v, want one persisted row", notifications)
+	}
+
+	audits, err := db.ListAuditLogs(context.Background(), repository.AuditLogFilter{
+		Entity: "user", EntityID: "bar-x",
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLogs() error = %v", err)
+	}
+	if countAudit(audits, "login") != 1 {
+		t.Fatalf("login audits = %+v, want one persisted row", audits)
+	}
+}
+
+// observingHooks records the context each hook receives.
+type observingHooks struct {
+	accountLive        bool
+	accountHasDeadline bool
+	roleLive           bool
+	roleHasDeadline    bool
+	auditLive          bool
+	auditHasDeadline   bool
+}
+
+func (o *observingHooks) Notify(context.Context, string, string, map[string]any) error {
+	return nil
+}
+
+func (o *observingHooks) NotifyAccount(ctx context.Context, _, _ string, _ map[string]any) error {
+	o.accountLive = ctx.Err() == nil
+	_, o.accountHasDeadline = ctx.Deadline()
+	return nil
+}
+
+func (o *observingHooks) NotifyRole(ctx context.Context, _, _ string, _ map[string]any) error {
+	o.roleLive = ctx.Err() == nil
+	_, o.roleHasDeadline = ctx.Deadline()
+	return nil
+}
+
+func (o *observingHooks) Audit(ctx context.Context, _, _, _, _ string, _ map[string]any) error {
+	o.auditLive = ctx.Err() == nil
+	_, o.auditHasDeadline = ctx.Deadline()
+	return nil
+}
+
 func assertNotification(t *testing.T, db repository.Database, userID, notificationType string) platform.Notification {
 	t.Helper()
 

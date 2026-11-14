@@ -106,7 +106,9 @@ func TryAudit(
 	if auditor == nil {
 		return
 	}
-	if err := auditor.Audit(ctx, actorID, action, entity, entityID, metadata); err != nil {
+	hookCtx, cancel := detachedContext(ctx)
+	defer cancel()
+	if err := auditor.Audit(hookCtx, actorID, action, entity, entityID, metadata); err != nil {
 		logAuditFailure(operation, action, err)
 	}
 }

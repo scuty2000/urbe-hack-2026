@@ -3,6 +3,7 @@ package routes
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
@@ -34,11 +35,12 @@ func (h *WebAPIHandler) PostNotificationRead(ctx *reqcontext.RequestContext) {
 		return
 	}
 
-	if err := h.Platform.MarkRead(ctx.Request.Context(), ctx.Param("id"), ctx.User.ID); err != nil {
+	notificationID := strings.TrimSpace(ctx.Param("id"))
+	if err := h.Platform.MarkRead(ctx.Request.Context(), notificationID, ctx.User.ID); err != nil {
 		respondWithPlatformError(ctx, "PostNotificationRead", err)
 		return
 	}
-	ctx.JSON(http.StatusOK, dto.NotificationRead{ID: ctx.Param("id"), Read: true})
+	ctx.JSON(http.StatusOK, dto.NotificationRead{ID: notificationID, Read: true})
 }
 
 // GetItemTimeline returns the safe custody timeline of one item. The platform

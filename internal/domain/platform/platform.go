@@ -107,4 +107,16 @@ func (s *service) now() time.Time {
 	return time.Now().UTC()
 }
 
+// hookTimeout bounds a post-commit notification or audit insert. The request
+// is already answered, so a slow side effect must not run forever; it also
+// keeps the hook inside the server write budget.
+const hookTimeout = 3 * time.Second
+
+// detachedContext keeps request values (tracing, logging) but deliberately
+// ignores request cancellation. Once a business transaction has committed, a
+// client disconnect must not silently drop the notification or audit row.
+func detachedContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), hookTimeout)
+}
+
 func trimmed(value string) string { return strings.TrimSpace(value) }
