@@ -52,13 +52,14 @@ func newItemRouter(t *testing.T) (http.Handler, string) {
 		ItemService: itemdomain.New(db, itemdomain.Deps{
 			Storage: storage.NewLocal(dataDir, 1),
 		}),
-		CustodyService: custodydomain.New(db),
-		SearchService:  search.New(db, search.Deps{}),
-		ClaimService:   claimdomain.New(db),
-		PassService:    passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
-		FeeService:     newFeeService(db),
-		RewardService:  newRewardService(db),
-		AgentService:   agent.New(db, agent.Deps{DeepSeekKey: ""}),
+		CustodyService:     custodydomain.New(db),
+		InstitutionService: newInstitutionService(db),
+		SearchService:      search.New(db, search.Deps{}),
+		ClaimService:       claimdomain.New(db),
+		PassService:        passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
+		FeeService:         newFeeService(db),
+		RewardService:      newRewardService(db),
+		AgentService:       agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)

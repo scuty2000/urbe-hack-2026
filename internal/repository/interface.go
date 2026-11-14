@@ -223,6 +223,14 @@ type LostReportRepository interface {
 	ListLostReports(ctx context.Context, status string) ([]record.LostReportRecord, error)
 }
 
+// InstitutionRepository exposes the public-administration queries: the pickup
+// queue that groups items waiting at the intermediaries.
+type InstitutionRepository interface {
+	// ListInstitutionPickups returns items in pickup_due/sensitive_pickup,
+	// sensitive items first, then by zone and custodian.
+	ListInstitutionPickups(ctx context.Context) ([]record.ItemRecord, error)
+}
+
 // Repository is the full set of persistence operations exposed by this package.
 type Repository interface {
 	NameRepository
@@ -234,6 +242,7 @@ type Repository interface {
 	PassRepository
 	FeeRepository
 	NotificationRepository
+	InstitutionRepository
 	AuditRepository
 	TariffRepository
 	LostReportRepository

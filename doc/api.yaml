@@ -43,7 +43,7 @@ tags:
   - name: Custody
     description: Handover acceptance/refusal and custody deadlines
   - name: Institution
-    description: Institution operator endpoints (demo tick)
+    description: PA pickup queue, transfer, official intake, review and unclaimed flow
   - name: Demo
     description: Deterministic demo dataset reset
   - name: Uploads
@@ -1011,6 +1011,299 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+# ─── /api/institution ────────────────────────────────────────────────────────
+
+  /api/institution/pickups:
+    get:
+      tags: [Institution]
+      operationId: listInstitutionPickups
+      summary: List the PA pickup queue
+      description: |
+        Returns the items in `pickup_due` / `sensitive_pickup`, grouped by
+        holding intermediary and zone. Sensitive groups and items come first,
+        followed by the earliest deadline. Each item reports how many whole
+        days it is overdue. The response never contains the private profile,
+        free-text notes or exact coordinates.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Pickup queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstitutionPickupList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/institution/items:
+    post:
+      tags: [Institution]
+      operationId: createOfficialItem
+      summary: Official operator intake
+      description: |
+        Enrolls an item handed directly to the public administration. The
+        institution is the source, the legal finder and the custodian; the item
+        starts in `in_custody` with an accepted institution custody row and no
+        7-day deadline. It uses the same multipart shape and catalog/risk path
+        as `POST /api/items`. Restricted to `institution` and `admin`.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [payload]
+              properties:
+                payload:
+                  $ref: "#/components/schemas/OfficialItemPayload"
+                photos:
+                  type: array
+                  maxItems: 8
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "201":
+          description: Official item enrolled in institution custody
+          headers:
+            Location:
+              description: URL of the newly created item
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/institution/items/{id}/transfer:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    post:
+      tags: [Institution]
+      operationId: transferCustodyToInstitution
+      summary: Transfer an item to the institution
+      description: |
+        Takes an item in `pickup_due` / `sensitive_pickup` from its
+        intermediary. The intermediary custody row is closed, a new institution
+        custody row is opened without a deadline, and the item becomes
+        `transferred` with `transferred_at` and `legal_term_start` set to now.
+        Open pickup passes are revoked; the search index is refreshed best
+        effort. Restricted to `institution` and `admin`.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Item transferred
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The item is not in a pickup-due status or has no open intermediary custody
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/institution/items/{id}/offer:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    post:
+      tags: [Institution]
+      operationId: offerUnclaimedItem
+      summary: Offer an unclaimed item to the legal finder
+      description: |
+        Moves a `transferred` item to `offered_to_finder` only after one year
+        has elapsed since `legal_term_start`; an earlier request is `400`.
+        Records the `offered_to_finder` event and audit entry.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Item offered to the legal finder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          description: The one-year legal term has not elapsed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/institution/items/{id}/collect:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    post:
+      tags: [Institution]
+      operationId: collectUnclaimedItem
+      summary: Record collection by the legal finder
+      description: |
+        Moves an item from `offered_to_finder` to `finder_collected` and
+        appends the `finder_collected` event and audit entry. Available only
+        after the offer.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Item collected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/institution/items/{id}/dispose:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    post:
+      tags: [Institution]
+      operationId: disposeUnclaimedItem
+      summary: Dispose of an offered item
+      description: |
+        Moves an item from `offered_to_finder` to `disposed` and stores
+        `disposed_at`. Disposal before the offer is rejected: the legal finder
+        has the first right to the item.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Item disposed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/institution/claims/{id}:
+    parameters:
+      - $ref: "#/components/parameters/claimId"
+
+    get:
+      tags: [Institution]
+      operationId: getInstitutionClaim
+      summary: Get the full verification report
+      description: |
+        Returns the claim and its verification report to the institution: the
+        questions, the searcher answers, the D3 probabilities, evidence, flags,
+        rationale, model version and the deterministic decision. It never
+        contains the item private profile or exact coordinates.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Claim with verification report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimInstitution"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/institution/claims/{id}/review:
+    parameters:
+      - $ref: "#/components/parameters/claimId"
+
+    post:
+      tags: [Institution]
+      operationId: reviewInstitutionClaim
+      summary: Review an ownership claim
+      description: |
+        Records the `approved` or `rejected` institution decision through the
+        claim domain and returns the refreshed verification report. The claim
+        must be `submitted`, `under_review` or `more_info`.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewClaimPayload"
+      responses:
+        "200":
+          description: Claim reviewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimInstitution"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
 # ─── /api/demo/reset ─────────────────────────────────────────────────────────
 
   /api/demo/reset:
@@ -1265,7 +1558,7 @@ components:
           enum: [intermediary, institution]
         status:
           type: string
-          enum: [enrolled, pending_custody, custody_rejected, in_custody, pickup_due, sensitive_pickup]
+          enum: [enrolled, pending_custody, custody_rejected, in_custody, pickup_due, sensitive_pickup, transferred, unclaimed, offered_to_finder, finder_collected, disposed]
         legalFinderId:
           type: string
         custodianId:
@@ -1302,6 +1595,18 @@ components:
         rightsAssignedAt:
           type: string
           format: date-time
+        transferredAt:
+          type: string
+          format: date-time
+        legalTermStart:
+          type: string
+          format: date-time
+        offeredToFinderAt:
+          type: string
+          format: date-time
+        disposedAt:
+          type: string
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -1315,6 +1620,121 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Item"
+
+    InstitutionPickupItem:
+      type: object
+      required: [id, publicCode, status, sensitive, daysOverdue]
+      description: |
+        Safe pickup-queue item summary. It contains no private profile, notes or
+        exact coordinates.
+      properties:
+        id:
+          type: string
+          format: uuid
+        publicCode:
+          type: string
+          pattern: "^LF-[0-9A-F]{8}$"
+        category:
+          type: string
+        brand:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        status:
+          type: string
+          enum: [pickup_due, sensitive_pickup]
+        foundZone:
+          type: string
+        intermediaryId:
+          type: string
+        sensitive:
+          type: boolean
+        dueAt:
+          type: string
+          format: date-time
+        daysOverdue:
+          type: integer
+          minimum: 0
+
+    InstitutionPickupGroup:
+      type: object
+      required: [intermediaryId, zone, sensitive, count, items]
+      properties:
+        intermediaryId:
+          type: string
+        zone:
+          type: string
+        sensitive:
+          type: boolean
+          description: True when the group contains a sensitive item
+        count:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstitutionPickupItem"
+
+    InstitutionPickupList:
+      type: object
+      required: [groups, total]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstitutionPickupGroup"
+        total:
+          type: integer
+          minimum: 0
+
+    OfficialItemPayload:
+      type: object
+      required: [category]
+      description: |
+        JSON payload of the official operator intake. The institution is always
+        the source, the legal finder and the custodian; the caller cannot choose
+        a different intermediary.
+      properties:
+        category:
+          type: string
+          example: "wallet"
+        brand:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        condition:
+          type: string
+        privateProfile:
+          type: object
+          additionalProperties: true
+          description: Stored privately and never returned by any endpoint.
+        foundAt:
+          type: string
+          format: date-time
+        foundLat:
+          type: number
+          format: double
+          description: Stored privately, never returned.
+        foundLng:
+          type: number
+          format: double
+          description: Stored privately, never returned.
+        foundZone:
+          type: string
+        foundNotes:
+          type: string
+
+    ReviewClaimPayload:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, rejected]
 
     CustodySummary:
       type: object

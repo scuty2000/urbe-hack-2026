@@ -41,6 +41,12 @@ const (
 	StatusPickupDue       = "pickup_due"
 	StatusSensitivePickup = "sensitive_pickup"
 	StatusReturned        = "returned"
+	// Public administration phase.
+	StatusTransferred     = "transferred"
+	StatusUnclaimed       = "unclaimed"
+	StatusOfferedToFinder = "offered_to_finder"
+	StatusFinderCollected = "finder_collected"
+	StatusDisposed        = "disposed"
 )
 
 // Risk tiers, ordered from least to most restrictive.
@@ -80,30 +86,34 @@ type Actor struct {
 // the HTTP DTOs. Photos are relative paths under the upload storage, not public
 // filesystem locations.
 type Item struct {
-	ID               string
-	PublicCode       string
-	Source           string
-	CustodyMode      string
-	Status           string
-	LegalFinderID    string
-	RightsAssignedAt *time.Time
-	Category         string
-	Brand            string
-	Model            string
-	Color            string
-	Condition        string
-	PrivateProfile   map[string]any
-	Photos           []string
-	FoundAt          time.Time
-	FoundLat         float64
-	FoundLng         float64
-	FoundZone        string
-	FoundNotes       string
-	CustodianID      string
-	RiskTier         string
-	Sensitive        bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                string
+	PublicCode        string
+	Source            string
+	CustodyMode       string
+	Status            string
+	LegalFinderID     string
+	RightsAssignedAt  *time.Time
+	Category          string
+	Brand             string
+	Model             string
+	Color             string
+	Condition         string
+	PrivateProfile    map[string]any
+	Photos            []string
+	FoundAt           time.Time
+	FoundLat          float64
+	FoundLng          float64
+	FoundZone         string
+	FoundNotes        string
+	CustodianID       string
+	RiskTier          string
+	Sensitive         bool
+	TransferredAt     *time.Time
+	LegalTermStart    *time.Time
+	OfferedToFinderAt *time.Time
+	DisposedAt        *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // FromRecord maps a persisted row to the domain entity. JSON columns are
@@ -128,30 +138,34 @@ func FromRecord(row record.ItemRecord) (Item, error) {
 	}
 
 	return Item{
-		ID:               row.ID,
-		PublicCode:       row.PublicCode,
-		Source:           row.Source,
-		CustodyMode:      row.CustodyMode,
-		Status:           row.Status,
-		LegalFinderID:    row.LegalFinderID,
-		RightsAssignedAt: row.RightsAssignedAt,
-		Category:         row.Category,
-		Brand:            row.Brand,
-		Model:            row.Model,
-		Color:            row.Color,
-		Condition:        row.Condition,
-		PrivateProfile:   privateProfile,
-		Photos:           photos,
-		FoundAt:          row.FoundAt,
-		FoundLat:         row.FoundLat,
-		FoundLng:         row.FoundLng,
-		FoundZone:        row.FoundZone,
-		FoundNotes:       row.FoundNotes,
-		CustodianID:      row.CustodianID,
-		RiskTier:         row.RiskTier,
-		Sensitive:        row.Sensitive,
-		CreatedAt:        row.CreatedAt,
-		UpdatedAt:        row.UpdatedAt,
+		ID:                row.ID,
+		PublicCode:        row.PublicCode,
+		Source:            row.Source,
+		CustodyMode:       row.CustodyMode,
+		Status:            row.Status,
+		LegalFinderID:     row.LegalFinderID,
+		RightsAssignedAt:  row.RightsAssignedAt,
+		Category:          row.Category,
+		Brand:             row.Brand,
+		Model:             row.Model,
+		Color:             row.Color,
+		Condition:         row.Condition,
+		PrivateProfile:    privateProfile,
+		Photos:            photos,
+		FoundAt:           row.FoundAt,
+		FoundLat:          row.FoundLat,
+		FoundLng:          row.FoundLng,
+		FoundZone:         row.FoundZone,
+		FoundNotes:        row.FoundNotes,
+		CustodianID:       row.CustodianID,
+		RiskTier:          row.RiskTier,
+		Sensitive:         row.Sensitive,
+		TransferredAt:     row.TransferredAt,
+		LegalTermStart:    row.LegalTermStart,
+		OfferedToFinderAt: row.OfferedToFinderAt,
+		DisposedAt:        row.DisposedAt,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
 	}, nil
 }
 

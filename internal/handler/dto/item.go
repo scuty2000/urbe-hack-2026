@@ -33,27 +33,31 @@ type CreateItemPayload struct {
 // searchers never reach this DTO, but finders receive it as their receipt and
 // the zone is the only location information they need.
 type ItemResponse struct {
-	ID               string     `json:"id"`
-	PublicCode       string     `json:"publicCode"`
-	Source           string     `json:"source"`
-	CustodyMode      string     `json:"custodyMode"`
-	Status           string     `json:"status"`
-	LegalFinderID    string     `json:"legalFinderId"`
-	CustodianID      string     `json:"custodianId"`
-	Category         string     `json:"category"`
-	Brand            string     `json:"brand"`
-	Model            string     `json:"model"`
-	Color            string     `json:"color"`
-	Condition        string     `json:"condition"`
-	Photos           []string   `json:"photos"`
-	FoundAt          time.Time  `json:"foundAt"`
-	FoundZone        string     `json:"foundZone"`
-	FoundNotes       string     `json:"foundNotes"`
-	RiskTier         string     `json:"riskTier"`
-	Sensitive        bool       `json:"sensitive"`
-	RightsAssigned   bool       `json:"rightsAssigned"`
-	RightsAssignedAt *time.Time `json:"rightsAssignedAt,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
+	ID                string     `json:"id"`
+	PublicCode        string     `json:"publicCode"`
+	Source            string     `json:"source"`
+	CustodyMode       string     `json:"custodyMode"`
+	Status            string     `json:"status"`
+	LegalFinderID     string     `json:"legalFinderId"`
+	CustodianID       string     `json:"custodianId"`
+	Category          string     `json:"category"`
+	Brand             string     `json:"brand"`
+	Model             string     `json:"model"`
+	Color             string     `json:"color"`
+	Condition         string     `json:"condition"`
+	Photos            []string   `json:"photos"`
+	FoundAt           time.Time  `json:"foundAt"`
+	FoundZone         string     `json:"foundZone"`
+	FoundNotes        string     `json:"foundNotes"`
+	RiskTier          string     `json:"riskTier"`
+	Sensitive         bool       `json:"sensitive"`
+	RightsAssigned    bool       `json:"rightsAssigned"`
+	RightsAssignedAt  *time.Time `json:"rightsAssignedAt,omitempty"`
+	TransferredAt     *time.Time `json:"transferredAt,omitempty"`
+	LegalTermStart    *time.Time `json:"legalTermStart,omitempty"`
+	OfferedToFinderAt *time.Time `json:"offeredToFinderAt,omitempty"`
+	DisposedAt        *time.Time `json:"disposedAt,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
 }
 
 // ItemListResponse is the intermediary dashboard payload.
@@ -72,27 +76,31 @@ func ToItemResponse(it itemdomain.Item) ItemResponse {
 	}
 
 	return ItemResponse{
-		ID:               it.ID,
-		PublicCode:       it.PublicCode,
-		Source:           it.Source,
-		CustodyMode:      it.CustodyMode,
-		Status:           it.Status,
-		LegalFinderID:    it.LegalFinderID,
-		CustodianID:      it.CustodianID,
-		Category:         it.Category,
-		Brand:            it.Brand,
-		Model:            it.Model,
-		Color:            it.Color,
-		Condition:        it.Condition,
-		Photos:           photos,
-		FoundAt:          it.FoundAt,
-		FoundZone:        it.FoundZone,
-		FoundNotes:       it.FoundNotes,
-		RiskTier:         it.RiskTier,
-		Sensitive:        it.Sensitive,
-		RightsAssigned:   it.RightsAssignedAt != nil,
-		RightsAssignedAt: it.RightsAssignedAt,
-		CreatedAt:        it.CreatedAt,
+		ID:                it.ID,
+		PublicCode:        it.PublicCode,
+		Source:            it.Source,
+		CustodyMode:       it.CustodyMode,
+		Status:            it.Status,
+		LegalFinderID:     it.LegalFinderID,
+		CustodianID:       it.CustodianID,
+		Category:          it.Category,
+		Brand:             it.Brand,
+		Model:             it.Model,
+		Color:             it.Color,
+		Condition:         it.Condition,
+		Photos:            photos,
+		FoundAt:           it.FoundAt,
+		FoundZone:         it.FoundZone,
+		FoundNotes:        it.FoundNotes,
+		RiskTier:          it.RiskTier,
+		Sensitive:         it.Sensitive,
+		RightsAssigned:    it.RightsAssignedAt != nil,
+		RightsAssignedAt:  it.RightsAssignedAt,
+		TransferredAt:     it.TransferredAt,
+		LegalTermStart:    it.LegalTermStart,
+		OfferedToFinderAt: it.OfferedToFinderAt,
+		DisposedAt:        it.DisposedAt,
+		CreatedAt:         it.CreatedAt,
 	}
 }
 

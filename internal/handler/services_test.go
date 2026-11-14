@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
+	institutiondomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/institution"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 )
@@ -15,4 +16,8 @@ func newFeeService(db repository.Database) feedomain.Service {
 
 func newRewardService(db repository.Database) rewarddomain.Service {
 	return rewarddomain.New(db)
+}
+
+func newInstitutionService(db repository.Database) institutiondomain.Service {
+	return institutiondomain.New(db)
 }

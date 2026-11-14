@@ -20,6 +20,7 @@ func (rt *_router) Handler() http.Handler {
 		rt.authService,
 		rt.itemService,
 		rt.custodyService,
+		rt.institutionService,
 		rt.searchService,
 		rt.claimService,
 		rt.passService,
@@ -94,6 +95,30 @@ func (rt *_router) Handler() http.Handler {
 	api.POST("/institution/tick",
 		middleware.RequireRole(rt.authService, auth.RoleAdmin),
 		rt.wrap(h.PostInstitutionTick))
+	api.GET("/institution/pickups",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.GetInstitutionPickups))
+	api.POST("/institution/items",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.PostInstitutionItem))
+	api.POST("/institution/items/:id/transfer",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.PostInstitutionTransfer))
+	api.POST("/institution/items/:id/offer",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.PostInstitutionOffer))
+	api.POST("/institution/items/:id/collect",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.PostInstitutionCollect))
+	api.POST("/institution/items/:id/dispose",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.PostInstitutionDispose))
+	api.GET("/institution/claims/:id",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.GetInstitutionClaim))
+	api.POST("/institution/claims/:id/review",
+		middleware.RequireAnyRole(rt.authService, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.PostInstitutionClaimReview))
 	api.GET("/uploads/:filename",
 		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary, auth.RoleInstitution),
 		rt.wrap(h.GetUpload))

@@ -9,6 +9,7 @@ import (
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
+	institutiondomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/institution"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
@@ -41,6 +42,9 @@ type WebAPIHandler struct {
 
 	// Custody is the domain service for accept/refuse and pickup deadlines.
 	Custody custodydomain.Service
+
+	// Institution is the PA pickup, intake and unclaimed-item service.
+	Institution institutiondomain.Service
 
 	// Search is the hybrid search and index service.
 	Search search.Service
@@ -77,6 +81,7 @@ func New(
 	authService auth.Service,
 	items itemdomain.Service,
 	custodyService custodydomain.Service,
+	institutionService institutiondomain.Service,
 	searchService search.Service,
 	claimService claimdomain.Service,
 	passService passdomain.Service,
@@ -92,6 +97,7 @@ func New(
 		Auth:            authService,
 		Items:           items,
 		Custody:         custodyService,
+		Institution:     institutionService,
 		Search:          searchService,
 		Claims:          claimService,
 		Passes:          passService,

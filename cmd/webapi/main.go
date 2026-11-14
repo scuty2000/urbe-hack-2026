@@ -45,6 +45,7 @@ import (
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
+	institutiondomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/institution"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
@@ -289,6 +290,17 @@ func run() error {
 		MaxToolRounds:   cfg.DeepSeek.MaxToolRounds,
 	})
 
+	// The institution service owns the PA pickup queue, the transfer into PA
+	// custody, official operator intake, claim review and the unclaimed flow.
+	institutionService := institutiondomain.New(db, institutiondomain.Deps{
+		Items:   itemService,
+		Custody: custodyService,
+		Claim:   claimService,
+		Pass:    passService,
+		Search:  searchService,
+		Fee:     feeService,
+	})
+
 	// Make a channel to listen for an interrupt or terminate signal from the OS.
 	// Use a buffered channel because the signal package requires it.
 	shutdown := make(chan os.Signal, 1)
@@ -317,22 +329,23 @@ func run() error {
 
 	apirouter, err := handler.New(
 		handler.Config{
-			Logger:          logger,
-			CORS:            corsConfig,
-			NameService:     nameService,
-			HealthService:   healthService,
-			AuthService:     authService,
-			ItemService:     itemService,
-			CustodyService:  custodyService,
-			SearchService:   searchService,
-			ClaimService:    claimService,
-			PassService:     passService,
-			FeeService:      feeService,
-			RewardService:   rewardService,
-			AgentService:    agentService,
-			DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
-			DemoResetSecret: cfg.Demo.ResetSecret,
-			TrustedProxies:  cfg.Web.TrustedProxies,
+			Logger:             logger,
+			CORS:               corsConfig,
+			NameService:        nameService,
+			HealthService:      healthService,
+			AuthService:        authService,
+			ItemService:        itemService,
+			CustodyService:     custodyService,
+			InstitutionService: institutionService,
+			SearchService:      searchService,
+			ClaimService:       claimService,
+			PassService:        passService,
+			FeeService:         feeService,
+			RewardService:      rewardService,
+			AgentService:       agentService,
+			DemoReset:          func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
+			DemoResetSecret:    cfg.Demo.ResetSecret,
+			TrustedProxies:     cfg.Web.TrustedProxies,
 		},
 	)
 	if err != nil {

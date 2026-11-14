@@ -50,6 +50,7 @@ import (
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
+	institutiondomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/institution"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
@@ -82,6 +83,9 @@ type Config struct {
 
 	// CustodyService is the domain service for custody transitions.
 	CustodyService custodydomain.Service
+
+	// InstitutionService is the PA pickup, intake and unclaimed-item service.
+	InstitutionService institutiondomain.Service
 
 	// SearchService is the hybrid search and index service.
 	SearchService search.Service
@@ -139,6 +143,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.CustodyService == nil {
 		return nil, errors.New("custody service is required")
 	}
+	if cfg.InstitutionService == nil {
+		return nil, errors.New("institution service is required")
+	}
 	if cfg.SearchService == nil {
 		return nil, errors.New("search service is required")
 	}
@@ -172,38 +179,40 @@ func New(cfg Config) (Router, error) {
 	engine.Use(middleware.RequestContextLogger(cfg.Logger))
 
 	return &_router{
-		engine:          engine,
-		baseLogger:      cfg.Logger,
-		nameService:     cfg.NameService,
-		healthService:   cfg.HealthService,
-		authService:     cfg.AuthService,
-		itemService:     cfg.ItemService,
-		custodyService:  cfg.CustodyService,
-		searchService:   cfg.SearchService,
-		claimService:    cfg.ClaimService,
-		passService:     cfg.PassService,
-		feeService:      cfg.FeeService,
-		rewardService:   cfg.RewardService,
-		agentService:    cfg.AgentService,
-		demoReset:       cfg.DemoReset,
-		demoResetSecret: cfg.DemoResetSecret,
+		engine:             engine,
+		baseLogger:         cfg.Logger,
+		nameService:        cfg.NameService,
+		healthService:      cfg.HealthService,
+		authService:        cfg.AuthService,
+		itemService:        cfg.ItemService,
+		custodyService:     cfg.CustodyService,
+		institutionService: cfg.InstitutionService,
+		searchService:      cfg.SearchService,
+		claimService:       cfg.ClaimService,
+		passService:        cfg.PassService,
+		feeService:         cfg.FeeService,
+		rewardService:      cfg.RewardService,
+		agentService:       cfg.AgentService,
+		demoReset:          cfg.DemoReset,
+		demoResetSecret:    cfg.DemoResetSecret,
 	}, nil
 }
 
 type _router struct {
-	engine          *gin.Engine
-	baseLogger      *slog.Logger
-	nameService     nameservice.ServiceName
-	healthService   health.HealthService
-	authService     auth.Service
-	itemService     itemdomain.Service
-	custodyService  custodydomain.Service
-	searchService   search.Service
-	claimService    claimdomain.Service
-	passService     passdomain.Service
-	feeService      feedomain.Service
-	rewardService   rewarddomain.Service
-	agentService    agentdomain.Service
-	demoReset       func(context.Context) error
-	demoResetSecret string
+	engine             *gin.Engine
+	baseLogger         *slog.Logger
+	nameService        nameservice.ServiceName
+	healthService      health.HealthService
+	authService        auth.Service
+	itemService        itemdomain.Service
+	custodyService     custodydomain.Service
+	institutionService institutiondomain.Service
+	searchService      search.Service
+	claimService       claimdomain.Service
+	passService        passdomain.Service
+	feeService         feedomain.Service
+	rewardService      rewarddomain.Service
+	agentService       agentdomain.Service
+	demoReset          func(context.Context) error
+	demoResetSecret    string
 }
