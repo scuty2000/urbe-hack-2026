@@ -165,8 +165,8 @@ router.beforeEach(async (to) => {
 });
 
 router.afterEach((to) => {
-  const base = "Ritrova · Oggetti smarriti";
-  document.title = to.meta.title ? `${to.meta.title} · Ritrova` : base;
+  const base = "O’ Rivojo · Oggetti smarriti";
+  document.title = to.meta.title ? `${to.meta.title} · O’ Rivojo` : base;
 });
 
 export default router;

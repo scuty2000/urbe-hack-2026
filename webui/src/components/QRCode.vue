@@ -32,7 +32,7 @@ watch(
         errorCorrectionLevel: "M",
         margin: 2,
         width: size,
-        color: { dark: "#1c1917", light: "#ffffff" },
+        color: { dark: "#14110f", light: "#fffcf4" },
       });
       if (current === renderId) {
         dataUrl.value = rendered;
@@ -55,7 +55,7 @@ watch(
 <template>
   <div class="inline-flex flex-col items-center">
     <div
-      class="relative overflow-hidden rounded-2xl border border-stone-200 bg-white p-3 shadow-sm"
+      class="relative overflow-hidden rounded-lg border border-ink/25 bg-paper-card p-3"
       :style="{ width: `${size + 24}px`, height: `${size + 24}px` }"
     >
       <img
@@ -69,7 +69,7 @@ watch(
       />
       <div
         v-else
-        class="flex h-full w-full items-center justify-center px-4 text-center text-xs text-stone-500"
+        class="flex h-full w-full items-center justify-center px-4 text-center text-xs text-ink-muted"
       >
         {{ rendering ? "Genero il codice…" : error || "Codice non disponibile" }}
       </div>
@@ -79,13 +79,13 @@ watch(
         class="absolute inset-0 flex items-center justify-center"
       >
         <span
-          class="rotate-[-12deg] rounded-lg bg-stone-900/80 px-3 py-1.5 text-xs font-semibold tracking-wide text-white uppercase"
+          class="rotate-[-12deg] rounded-lg bg-ink/80 px-3 py-1.5 text-xs font-semibold tracking-wide text-paper uppercase"
         >
           Non ancora valido
         </span>
       </div>
     </div>
-    <p class="mt-2 max-w-60 text-center text-[11px] leading-4 text-stone-500">
+    <p class="mt-2 max-w-60 text-center text-[11px] leading-4 text-ink-muted">
       Mostra il codice al punto di ritiro. Non condividerlo: chi lo possiede può
       ritirare l'oggetto.
     </p>

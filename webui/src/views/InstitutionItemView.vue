@@ -86,13 +86,13 @@ const claimReviewable = computed(
 const claimTone = computed(() => {
   switch (claim.value?.status) {
     case "approved":
-      return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+      return "bg-olive-soft text-olive ring-olive/30";
     case "rejected":
-      return "bg-rose-50 text-rose-800 ring-rose-200";
+      return "bg-rust-soft text-rust ring-rust/30";
     case "more_info":
-      return "bg-amber-50 text-amber-800 ring-amber-200";
+      return "bg-ochre-soft text-ochre ring-ochre/30";
     default:
-      return "bg-sky-50 text-sky-800 ring-sky-200";
+      return "bg-teal-soft text-teal ring-teal/25";
   }
 });
 
@@ -292,13 +292,13 @@ async function review(decision: "approved" | "rejected") {
     <RouterLink to="/institution" class="link text-sm">← Coda di ritiro</RouterLink>
 
     <div v-if="loading" class="mt-4 card animate-pulse">
-      <div class="h-6 w-1/2 rounded bg-stone-200"></div>
-      <div class="mt-3 h-4 w-1/3 rounded bg-stone-200"></div>
-      <div class="mt-6 h-32 rounded-xl bg-stone-100"></div>
+      <div class="h-6 w-1/2 rounded bg-paper-deep"></div>
+      <div class="mt-3 h-4 w-1/3 rounded bg-paper-deep"></div>
+      <div class="mt-6 h-32 rounded-md bg-paper"></div>
     </div>
 
     <div v-else-if="error" class="empty-state mt-4">
-      <p class="text-sm font-medium text-stone-700">{{ error }}</p>
+      <p class="text-sm font-medium text-ink-soft">{{ error }}</p>
       <button type="button" class="btn btn-secondary mt-4" @click="load">Riprova</button>
     </div>
 
@@ -307,7 +307,7 @@ async function review(decision: "approved" | "rejected") {
         <div>
           <p class="eyebrow">Scheda della PA</p>
           <h1 class="page-title mt-1">{{ displayItemName(item) }}</h1>
-          <p class="mt-1 font-mono text-sm text-stone-600">{{ item.publicCode }}</p>
+          <p class="mt-1 font-mono text-sm text-ink-soft">{{ item.publicCode }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <StatusBadge :status="item.status" :sensitive="item.sensitive" />
@@ -325,7 +325,7 @@ async function review(decision: "approved" | "rejected") {
 
       <div
         v-if="item.sensitive"
-        class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+        class="mt-4 rounded-md border border-rust/30 bg-rust-soft px-4 py-3 text-sm text-rust"
       >
         <span class="font-semibold">Oggetto sensibile.</span> Limita l'accesso ai
         soli operatori autorizzati e non condividere foto o dettagli.
@@ -340,7 +340,7 @@ async function review(decision: "approved" | "rejected") {
             :href="photo"
             target="_blank"
             rel="noopener"
-            class="group relative aspect-square overflow-hidden rounded-xl border border-stone-200 bg-stone-100"
+            class="group relative aspect-square overflow-hidden rounded-md border border-line bg-paper"
           >
             <img
               :src="photo"
@@ -429,7 +429,7 @@ async function review(decision: "approved" | "rejected") {
 
       <section class="card mt-4">
         <h2 class="section-title">Azioni sull'oggetto</h2>
-        <p class="mt-1 text-xs text-stone-500">
+        <p class="mt-1 text-xs text-ink-muted">
           Le azioni dipendono dallo stato attuale e sono registrate nella
           cronologia e nel registro di audit.
         </p>
@@ -519,13 +519,13 @@ async function review(decision: "approved" | "rejected") {
 
           <p
             v-if="!canTransfer && !canOffer && !canCollect && !canDispose"
-            class="text-sm text-stone-600"
+            class="text-sm text-ink-soft"
           >
             Nessuna azione disponibile per lo stato corrente.
           </p>
         </div>
 
-        <p v-if="canOffer" class="mt-2 text-[11px] leading-5 text-stone-500">
+        <p v-if="canOffer" class="mt-2 text-[11px] leading-5 text-ink-muted">
           L'offerta al finder è consentita solo dopo un anno dal termine legale;
           un tentativo anticipato viene rifiutato dal server.
         </p>
@@ -535,7 +535,7 @@ async function review(decision: "approved" | "rejected") {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 class="section-title">Verifica della richiesta</h2>
-            <p class="mt-1 text-xs text-stone-500">
+            <p class="mt-1 text-xs text-ink-muted">
               Apri una richiesta per esaminare la relazione di verifica e
               registrare la decisione della PA.
             </p>
@@ -563,13 +563,13 @@ async function review(decision: "approved" | "rejected") {
           </button>
         </form>
 
-        <p v-if="claimError" class="mt-3 text-sm text-rose-700">{{ claimError }}</p>
+        <p v-if="claimError" class="mt-3 text-sm text-rust">{{ claimError }}</p>
 
         <div v-if="claim" class="mt-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p class="font-mono text-xs text-stone-500">{{ claim.id }}</p>
-              <p class="mt-1 text-xs text-stone-600">
+              <p class="font-mono text-xs text-ink-muted">{{ claim.id }}</p>
+              <p class="mt-1 text-xs text-ink-soft">
                 Creata il {{ formatDateTime(claim.createdAt) }} ·
                 {{ returnChannelLabels[claim.returnChannel] ?? claim.returnChannel }}
               </p>
@@ -594,12 +594,12 @@ async function review(decision: "approved" | "rejected") {
             </div>
           </dl>
 
-          <div v-if="claimReviewable" class="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-3 py-3">
-            <p class="text-xs font-medium text-stone-700">
+          <div v-if="claimReviewable" class="mt-4 rounded-md border border-line bg-paper px-3 py-3">
+            <p class="text-xs font-medium text-ink-soft">
               Decisione della pubblica amministrazione
             </p>
             <div v-if="confirmDecision" class="mt-2 flex flex-wrap gap-2">
-              <p class="text-xs text-stone-600">
+              <p class="text-xs text-ink-soft">
                 Confermi la decisione?
               </p>
               <button
@@ -639,12 +639,12 @@ async function review(decision: "approved" | "rejected") {
             </div>
           </div>
 
-          <div v-else class="mt-3 text-xs text-stone-500">
+          <div v-else class="mt-3 text-xs text-ink-muted">
             La richiesta è {{ (claimStatusLabels[claim.status] ?? claim.status).toLowerCase() }}:
             non è più modificabile.
           </div>
 
-          <p v-if="!claim.report" class="mt-3 text-xs text-stone-500">
+          <p v-if="!claim.report" class="mt-3 text-xs text-ink-muted">
             Nessuna relazione di verifica disponibile per questa richiesta.
           </p>
         </div>
@@ -656,7 +656,7 @@ async function review(decision: "approved" | "rejected") {
 
       <section class="card mt-4">
         <h2 class="section-title">Cronologia</h2>
-        <p class="mt-1 text-xs text-stone-500">
+        <p class="mt-1 text-xs text-ink-muted">
           Eventi di custodia senza dati privati o coordinate esatte.
         </p>
         <div class="mt-4">

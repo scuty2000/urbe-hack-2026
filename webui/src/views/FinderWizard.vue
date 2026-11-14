@@ -488,7 +488,7 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <span
-        class="hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 sm:flex"
+        class="hidden h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-vermilion-soft text-vermilion-dark sm:flex"
         aria-hidden="true"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" class="h-6 w-6">
@@ -510,11 +510,11 @@ onBeforeUnmount(() => {
           <span class="step-dot">1</span>
           <div>
             <h2 class="section-title">Foto e oggetto</h2>
-            <p class="text-xs text-stone-500">La prima foto è il punto di partenza: da lì capiamo cosa chiederti.</p>
+            <p class="text-xs text-ink-muted">La prima foto è il punto di partenza: da lì capiamo cosa chiederti.</p>
           </div>
         </div>
 
-        <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div class="rounded-md border border-ochre/30 bg-ochre-soft px-4 py-3 text-sm text-ochre">
           Non fotografare documenti, notifiche o dati personali. Per un documento
           fotografa solo l'esterno e consegnalo al punto di raccolta.
         </div>
@@ -530,7 +530,7 @@ onBeforeUnmount(() => {
             @change="onFirstSelect"
           />
           <div v-if="firstPreview" class="flex flex-wrap items-center gap-3">
-            <img :src="firstPreview" alt="Prima foto dell'oggetto" class="h-28 w-28 rounded-xl object-cover ring-1 ring-stone-200" />
+            <img :src="firstPreview" alt="Prima foto dell'oggetto" class="h-28 w-28 rounded-md object-cover ring-1 ring-line" />
             <div class="flex flex-col gap-2">
               <button type="button" class="btn btn-secondary text-xs" :disabled="processingFirst || analyzing" @click="firstInput?.click()">
                 Sostituisci foto
@@ -543,23 +543,23 @@ onBeforeUnmount(() => {
           <button v-else type="button" class="btn btn-primary" :disabled="processingFirst" @click="firstInput?.click()">
             {{ processingFirst ? "Elaboro la foto…" : "Fai una foto" }}
           </button>
-          <p v-if="fieldErrors.photos" class="mt-2 text-xs font-medium text-rose-700">{{ fieldErrors.photos }}</p>
+          <p v-if="fieldErrors.photos" class="mt-2 text-xs font-medium text-rust">{{ fieldErrors.photos }}</p>
         </div>
 
-        <div v-if="analyzing" class="flex items-center gap-2 text-sm text-stone-600" role="status">
-          <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-700 border-t-transparent" aria-hidden="true"></span>
+        <div v-if="analyzing" class="flex items-center gap-2 text-sm text-ink-soft" role="status">
+          <span class="h-4 w-4 animate-spin rounded-full border-2 border-vermilion border-t-transparent" aria-hidden="true"></span>
           Analisi della foto e preparazione delle prossime indicazioni…
         </div>
 
         <div v-if="analysis" class="space-y-3">
           <div class="flex flex-wrap items-center gap-2">
             <span v-if="analysis.sensitive" class="badge-danger">Oggetto sensibile</span>
-            <span v-if="analysis.confidence" class="text-xs text-stone-500">Confidenza {{ Math.round(analysis.confidence * 100) }}%</span>
+            <span v-if="analysis.confidence" class="text-xs text-ink-muted">Confidenza {{ Math.round(analysis.confidence * 100) }}%</span>
           </div>
-          <ul v-if="analysis.warnings.length" class="space-y-1 text-xs text-amber-900">
+          <ul v-if="analysis.warnings.length" class="space-y-1 text-xs text-ochre">
             <li v-for="warning in analysis.warnings" :key="warning">⚠ {{ warning }}</li>
           </ul>
-          <div v-if="analysis.isDocument" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
+          <div v-if="analysis.isDocument" class="rounded-md border border-rust/30 bg-rust-soft px-4 py-3 text-sm text-rust">
             Documento: non aggiungere foto del contenuto. La scheda resta sensibile e la consegna finale è gestita dalla PA.
           </div>
         </div>
@@ -571,18 +571,18 @@ onBeforeUnmount(() => {
               <option value="" disabled>Scegli una categoria</option>
               <option v-for="option in itemCategories" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
-            <p v-if="fieldErrors.category" class="mt-1 text-xs font-medium text-rose-700">{{ fieldErrors.category }}</p>
+            <p v-if="fieldErrors.category" class="mt-1 text-xs font-medium text-rust">{{ fieldErrors.category }}</p>
           </div>
           <div v-if="category === 'altro'">
             <label class="label" for="wiz-custom-category">Descrivi la categoria</label>
             <input id="wiz-custom-category" v-model="customCategory" class="input" maxlength="80" type="text" placeholder="Es. strumento musicale" @input="onCategoryChange" />
           </div>
           <div>
-            <label class="label" for="wiz-brand">Marca <span class="font-normal text-stone-500">(facoltativo)</span></label>
+            <label class="label" for="wiz-brand">Marca <span class="font-normal text-ink-muted">(facoltativo)</span></label>
             <input id="wiz-brand" v-model="brand" class="input" maxlength="80" type="text" placeholder="Es. Apple" @input="onBrandInput" />
           </div>
           <div>
-            <label class="label" for="wiz-model">Modello <span class="font-normal text-stone-500">(facoltativo)</span></label>
+            <label class="label" for="wiz-model">Modello <span class="font-normal text-ink-muted">(facoltativo)</span></label>
             <input id="wiz-model" v-model="model" class="input" maxlength="80" type="text" placeholder="Es. iPhone 15" @input="onModelInput" />
           </div>
           <div>
@@ -602,8 +602,8 @@ onBeforeUnmount(() => {
 
         <div v-if="plan.length" class="space-y-3">
           <div>
-            <p class="text-sm font-semibold text-stone-900">Foto consigliate</p>
-            <p class="text-xs text-stone-500">Aggiungi quelle che riesci: le obbligatorie sono indicate.</p>
+            <p class="text-sm font-semibold text-ink">Foto consigliate</p>
+            <p class="text-xs text-ink-muted">Aggiungi quelle che riesci: le obbligatorie sono indicate.</p>
           </div>
           <PhotoPlanSlot
             v-for="slot in plan"
@@ -613,7 +613,7 @@ onBeforeUnmount(() => {
             :disabled="submitting"
             @update:file="(file) => (slotFiles[slot.key] = file)"
           />
-          <p v-for="slot in plan" v-show="fieldErrors[`slot:${slot.key}`]" :key="`err-${slot.key}`" class="text-xs font-medium text-rose-700">
+          <p v-for="slot in plan" v-show="fieldErrors[`slot:${slot.key}`]" :key="`err-${slot.key}`" class="text-xs font-medium text-rust">
             {{ fieldErrors[`slot:${slot.key}`] }}
           </p>
         </div>
@@ -625,25 +625,25 @@ onBeforeUnmount(() => {
           <span class="step-dot">2</span>
           <div>
             <h2 class="section-title">Dove e quando</h2>
-            <p class="text-xs text-stone-500">La posizione esatta è privata; la zona aiuta chi cerca.</p>
+            <p class="text-xs text-ink-muted">La posizione esatta è privata; la zona aiuta chi cerca.</p>
           </div>
         </div>
 
         <div>
           <label class="label" for="wiz-found-at">Data e ora del ritrovamento</label>
           <input id="wiz-found-at" v-model="foundAt" class="input" type="datetime-local" />
-          <p v-if="fieldErrors.foundAt" class="mt-1 text-xs font-medium text-rose-700">{{ fieldErrors.foundAt }}</p>
+          <p v-if="fieldErrors.foundAt" class="mt-1 text-xs font-medium text-rust">{{ fieldErrors.foundAt }}</p>
         </div>
 
         <GeoPicker v-model:lat="lat" v-model:lng="lng" :zone="zone" @update:zone="onZoneInput" />
-        <p v-if="reverseLoading" class="text-xs text-stone-500" role="status">Riconosco la zona dalla posizione…</p>
-        <p v-else-if="reverseSource === 'unavailable' && zone" class="text-xs text-amber-800">Zona inserita manualmente: non riesco a ricavarla dalla posizione.</p>
-        <p v-else-if="reverseSource === 'mapbox' && zone" class="text-xs text-emerald-700">Zona compilata dalla posizione: controllala e correggila se serve.</p>
-        <p v-if="fieldErrors.zone" class="text-xs font-medium text-rose-700">{{ fieldErrors.zone }}</p>
-        <p v-if="fieldErrors.geo" class="text-xs font-medium text-rose-700">{{ fieldErrors.geo }}</p>
+        <p v-if="reverseLoading" class="text-xs text-ink-muted" role="status">Riconosco la zona dalla posizione…</p>
+        <p v-else-if="reverseSource === 'unavailable' && zone" class="text-xs text-ochre">Zona inserita manualmente: non riesco a ricavarla dalla posizione.</p>
+        <p v-else-if="reverseSource === 'mapbox' && zone" class="text-xs text-vermilion-dark">Zona compilata dalla posizione: controllala e correggila se serve.</p>
+        <p v-if="fieldErrors.zone" class="text-xs font-medium text-rust">{{ fieldErrors.zone }}</p>
+        <p v-if="fieldErrors.geo" class="text-xs font-medium text-rust">{{ fieldErrors.geo }}</p>
 
         <div>
-          <label class="label" for="wiz-notes">Note contestuali <span class="font-normal text-stone-500">(facoltative)</span></label>
+          <label class="label" for="wiz-notes">Note contestuali <span class="font-normal text-ink-muted">(facoltative)</span></label>
           <textarea id="wiz-notes" v-model="notes" class="input min-h-20 resize-y" maxlength="500" rows="3" placeholder="Es. trovato su una panchina davanti alla stazione"></textarea>
         </div>
       </section>
@@ -654,14 +654,14 @@ onBeforeUnmount(() => {
           <span class="step-dot">3</span>
           <div>
             <h2 class="section-title">Dettagli riservati</h2>
-            <p class="text-xs text-stone-500">Visibili solo agli operatori autorizzati, mai pubblicati.</p>
+            <p class="text-xs text-ink-muted">Visibili solo agli operatori autorizzati, mai pubblicati.</p>
           </div>
         </div>
-        <div v-if="analysis?.isDocument" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
+        <div v-if="analysis?.isDocument" class="rounded-md border border-rust/30 bg-rust-soft px-4 py-3 text-sm text-rust">
           Non inserire dati del documento (numero, intestatario, data di nascita). La PA gestirà la parte sensibile.
         </div>
         <div>
-          <label class="label" for="wiz-private">Segni particolari o contenuto <span class="font-normal text-stone-500">(facoltativo)</span></label>
+          <label class="label" for="wiz-private">Segni particolari o contenuto <span class="font-normal text-ink-muted">(facoltativo)</span></label>
           <textarea id="wiz-private" :value="privateDetails" class="input min-h-24 resize-y" maxlength="500" rows="4" placeholder="Es. graffio sull'angolo, nome inciso sul retro, colore della custodia" @input="onPrivateInput"></textarea>
           <p class="hint">Questi dettagli non compaiono nella ricevuta e non vengono mostrati a chi cerca l'oggetto.</p>
           <div v-if="!analysis?.isDocument" class="mt-2 flex flex-wrap gap-2">
@@ -678,12 +678,12 @@ onBeforeUnmount(() => {
           <span class="step-dot">4</span>
           <div>
             <h2 class="section-title">Punto di raccolta</h2>
-            <p class="text-xs text-stone-500">I cinque punti attivi più vicini a piedi dalla segnalazione.</p>
+            <p class="text-xs text-ink-muted">I cinque punti attivi più vicini a piedi dalla segnalazione.</p>
           </div>
         </div>
 
-        <div v-if="dropLoading" class="flex items-center gap-2 text-sm text-stone-600" role="status">
-          <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-700 border-t-transparent" aria-hidden="true"></span>
+        <div v-if="dropLoading" class="flex items-center gap-2 text-sm text-ink-soft" role="status">
+          <span class="h-4 w-4 animate-spin rounded-full border-2 border-vermilion border-t-transparent" aria-hidden="true"></span>
           Calcolo le distanze a piedi…
         </div>
         <div v-else-if="dropError" class="banner-error" role="alert">
@@ -699,29 +699,29 @@ onBeforeUnmount(() => {
           <label
             v-for="point in dropPoints"
             :key="point.id"
-            class="flex cursor-pointer gap-3 rounded-xl border p-3 transition"
-            :class="dropPoint === point.id ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20' : 'border-stone-200 bg-white hover:border-stone-300'"
+            class="flex cursor-pointer gap-3 rounded-md border p-3 transition"
+            :class="dropPoint === point.id ? 'border-vermilion bg-vermilion-soft/60 ring-2 ring-vermilion/20' : 'border-line bg-paper-card hover:border-line'"
           >
-            <input v-model="dropPoint" type="radio" name="wizard-drop-point" :value="point.id" class="mt-1 h-4 w-4 shrink-0 text-emerald-700" />
+            <input v-model="dropPoint" type="radio" name="wizard-drop-point" :value="point.id" class="mt-1 h-4 w-4 shrink-0 text-vermilion-dark" />
             <span class="min-w-0 flex-1">
               <span class="flex flex-wrap items-center gap-2">
-                <span class="block text-sm font-semibold text-stone-900">{{ point.name }}</span>
+                <span class="block text-sm font-semibold text-ink">{{ point.name }}</span>
                 <span v-if="point.approximate" class="badge-soft">stima</span>
               </span>
-              <span class="block text-xs text-stone-600">{{ point.address }} · {{ point.hours }}</span>
+              <span class="block text-xs text-ink-soft">{{ point.address }} · {{ point.hours }}</span>
               <span
                 v-if="point.source !== 'none' && (point.walkingMinutes > 0 || point.distanceMeters > 0)"
-                class="mt-1 block text-xs font-medium text-emerald-800"
+                class="mt-1 block text-xs font-medium text-vermilion-dark"
               >
                 {{ point.walkingMinutes }} min a piedi · {{ Math.round(point.distanceMeters) }} m
               </span>
-              <span v-else class="mt-1 block text-xs text-stone-500">
+              <span v-else class="mt-1 block text-xs text-ink-muted">
                 Distanza non disponibile: scegli in base all'indirizzo.
               </span>
             </span>
           </label>
         </div>
-        <p v-if="fieldErrors.dropPoint" class="text-xs font-medium text-rose-700">{{ fieldErrors.dropPoint }}</p>
+        <p v-if="fieldErrors.dropPoint" class="text-xs font-medium text-rust">{{ fieldErrors.dropPoint }}</p>
       </section>
 
       <!-- Step 5 -->
@@ -730,7 +730,7 @@ onBeforeUnmount(() => {
           <span class="step-dot">5</span>
           <div>
             <h2 class="section-title">Riepilogo e conferma</h2>
-            <p class="text-xs text-stone-500">Controlla i dati e accetta il disclaimer per inviare.</p>
+            <p class="text-xs text-ink-muted">Controlla i dati e accetta il disclaimer per inviare.</p>
           </div>
         </div>
 
@@ -771,8 +771,8 @@ onBeforeUnmount(() => {
           </div>
         </dl>
 
-        <div class="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-700">
-          <p class="font-semibold text-stone-900">Disclaimer</p>
+        <div class="rounded-md border border-line bg-paper px-4 py-3 text-sm leading-6 text-ink-soft">
+          <p class="font-semibold text-ink">Disclaimer</p>
           <p class="mt-1">
             Confermo di aver trovato l'oggetto e di consegnarlo al punto di raccolta scelto.
             Le foto non saranno pubbliche, la posizione esatta resta privata e i dettagli
@@ -782,10 +782,10 @@ onBeforeUnmount(() => {
         </div>
 
         <RightsAssignment v-model="rights" mode="finder" :disabled="submitting" />
-        <p v-if="fieldErrors.rights" class="text-xs font-medium text-rose-700">{{ fieldErrors.rights }}</p>
+        <p v-if="fieldErrors.rights" class="text-xs font-medium text-rust">{{ fieldErrors.rights }}</p>
 
         <button type="submit" class="btn btn-primary w-full sm:w-auto" :disabled="submitting || !rights">
-          <span v-if="submitting" class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true"></span>
+          <span v-if="submitting" class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent" aria-hidden="true"></span>
           {{ submitting ? "Invio in corso…" : "Registra l'oggetto" }}
         </button>
       </section>
@@ -811,8 +811,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  background-color: #d1fae5;
-  color: #065f46;
+  background-color: #fbe4db;
+  color: #b8371d;
   font-size: 0.75rem;
   font-weight: 700;
 }

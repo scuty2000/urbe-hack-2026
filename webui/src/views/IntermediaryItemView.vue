@@ -120,13 +120,13 @@ async function review(decision: "approved" | "rejected") {
     <RouterLink to="/intermediary" class="link text-sm">← Dashboard</RouterLink>
 
     <div v-if="loading" class="mt-4 card animate-pulse">
-      <div class="h-6 w-1/2 rounded bg-stone-200"></div>
-      <div class="mt-3 h-4 w-1/3 rounded bg-stone-200"></div>
-      <div class="mt-6 h-32 rounded-xl bg-stone-100"></div>
+      <div class="h-6 w-1/2 rounded bg-paper-deep"></div>
+      <div class="mt-3 h-4 w-1/3 rounded bg-paper-deep"></div>
+      <div class="mt-6 h-32 rounded-md bg-paper"></div>
     </div>
 
     <div v-else-if="error" class="empty-state mt-4">
-      <p class="text-sm font-medium text-stone-700">{{ error }}</p>
+      <p class="text-sm font-medium text-ink-soft">{{ error }}</p>
       <button type="button" class="btn btn-secondary mt-4" @click="load">Riprova</button>
     </div>
 
@@ -135,14 +135,14 @@ async function review(decision: "approved" | "rejected") {
         <div>
           <p class="eyebrow">Dettaglio oggetto</p>
           <h1 class="page-title mt-1">{{ displayItemName(item) }}</h1>
-          <p class="mt-1 font-mono text-sm text-stone-600">{{ item.publicCode }}</p>
+          <p class="mt-1 font-mono text-sm text-ink-soft">{{ item.publicCode }}</p>
         </div>
         <StatusBadge :status="item.status" :sensitive="item.sensitive" />
       </header>
 
       <div
         v-if="item.sensitive"
-        class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+        class="mt-4 rounded-md border border-rust/30 bg-rust-soft px-4 py-3 text-sm text-rust"
       >
         <span class="font-semibold">Oggetto sensibile.</span> Termine di custodia
         di 24 ore. Non condividere foto o dettagli con persone non autorizzate.
@@ -157,7 +157,7 @@ async function review(decision: "approved" | "rejected") {
             :href="photo"
             target="_blank"
             rel="noopener"
-            class="group relative aspect-square overflow-hidden rounded-xl border border-stone-200 bg-stone-100"
+            class="group relative aspect-square overflow-hidden rounded-md border border-line bg-paper"
           >
             <img
               :src="photo"
@@ -222,7 +222,7 @@ async function review(decision: "approved" | "rejected") {
               <dd class="data-value">
                 <template v-if="item.dueAt">
                   {{ formatDateTime(item.dueAt) }}
-                  <span v-if="item.daysLeft !== undefined" class="text-stone-500">
+                  <span v-if="item.daysLeft !== undefined" class="text-ink-muted">
                     · {{ item.daysLeft }} {{ item.daysLeft === 1 ? "giorno" : "giorni" }}
                   </span>
                 </template>
@@ -240,7 +240,7 @@ async function review(decision: "approved" | "rejected") {
 
         <section class="card">
           <h2 class="section-title">Cronologia</h2>
-          <p class="mt-1 text-xs text-stone-500">
+          <p class="mt-1 text-xs text-ink-muted">
             Eventi di custodia senza dati privati o coordinate esatte.
           </p>
           <div class="mt-4">
@@ -253,7 +253,7 @@ async function review(decision: "approved" | "rejected") {
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 class="section-title">Richiesta di verifica</h2>
-            <p class="mt-1 text-xs text-stone-500">
+            <p class="mt-1 text-xs text-ink-muted">
               Apri una richiesta per id. Vedi stato, fascia di confidenza, prove e
               segnali: il report completo resta alla PA.
             </p>
@@ -278,9 +278,9 @@ async function review(decision: "approved" | "rejected") {
           </div>
         </div>
 
-        <p v-if="claimError" class="mt-3 text-sm text-rose-700">{{ claimError }}</p>
+        <p v-if="claimError" class="mt-3 text-sm text-rust">{{ claimError }}</p>
 
-        <div v-if="claim" class="mt-4 rounded-xl border border-stone-200 p-4">
+        <div v-if="claim" class="mt-4 rounded-md border border-line p-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p class="data-label">Stato</p>
@@ -305,14 +305,14 @@ async function review(decision: "approved" | "rejected") {
           <div class="mt-3 grid gap-3 sm:grid-cols-2">
             <div>
               <p class="data-label">Prove</p>
-              <p v-if="claim.evidence.length === 0" class="data-value text-stone-500">
+              <p v-if="claim.evidence.length === 0" class="data-value text-ink-muted">
                 Nessuna prova allegata
               </p>
               <ul v-else class="mt-1 flex flex-wrap gap-1.5">
                 <li
                   v-for="entry in claim.evidence"
                   :key="entry"
-                  class="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs text-stone-700"
+                  class="rounded-full bg-paper px-2.5 py-0.5 text-xs text-ink-soft"
                 >
                   {{ entry }}
                 </li>
@@ -320,14 +320,14 @@ async function review(decision: "approved" | "rejected") {
             </div>
             <div>
               <p class="data-label">Segnali</p>
-              <p v-if="claim.flags.length === 0" class="data-value text-stone-500">
+              <p v-if="claim.flags.length === 0" class="data-value text-ink-muted">
                 Nessun segnale
               </p>
               <ul v-else class="mt-1 flex flex-wrap gap-1.5">
                 <li
                   v-for="flag in claim.flags"
                   :key="flag"
-                  class="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200"
+                  class="rounded-full bg-ochre-soft px-2.5 py-0.5 text-xs text-ochre ring-1 ring-ochre/30"
                 >
                   {{ flag }}
                 </li>

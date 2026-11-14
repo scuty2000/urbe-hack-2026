@@ -145,10 +145,10 @@ function locate() {
       {{ locating ? "Rilevo la posizione…" : "Usa la mia posizione" }}
     </button>
 
-    <p v-if="geoSuccess" class="mt-2 text-xs font-medium text-emerald-700">
+    <p v-if="geoSuccess" class="mt-2 text-xs font-medium text-vermilion-dark">
       Posizione acquisita. Le coordinate esatte restano private.
     </p>
-    <p v-if="geoError" class="mt-2 text-xs text-rose-700" role="alert">
+    <p v-if="geoError" class="mt-2 text-xs text-rust" role="alert">
       {{ geoError }}
     </p>
 
@@ -160,7 +160,7 @@ function locate() {
           ref="latInput"
           v-model="latText"
           class="input"
-          :class="{ 'border-rose-400': latInvalid }"
+          :class="{ 'border-rust/60': latInvalid }"
           type="text"
           inputmode="decimal"
           placeholder="41.9028"
@@ -168,7 +168,7 @@ function locate() {
           autocomplete="off"
           @input="onLatInput"
         />
-        <p v-if="latInvalid" class="mt-1 text-[11px] text-rose-700">
+        <p v-if="latInvalid" class="mt-1 text-[11px] text-rust">
           Valore tra -90 e 90.
         </p>
       </div>
@@ -179,7 +179,7 @@ function locate() {
           ref="lngInput"
           v-model="lngText"
           class="input"
-          :class="{ 'border-rose-400': lngInvalid }"
+          :class="{ 'border-rust/60': lngInvalid }"
           type="text"
           inputmode="decimal"
           placeholder="12.4964"
@@ -187,7 +187,7 @@ function locate() {
           autocomplete="off"
           @input="onLngInput"
         />
-        <p v-if="lngInvalid" class="mt-1 text-[11px] text-rose-700">
+        <p v-if="lngInvalid" class="mt-1 text-[11px] text-rust">
           Valore tra -180 e 180.
         </p>
       </div>

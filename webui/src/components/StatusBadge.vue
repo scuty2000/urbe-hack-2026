@@ -13,7 +13,7 @@ const props = withDefaults(
 
 const label = computed(() => statusLabels[props.status] ?? props.status);
 const tone = computed(
-  () => statusTones[props.status] ?? "bg-stone-100 text-stone-700 ring-stone-200",
+  () => statusTones[props.status] ?? "bg-paper text-ink-soft ring-line",
 );
 </script>
 
@@ -22,7 +22,7 @@ const tone = computed(
     <span class="badge" :class="tone">{{ label }}</span>
     <span
       v-if="sensitive"
-      class="badge bg-rose-50 text-rose-800 ring-rose-200"
+      class="badge bg-rust-soft text-rust ring-rust/30"
       title="Oggetto sensibile: termine di custodia di 24 ore"
     >
       <svg

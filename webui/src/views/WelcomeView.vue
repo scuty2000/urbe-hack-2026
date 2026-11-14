@@ -22,7 +22,7 @@ async function signOut() {
   <div class="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center py-10">
     <div class="card text-center">
       <span
-        class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"
+        class="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-vermilion-soft text-vermilion-dark"
         aria-hidden="true"
       >
         <svg
@@ -40,10 +40,10 @@ async function signOut() {
         </svg>
       </span>
       <p class="eyebrow mt-4">{{ roleLabel }}</p>
-      <h1 class="mt-2 text-2xl font-semibold tracking-tight text-stone-900">
+      <h1 class="mt-2 font-display text-2xl leading-none tracking-tight text-ink uppercase">
         La tua area è in arrivo
       </h1>
-      <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-600">
+      <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-soft">
         In questa demo il percorso è completo per finder, intermediari, chi cerca
         e pubblica amministrazione. Le funzioni per
         <span class="font-medium">{{ roleLabel.toLowerCase() }}</span>

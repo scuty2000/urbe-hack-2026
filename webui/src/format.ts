@@ -24,18 +24,18 @@ export const statusLabels: Record<ItemStatus, string> = {
 };
 
 export const statusTones: Record<ItemStatus, string> = {
-  enrolled: "bg-sky-50 text-sky-800 ring-sky-200",
-  pending_custody: "bg-amber-50 text-amber-800 ring-amber-200",
-  custody_rejected: "bg-rose-50 text-rose-800 ring-rose-200",
-  in_custody: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-  pickup_due: "bg-orange-50 text-orange-800 ring-orange-200",
-  sensitive_pickup: "bg-rose-50 text-rose-800 ring-rose-200",
-  transferred: "bg-indigo-50 text-indigo-800 ring-indigo-200",
-  returned: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-  unclaimed: "bg-stone-100 text-stone-700 ring-stone-200",
-  offered_to_finder: "bg-sky-50 text-sky-800 ring-sky-200",
-  finder_collected: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-  disposed: "bg-stone-100 text-stone-600 ring-stone-200",
+  enrolled: "bg-teal-soft text-teal ring-teal/25",
+  pending_custody: "bg-ochre-soft text-ochre ring-ochre/30",
+  custody_rejected: "bg-rust-soft text-rust ring-rust/30",
+  in_custody: "bg-olive-soft text-olive ring-olive/30",
+  pickup_due: "bg-ochre-soft text-ochre ring-ochre/30",
+  sensitive_pickup: "bg-rust-soft text-rust ring-rust/30",
+  transferred: "bg-teal-soft text-teal ring-teal/25",
+  returned: "bg-olive-soft text-olive ring-olive/30",
+  unclaimed: "bg-paper text-ink-soft ring-line",
+  offered_to_finder: "bg-teal-soft text-teal ring-teal/25",
+  finder_collected: "bg-olive-soft text-olive ring-olive/30",
+  disposed: "bg-paper text-ink-soft ring-line",
 };
 
 export const riskLabels: Record<string, string> = {

@@ -192,7 +192,7 @@ onBeforeUnmount(() => {
     <div class="mt-5 grid gap-4 lg:grid-cols-2">
       <section class="card">
         <h2 class="section-title">Token manuale</h2>
-        <p class="mt-1 text-xs leading-5 text-stone-500">
+        <p class="mt-1 text-xs leading-5 text-ink-muted">
           Se la fotocamera non è disponibile, incolla il token contenuto nel QR
           mostrato dal proprietario.
         </p>
@@ -217,7 +217,7 @@ onBeforeUnmount(() => {
             >
               <span
                 v-if="validating"
-                class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"
                 aria-hidden="true"
               ></span>
               {{ validating ? "Verifico…" : "Verifica pass" }}
@@ -232,7 +232,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </form>
-        <p v-if="formError" class="mt-3 text-sm text-rose-700" role="alert">
+        <p v-if="formError" class="mt-3 text-sm text-rust" role="alert">
           {{ formError }}
         </p>
         <p class="hint">
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
 
       <section class="card">
         <h2 class="section-title">Fotocamera</h2>
-        <p class="mt-1 text-xs leading-5 text-stone-500">
+        <p class="mt-1 text-xs leading-5 text-ink-muted">
           Inquadra il QR del pass. La verifica parte appena il codice viene
           letto.
         </p>
@@ -251,19 +251,19 @@ onBeforeUnmount(() => {
           <div
             v-show="scanning || starting"
             id="qr-reader"
-            class="min-h-56 overflow-hidden rounded-xl border border-stone-800 bg-stone-900"
+            class="min-h-56 overflow-hidden rounded-md border border-ink bg-ink"
           ></div>
 
           <div
             v-if="!scanning && !starting"
-            class="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50 px-4 text-center"
+            class="flex min-h-56 flex-col items-center justify-center rounded-md border border-dashed border-line bg-paper px-4 text-center"
           >
             <svg
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               stroke-width="1.5"
-              class="h-9 w-9 text-stone-500"
+              class="h-9 w-9 text-ink-muted"
               aria-hidden="true"
             >
               <path
@@ -272,7 +272,7 @@ onBeforeUnmount(() => {
                 d="M3.75 4.5v4.5m0-4.5h4.5m-4.5 0 4.5 4.5m12-4.5v4.5m0-4.5h-4.5m4.5 0-4.5 4.5m-12 10.5v-4.5m0 4.5h4.5m-4.5 0 4.5-4.5m12 4.5v-4.5m0 4.5h-4.5m4.5 0-4.5-4.5"
               />
             </svg>
-            <p class="mt-2 text-xs text-stone-500">
+            <p class="mt-2 text-xs text-ink-muted">
               La fotocamera si attiva solo su tua richiesta.
             </p>
           </div>
@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
             Ferma fotocamera
           </button>
         </div>
-        <p v-if="cameraError" class="mt-3 text-sm text-rose-700" role="alert">
+        <p v-if="cameraError" class="mt-3 text-sm text-rust" role="alert">
           {{ cameraError }}
         </p>
       </section>
@@ -305,10 +305,10 @@ onBeforeUnmount(() => {
 
     <p v-if="redeemError" class="banner-error mt-4" role="alert">{{ redeemError }}</p>
 
-    <section v-if="redemption" class="card mt-4 border-emerald-200 bg-emerald-50/60">
+    <section v-if="redemption" class="card mt-4 border-vermilion/30 bg-vermilion-soft/60">
       <div class="flex items-start gap-3">
         <span
-          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-white"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-vermilion-dark text-paper"
           aria-hidden="true"
         >
           <svg
@@ -322,13 +322,13 @@ onBeforeUnmount(() => {
           </svg>
         </span>
         <div class="min-w-0">
-          <p class="text-lg font-semibold text-emerald-950">Riconsegna registrata</p>
-          <p class="mt-1 text-sm leading-6 text-emerald-900">
+          <p class="text-lg font-semibold text-ink">Riconsegna registrata</p>
+          <p class="mt-1 text-sm leading-6 text-ink">
             L'oggetto <span class="font-mono font-semibold">{{ redemption.item.publicCode }}</span>
             è uscito dalla custodia di
             <span class="font-medium">{{ organisationLabel(redemption.item.custodianId) }}</span>.
           </p>
-          <p class="mt-1 text-xs text-emerald-800">
+          <p class="mt-1 text-xs text-vermilion-dark">
             Riconsegnato il {{ formatDateTime(redemption.returnedAt) }}
           </p>
           <div class="mt-4 flex flex-wrap gap-2">
@@ -346,15 +346,15 @@ onBeforeUnmount(() => {
     <section
       v-else-if="validation"
       class="card mt-4"
-      :class="validation.valid ? 'border-emerald-200' : 'border-amber-200'"
+      :class="validation.valid ? 'border-olive/30' : 'border-ochre/30'"
     >
       <div class="flex items-start gap-3">
         <span
           class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
           :class="
             validation.valid
-              ? 'bg-emerald-100 text-emerald-800'
-              : 'bg-amber-100 text-amber-800'
+              ? 'bg-olive-soft text-olive'
+              : 'bg-ochre-soft text-ochre'
           "
           aria-hidden="true"
         >
@@ -381,12 +381,12 @@ onBeforeUnmount(() => {
         </span>
 
         <div class="min-w-0 flex-1">
-          <p class="text-base font-semibold" :class="validation.valid ? 'text-emerald-950' : 'text-amber-950'">
+          <p class="text-base font-semibold" :class="validation.valid ? 'text-ink' : 'text-ochre'">
             {{ validation.valid ? "Pass valido" : "Pass non valido" }}
           </p>
 
           <template v-if="validation.valid && validation.item">
-            <p class="mt-1 text-sm text-stone-700">
+            <p class="mt-1 text-sm text-ink-soft">
               Oggetto
               <span class="font-mono font-semibold">{{ validation.item.publicCode }}</span>
               · {{ categoryLabel(validation.item.category) }}
@@ -394,10 +394,10 @@ onBeforeUnmount(() => {
                 · {{ [validation.item.brand, validation.item.model].filter(Boolean).join(" ") }}
               </template>
             </p>
-            <p v-if="validation.expiresAt" class="mt-1 text-xs text-stone-500">
+            <p v-if="validation.expiresAt" class="mt-1 text-xs text-ink-muted">
               Pass valido fino al {{ formatDateTime(validation.expiresAt) }}.
             </p>
-            <p class="mt-2 text-xs leading-5 text-stone-500">
+            <p class="mt-2 text-xs leading-5 text-ink-muted">
               Verifica l'identità del proprietario prima di consegnare l'oggetto.
               La riconsegna è definitiva e non può essere annullata.
             </p>
@@ -410,7 +410,7 @@ onBeforeUnmount(() => {
               >
                 <span
                   v-if="redeeming"
-                  class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                  class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"
                   aria-hidden="true"
                 ></span>
                 {{ redeeming ? "Registro…" : "Conferma riconsegna" }}
@@ -422,7 +422,7 @@ onBeforeUnmount(() => {
           </template>
 
           <template v-else>
-            <p class="mt-1 text-sm text-amber-900">
+            <p class="mt-1 text-sm text-ochre">
               {{ validation.reason ? (passReasonLabels[validation.reason] ?? "Il pass non può essere utilizzato.") : "Il pass non può essere utilizzato." }}
             </p>
             <button type="button" class="btn btn-secondary mt-4" @click="newScan">
@@ -433,7 +433,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <p class="mt-6 text-center text-xs leading-5 text-stone-500">
+    <p class="mt-6 text-center text-xs leading-5 text-ink-muted">
       La fotocamera richiede HTTPS o localhost. In demo il token può essere
       incollato manualmente.
     </p>

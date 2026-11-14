@@ -169,10 +169,10 @@ function resetForm() {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p class="eyebrow">Intake ufficiale</p>
-            <h1 class="mt-1 text-xl font-semibold text-stone-900">
+            <h1 class="mt-1 text-xl font-semibold text-ink">
               {{ displayItemName(created) }}
             </h1>
-            <p class="mt-1 font-mono text-sm text-stone-600">{{ created.publicCode }}</p>
+            <p class="mt-1 font-mono text-sm text-ink-soft">{{ created.publicCode }}</p>
           </div>
           <StatusBadge :status="created.status" :sensitive="created.sensitive" />
         </div>
@@ -196,7 +196,7 @@ function resetForm() {
           </div>
         </dl>
 
-        <div v-if="created.sensitive" class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+        <div v-if="created.sensitive" class="mt-4 rounded-md border border-rust/30 bg-rust-soft px-4 py-3 text-sm text-rust">
           Oggetto sensibile: conservalo in un luogo sicuro e non condividerne i
           dettagli.
         </div>
@@ -231,7 +231,7 @@ function resetForm() {
         <section class="card space-y-4">
           <h2 class="section-title">Foto e descrizione</h2>
           <PhotoUpload v-model="photos" :max="3" :disabled="submitting" />
-          <p v-if="fieldErrors.photos" class="text-xs font-medium text-rose-700">
+          <p v-if="fieldErrors.photos" class="text-xs font-medium text-rust">
             {{ fieldErrors.photos }}
           </p>
 
@@ -254,7 +254,7 @@ function resetForm() {
                   {{ option.label }}
                 </option>
               </select>
-              <p v-if="fieldErrors.category" class="mt-1 text-xs font-medium text-rose-700">
+              <p v-if="fieldErrors.category" class="mt-1 text-xs font-medium text-rust">
                 {{ fieldErrors.category }}
               </p>
             </div>
@@ -331,7 +331,7 @@ function resetForm() {
               type="datetime-local"
               :disabled="submitting"
             />
-            <p v-if="fieldErrors.foundAt" class="mt-1 text-xs font-medium text-rose-700">
+            <p v-if="fieldErrors.foundAt" class="mt-1 text-xs font-medium text-rust">
               {{ fieldErrors.foundAt }}
             </p>
           </div>
@@ -342,7 +342,7 @@ function resetForm() {
             v-model:zone="zone"
             :disabled="submitting"
           />
-          <p v-if="fieldErrors.geo" class="text-xs font-medium text-rose-700">
+          <p v-if="fieldErrors.geo" class="text-xs font-medium text-rust">
             {{ fieldErrors.geo }}
           </p>
 
@@ -365,7 +365,7 @@ function resetForm() {
           <div>
             <label class="label" for="intake-private">
               Segni particolari o contenuto
-              <span class="font-normal text-stone-500">(facoltativo)</span>
+              <span class="font-normal text-ink-muted">(facoltativo)</span>
             </label>
             <textarea
               id="intake-private"
@@ -387,7 +387,7 @@ function resetForm() {
           <button type="submit" class="btn btn-primary w-full sm:w-auto" :disabled="submitting">
             <span
               v-if="submitting"
-              class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+              class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"
               aria-hidden="true"
             ></span>
             {{ submitting ? "Registro…" : "Registra l'oggetto" }}

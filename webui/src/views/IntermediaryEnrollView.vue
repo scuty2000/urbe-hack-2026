@@ -11,7 +11,7 @@ import { user } from "../api";
       <h1 class="page-title mt-1">Registra un oggetto ricevuto</h1>
       <p class="page-subtitle">
         Registra ciò che hai ricevuto al banco come
-        <span class="font-medium text-stone-800">{{ user?.name ?? "il tuo punto di raccolta" }}</span>.
+        <span class="font-medium text-ink">{{ user?.name ?? "il tuo punto di raccolta" }}</span>.
         L'oggetto viene registrato in attesa di conferma: accetta la custodia
         dalla dashboard per avviare il termine di legge.
       </p>
@@ -29,7 +29,7 @@ import { user } from "../api";
 
     <ItemEnrollForm mode="intermediary" />
 
-    <p class="mt-6 text-center text-xs text-stone-500">
+    <p class="mt-6 text-center text-xs text-ink-muted">
       <RouterLink to="/intermediary" class="link">Torna alla dashboard</RouterLink>
     </p>
   </div>

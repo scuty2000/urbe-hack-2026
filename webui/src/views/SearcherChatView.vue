@@ -47,13 +47,13 @@ const transcript = ref<HTMLElement | null>(null);
 const claimTone = computed(() => {
   switch (claim.value?.status) {
     case "approved":
-      return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+      return "bg-olive-soft text-olive ring-olive/30";
     case "rejected":
-      return "bg-rose-50 text-rose-800 ring-rose-200";
+      return "bg-rust-soft text-rust ring-rust/30";
     case "more_info":
-      return "bg-amber-50 text-amber-800 ring-amber-200";
+      return "bg-ochre-soft text-ochre ring-ochre/30";
     default:
-      return "bg-sky-50 text-sky-800 ring-sky-200";
+      return "bg-teal-soft text-teal ring-teal/25";
   }
 });
 
@@ -252,10 +252,10 @@ function resetConversation() {
 
     <div class="mt-5 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
       <section class="card flex min-h-[28rem] flex-col p-0">
-        <div class="border-b border-stone-100 px-4 py-3 sm:px-5">
+        <div class="border-b border-line px-4 py-3 sm:px-5">
           <div class="flex items-center justify-between gap-3">
             <h2 class="section-title">Conversazione</h2>
-            <span class="text-xs text-stone-500">
+            <span class="text-xs text-ink-muted">
               {{ done ? "Conclusa" : sending ? "L'assistente sta scrivendo…" : "Una domanda alla volta" }}
             </span>
           </div>
@@ -267,7 +267,7 @@ function resetConversation() {
           aria-live="polite"
         >
           <div v-if="emptyConversation" class="space-y-3">
-            <p class="text-sm leading-6 text-stone-700">
+            <p class="text-sm leading-6 text-ink-soft">
               Ciao! Sono l'assistente del registro oggetti smarriti. Descrivi
               l'oggetto che hai perso: tipo, colore e la zona in cui pensi di
               averlo perso.
@@ -275,21 +275,21 @@ function resetConversation() {
             <div class="flex flex-wrap gap-2">
               <button
                 type="button"
-                class="badge bg-stone-100 text-stone-700 ring-stone-200 hover:bg-stone-200"
+                class="badge bg-paper text-ink-soft ring-line hover:bg-paper-deep"
                 @click="input = 'Ho perso un telefono nero in zona San Lorenzo'"
               >
                 Ho perso un telefono
               </button>
               <button
                 type="button"
-                class="badge bg-stone-100 text-stone-700 ring-stone-200 hover:bg-stone-200"
+                class="badge bg-paper text-ink-soft ring-line hover:bg-paper-deep"
                 @click="input = 'Ho perso un portafoglio marrone in centro'"
               >
                 Ho perso un portafoglio
               </button>
               <button
                 type="button"
-                class="badge bg-stone-100 text-stone-700 ring-stone-200 hover:bg-stone-200"
+                class="badge bg-paper text-ink-soft ring-line hover:bg-paper-deep"
                 @click="input = 'Ho perso un ombrello blu'"
               >
                 Ho perso un ombrello
@@ -304,15 +304,15 @@ function resetConversation() {
             :content="message.content"
           />
 
-          <div v-if="sending" class="flex items-center gap-2 text-xs text-stone-500">
-            <span class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"></span>
+          <div v-if="sending" class="flex items-center gap-2 text-xs text-ink-muted">
+            <span class="h-4 w-4 animate-spin rounded-full border-2 border-vermilion border-t-transparent"></span>
             Cerco tra gli oggetti ritrovati…
           </div>
         </div>
 
-        <div class="border-t border-stone-100 px-4 py-3 sm:px-5">
+        <div class="border-t border-line px-4 py-3 sm:px-5">
           <div v-if="done" class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-xs text-stone-600">
+            <p class="text-xs text-ink-soft">
               <template v-if="claim && claim.status === 'under_review'">
                 La richiesta è in verifica dal custode. Se in chat ti è stato
                 indicato il punto di custodia, comunica il codice {{ claim.id }}:
@@ -348,12 +348,12 @@ function resetConversation() {
               class="btn btn-primary shrink-0 px-3 py-2.5"
               :disabled="sending || !input.trim()"
             >
-              <span v-if="sending" class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+              <span v-if="sending" class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"></span>
               <span v-else>Invia</span>
               <span class="sr-only">Invia il messaggio</span>
             </button>
           </form>
-          <p class="mt-1.5 text-[11px] text-stone-500">
+          <p class="mt-1.5 text-[11px] text-ink-muted">
             Non inserire dati sensibili non richiesti: la verifica usa solo
             dettagli dell'oggetto.
           </p>
@@ -365,7 +365,7 @@ function resetConversation() {
           <div class="flex items-start justify-between gap-3">
             <div>
               <h2 class="section-title">La tua richiesta</h2>
-              <p class="mt-0.5 font-mono text-xs text-stone-500">{{ claim.id }}</p>
+              <p class="mt-0.5 font-mono text-xs text-ink-muted">{{ claim.id }}</p>
             </div>
             <span class="badge shrink-0" :class="claimTone">
               {{ claimStatusLabels[claim.status] ?? claim.status }}
@@ -396,12 +396,12 @@ function resetConversation() {
             >
               <span
                 v-if="generating"
-                class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"
                 aria-hidden="true"
               ></span>
               {{ generating ? "Genero il pass…" : "Genera pass di ritiro" }}
             </button>
-            <p class="mt-2 text-[11px] leading-4 text-stone-500">
+            <p class="mt-2 text-[11px] leading-4 text-ink-muted">
               Il codice QR viene mostrato una sola volta: aprirlo da questa
               sessione. Non condividerlo.
             </p>
@@ -409,7 +409,7 @@ function resetConversation() {
 
           <div
             v-else
-            class="mt-4 rounded-xl bg-stone-50 px-3 py-2 text-xs leading-5 text-stone-600"
+            class="mt-4 rounded-md bg-paper px-3 py-2 text-xs leading-5 text-ink-soft"
           >
             <template v-if="claim.status === 'rejected'">
               La richiesta non è stata approvata. Se pensi ci sia un errore,
@@ -430,11 +430,11 @@ function resetConversation() {
           <div class="flex items-baseline justify-between gap-3">
             <div>
               <h2 class="section-title">Oggetti compatibili</h2>
-              <p class="mt-0.5 text-xs text-stone-500">
+              <p class="mt-0.5 text-xs text-ink-muted">
                 Solo categoria, zona e data: nessun dettaglio privato.
               </p>
             </div>
-            <span class="text-xs text-stone-500">{{ candidates.length }}</span>
+            <span class="text-xs text-ink-muted">{{ candidates.length }}</span>
           </div>
           <div class="mt-3 space-y-2.5">
             <CandidateCard
@@ -447,10 +447,10 @@ function resetConversation() {
         </section>
 
         <details class="card" :open="!claim && Boolean(route.query.claim)">
-          <summary class="cursor-pointer text-sm font-semibold text-stone-900">
+          <summary class="cursor-pointer text-sm font-semibold text-ink">
             Riprendi una richiesta esistente
           </summary>
-          <p class="mt-1 text-xs leading-5 text-stone-500">
+          <p class="mt-1 text-xs leading-5 text-ink-muted">
             Inserisci il codice della richiesta (per esempio quella creata in una
             sessione precedente) per vedere stato e generare il pass.
           </p>

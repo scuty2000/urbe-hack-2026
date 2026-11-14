@@ -12,10 +12,10 @@ defineProps<{
   <article class="card-tight">
     <div class="flex items-start justify-between gap-2">
       <div class="min-w-0">
-        <p class="text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
+        <p class="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
           Candidato {{ index + 1 }}
         </p>
-        <p class="mt-0.5 truncate text-sm font-semibold text-stone-900">
+        <p class="mt-0.5 truncate text-sm font-semibold text-ink">
           {{ categoryLabel(candidate.category) }}
         </p>
       </div>
@@ -23,8 +23,8 @@ defineProps<{
         class="badge shrink-0"
         :class="
           candidate.custodianType === 'institution'
-            ? 'bg-indigo-50 text-indigo-800 ring-indigo-200'
-            : 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+            ? 'bg-teal-soft text-teal ring-teal/25'
+            : 'bg-vermilion-soft text-vermilion-dark ring-vermilion/30'
         "
       >
         {{ candidate.custodianType === "institution" ? "Presso la PA" : "Punto di raccolta" }}
@@ -34,15 +34,15 @@ defineProps<{
     <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
       <div>
         <dt class="data-label">Zona</dt>
-        <dd class="mt-0.5 text-stone-800">{{ candidate.foundZone || "Non indicata" }}</dd>
+        <dd class="mt-0.5 text-ink">{{ candidate.foundZone || "Non indicata" }}</dd>
       </div>
       <div>
         <dt class="data-label">Ritrovato il</dt>
-        <dd class="mt-0.5 text-stone-800">{{ formatDate(candidate.foundAt) }}</dd>
+        <dd class="mt-0.5 text-ink">{{ formatDate(candidate.foundAt) }}</dd>
       </div>
     </dl>
 
-    <p class="mt-2 text-[11px] leading-5 text-stone-500">
+    <p class="mt-2 text-[11px] leading-5 text-ink-muted">
       Solo dati pubblici: nessun dettaglio privato, coordinata esatta o valore atteso.
     </p>
   </article>

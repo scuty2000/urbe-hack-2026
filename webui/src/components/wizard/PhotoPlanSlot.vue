@@ -62,21 +62,21 @@ function remove() {
 
 <template>
   <div
-    class="rounded-xl border p-3 transition"
-    :class="file ? 'border-emerald-300 bg-emerald-50/40' : 'border-stone-200 bg-white'"
+    class="rounded-md border p-3 transition"
+    :class="file ? 'border-vermilion/40 bg-vermilion-soft/40' : 'border-line bg-paper-card'"
   >
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="text-sm font-semibold text-stone-900">
+        <p class="text-sm font-semibold text-ink">
           {{ slot.label }}
-          <span v-if="slot.required" class="text-xs font-medium text-rose-700">obbligatoria</span>
-          <span v-else class="text-xs font-normal text-stone-500">facoltativa</span>
+          <span v-if="slot.required" class="text-xs font-medium text-rust">obbligatoria</span>
+          <span v-else class="text-xs font-normal text-ink-muted">facoltativa</span>
         </p>
-        <p class="mt-0.5 text-xs leading-5 text-stone-600">{{ slot.instruction }}</p>
+        <p class="mt-0.5 text-xs leading-5 text-ink-soft">{{ slot.instruction }}</p>
       </div>
       <span
         v-if="file"
-        class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-xs text-white"
+        class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs text-paper"
         aria-label="Foto aggiunta"
       >
         ✓
@@ -84,7 +84,7 @@ function remove() {
     </div>
 
     <div v-if="preview" class="mt-3 flex items-center gap-3">
-      <img :src="preview" alt="" class="h-20 w-20 rounded-lg object-cover ring-1 ring-stone-200" />
+      <img :src="preview" alt="" class="h-20 w-20 rounded-lg object-cover ring-1 ring-line" />
       <button type="button" class="btn btn-ghost text-xs" :disabled="disabled" @click="remove">
         Rimuovi
       </button>
@@ -108,6 +108,6 @@ function remove() {
         {{ processing ? "Elaboro…" : "Aggiungi foto" }}
       </button>
     </div>
-    <p v-if="error" class="mt-2 text-xs font-medium text-rose-700" role="alert">{{ error }}</p>
+    <p v-if="error" class="mt-2 text-xs font-medium text-rust" role="alert">{{ error }}</p>
   </div>
 </template>

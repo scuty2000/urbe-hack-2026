@@ -73,16 +73,16 @@ const statusTone = computed(() => {
   switch (displayStatus.value) {
     case "issued":
     case "validated":
-      return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+      return "bg-olive-soft text-olive ring-olive/30";
     case "pending_payment":
-      return "bg-amber-50 text-amber-800 ring-amber-200";
+      return "bg-ochre-soft text-ochre ring-ochre/30";
     case "redeemed":
-      return "bg-stone-100 text-stone-700 ring-stone-200";
+      return "bg-paper text-ink-soft ring-line";
     case "expired":
     case "revoked":
-      return "bg-rose-50 text-rose-800 ring-rose-200";
+      return "bg-rust-soft text-rust ring-rust/30";
     default:
-      return "bg-sky-50 text-sky-800 ring-sky-200";
+      return "bg-teal-soft text-teal ring-teal/25";
   }
 });
 
@@ -258,17 +258,17 @@ async function pay() {
     </RouterLink>
 
     <div v-if="verifying" class="mt-4 card animate-pulse">
-      <div class="h-6 w-1/2 rounded bg-stone-200"></div>
-      <div class="mt-3 h-4 w-1/3 rounded bg-stone-200"></div>
-      <div class="mt-6 h-40 rounded-xl bg-stone-100"></div>
-      <p class="mt-4 text-xs text-stone-500">Verifico il pass e la richiesta…</p>
+      <div class="h-6 w-1/2 rounded bg-paper-deep"></div>
+      <div class="mt-3 h-4 w-1/3 rounded bg-paper-deep"></div>
+      <div class="mt-6 h-40 rounded-md bg-paper"></div>
+      <p class="mt-4 text-xs text-ink-muted">Verifico il pass e la richiesta…</p>
     </div>
 
     <div v-else-if="!pass" class="empty-state mt-4">
-      <p class="text-sm font-medium text-stone-700">
+      <p class="text-sm font-medium text-ink-soft">
         {{ accessError || "Pass non disponibile" }}
       </p>
-      <p class="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">
+      <p class="mx-auto mt-2 max-w-md text-xs leading-5 text-ink-muted">
         Il codice QR viene mostrato una sola volta e resta solo nella sessione
         del browser in cui è stato generato, legato al profilo che lo ha
         richiesto. Torna alla ricerca e genera un nuovo pass dalla richiesta
@@ -284,7 +284,7 @@ async function pay() {
         <div>
           <p class="eyebrow">Pass di ritiro</p>
           <h1 class="page-title mt-1">{{ displayItemName(pass.item) }}</h1>
-          <p class="mt-1 font-mono text-sm text-stone-600">{{ pass.item.publicCode }}</p>
+          <p class="mt-1 font-mono text-sm text-ink-soft">{{ pass.item.publicCode }}</p>
         </div>
         <span class="badge" :class="statusTone">
           {{ passStatusLabels[displayStatus] ?? displayStatus }}
@@ -310,7 +310,7 @@ async function pay() {
       </div>
 
       <div class="mt-5 grid gap-4 lg:grid-cols-[auto_1fr]">
-        <section class="card flex flex-col items-center justify-center">
+        <section class="card flex flex-col items-center justify-center border-ink/30">
           <QRCode
             v-if="showCode"
             :value="pass.token"
@@ -318,9 +318,9 @@ async function pay() {
             :muted="muted"
             label="Codice QR del pass di ritiro"
           />
-          <div v-else class="flex h-60 w-60 flex-col items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-6 text-center">
-            <p class="text-sm font-medium text-stone-700">Codice nascosto</p>
-            <p class="mt-1 text-xs text-stone-500">
+          <div v-else class="flex h-60 w-60 flex-col items-center justify-center rounded-lg border border-dashed border-line bg-paper px-6 text-center">
+            <p class="text-sm font-medium text-ink-soft">Codice nascosto</p>
+            <p class="mt-1 text-xs text-ink-muted">
               Mostralo solo al momento del ritiro.
             </p>
           </div>
@@ -331,14 +331,14 @@ async function pay() {
             </button>
           </div>
 
-          <dl class="mt-4 grid w-full grid-cols-1 gap-2 text-center text-xs">
+          <dl class="mt-4 grid w-full grid-cols-1 gap-2 border-t border-dashed border-ink/25 pt-3 text-center text-xs">
             <div>
               <dt class="data-label">Scade il</dt>
-              <dd class="mt-0.5 font-medium text-stone-800">{{ formatDateTime(pass.expiresAt) }}</dd>
+              <dd class="mt-0.5 font-medium text-ink">{{ formatDateTime(pass.expiresAt) }}</dd>
             </div>
             <div>
               <dt class="data-label">Richiesta</dt>
-              <dd class="mt-0.5 font-mono text-[11px] text-stone-600">{{ pass.claimId }}</dd>
+              <dd class="mt-0.5 font-mono text-[11px] text-ink-soft">{{ pass.claimId }}</dd>
             </div>
           </dl>
         </section>
@@ -368,38 +368,38 @@ async function pay() {
             </dl>
 
             <div v-if="instructions.length > 0" class="mt-4">
-              <h3 class="text-xs font-semibold tracking-wide text-stone-500 uppercase">
+              <h3 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
                 Istruzioni
               </h3>
-              <ul class="mt-1.5 space-y-1 text-xs leading-5 text-stone-700">
+              <ul class="mt-1.5 space-y-1 text-xs leading-5 text-ink-soft">
                 <li v-for="instruction in instructions" :key="instruction" class="flex gap-2">
-                  <span class="text-emerald-700" aria-hidden="true">✓</span>
+                  <span class="text-vermilion-dark" aria-hidden="true">✓</span>
                   <span>{{ instruction }}</span>
                 </li>
               </ul>
             </div>
 
-            <div class="mt-4 rounded-xl bg-stone-50 px-3 py-2.5">
-              <h3 class="text-xs font-semibold tracking-wide text-stone-500 uppercase">
+            <div class="mt-4 rounded-md bg-paper px-3 py-2.5">
+              <h3 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
                 Cosa portare
               </h3>
-              <ul class="mt-1.5 space-y-1 text-xs leading-5 text-stone-700">
+              <ul class="mt-1.5 space-y-1 text-xs leading-5 text-ink-soft">
                 <li class="flex gap-2">
-                  <span class="text-stone-500" aria-hidden="true">•</span>
+                  <span class="text-ink-muted" aria-hidden="true">•</span>
                   <span>Il codice QR di questo pass (monouso).</span>
                 </li>
                 <li v-if="identityRequired" class="flex gap-2">
-                  <span class="text-stone-500" aria-hidden="true">•</span>
+                  <span class="text-ink-muted" aria-hidden="true">•</span>
                   <span>Un documento d'identità valido.</span>
                 </li>
                 <li v-if="pass.returnChannel === 'pa'" class="flex gap-2">
-                  <span class="text-stone-500" aria-hidden="true">•</span>
+                  <span class="text-ink-muted" aria-hidden="true">•</span>
                   <span>
                     Il pagamento della tariffa PA<template v-if="paid"> (già registrato)</template>.
                   </span>
                 </li>
                 <li v-if="reward?.requested" class="flex gap-2">
-                  <span class="text-stone-500" aria-hidden="true">•</span>
+                  <span class="text-ink-muted" aria-hidden="true">•</span>
                   <span>
                     L'eventuale ricompensa concordata con il finder
                     ({{ reward.amountCents > 0 ? formatCents(reward.amountCents) : "importo da concordare" }}),

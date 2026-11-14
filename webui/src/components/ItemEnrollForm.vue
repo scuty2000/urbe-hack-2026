@@ -220,10 +220,10 @@ function resetForm() {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p class="eyebrow">Ricevuta di registrazione</p>
-            <h2 class="mt-1 text-xl font-semibold text-stone-900">
+            <h2 class="mt-1 text-xl font-semibold text-ink">
               {{ displayItemName(created) }}
             </h2>
-            <p class="mt-1 font-mono text-sm text-stone-600">
+            <p class="mt-1 font-mono text-sm text-ink-soft">
               {{ created.publicCode }}
             </p>
           </div>
@@ -253,7 +253,7 @@ function resetForm() {
 
         <div
           v-if="created.sensitive"
-          class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+          class="mt-4 rounded-md border border-rust/30 bg-rust-soft px-4 py-3 text-sm text-rust"
         >
           Oggetto sensibile: dopo l'accettazione della custodia il termine è di
           24 ore. Conservalo in un luogo sicuro e non condividerne i dettagli.
@@ -278,14 +278,14 @@ function resetForm() {
           <span class="step-dot">1</span>
           <div>
             <h2 class="section-title">Foto e descrizione</h2>
-            <p class="text-xs text-stone-500">
+            <p class="text-xs text-ink-muted">
               Bastano una o due foto nitide: aiutano la riconsegna.
             </p>
           </div>
         </div>
 
         <PhotoUpload v-model="photos" :max="3" :disabled="submitting" />
-        <p v-if="fieldErrors.photos" class="text-xs font-medium text-rose-700">
+        <p v-if="fieldErrors.photos" class="text-xs font-medium text-rust">
           {{ fieldErrors.photos }}
         </p>
 
@@ -304,7 +304,7 @@ function resetForm() {
                 {{ option.label }}
               </option>
             </select>
-            <p v-if="fieldErrors.category" class="mt-1 text-xs font-medium text-rose-700">
+            <p v-if="fieldErrors.category" class="mt-1 text-xs font-medium text-rust">
               {{ fieldErrors.category }}
             </p>
           </div>
@@ -321,7 +321,7 @@ function resetForm() {
             />
           </div>
           <div>
-            <label class="label" for="brand">Marca <span class="font-normal text-stone-500">(facoltativo)</span></label>
+            <label class="label" for="brand">Marca <span class="font-normal text-ink-muted">(facoltativo)</span></label>
             <input
               id="brand"
               v-model="brand"
@@ -334,7 +334,7 @@ function resetForm() {
             />
           </div>
           <div>
-            <label class="label" for="model">Modello <span class="font-normal text-stone-500">(facoltativo)</span></label>
+            <label class="label" for="model">Modello <span class="font-normal text-ink-muted">(facoltativo)</span></label>
             <input
               id="model"
               v-model="model"
@@ -371,7 +371,7 @@ function resetForm() {
           <span class="step-dot">2</span>
           <div>
             <h2 class="section-title">Dove e quando</h2>
-            <p class="text-xs text-stone-500">
+            <p class="text-xs text-ink-muted">
               La posizione esatta è privata; la zona aiuta chi cerca.
             </p>
           </div>
@@ -386,7 +386,7 @@ function resetForm() {
             type="datetime-local"
             :disabled="submitting"
           />
-          <p v-if="fieldErrors.foundAt" class="mt-1 text-xs font-medium text-rose-700">
+          <p v-if="fieldErrors.foundAt" class="mt-1 text-xs font-medium text-rust">
             {{ fieldErrors.foundAt }}
           </p>
         </div>
@@ -397,12 +397,12 @@ function resetForm() {
           v-model:zone="zone"
           :disabled="submitting"
         />
-        <p v-if="fieldErrors.geo" class="text-xs font-medium text-rose-700">
+        <p v-if="fieldErrors.geo" class="text-xs font-medium text-rust">
           {{ fieldErrors.geo }}
         </p>
 
         <div>
-          <label class="label" for="notes">Note contestuali <span class="font-normal text-stone-500">(facoltative)</span></label>
+          <label class="label" for="notes">Note contestuali <span class="font-normal text-ink-muted">(facoltative)</span></label>
           <textarea
             id="notes"
             v-model="notes"
@@ -420,7 +420,7 @@ function resetForm() {
           <span class="step-dot">3</span>
           <div>
             <h2 class="section-title">Dettagli riservati</h2>
-            <p class="text-xs text-stone-500">
+            <p class="text-xs text-ink-muted">
               Visibili solo agli operatori autorizzati, mai pubblicati.
             </p>
           </div>
@@ -428,7 +428,7 @@ function resetForm() {
         <div>
           <label class="label" for="private-details">
             Segni particolari o contenuto
-            <span class="font-normal text-stone-500">(facoltativo)</span>
+            <span class="font-normal text-ink-muted">(facoltativo)</span>
           </label>
           <textarea
             id="private-details"
@@ -451,7 +451,7 @@ function resetForm() {
           <span class="step-dot">4</span>
           <div>
             <h2 class="section-title">Punto di raccolta</h2>
-            <p class="text-xs text-stone-500">
+            <p class="text-xs text-ink-muted">
               Consegna l'oggetto al punto scelto: confermerà la presa in carico
               dalla dashboard.
             </p>
@@ -461,11 +461,11 @@ function resetForm() {
         <label
           v-for="point in dropPoints"
           :key="point.id"
-          class="flex cursor-pointer gap-3 rounded-xl border p-3 transition"
+          class="flex cursor-pointer gap-3 rounded-md border p-3 transition"
           :class="
             dropPoint === point.id
-              ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20'
-              : 'border-stone-200 bg-white hover:border-stone-300'
+              ? 'border-vermilion bg-vermilion-soft/60 ring-2 ring-vermilion/20'
+              : 'border-line bg-paper-card hover:border-line'
           "
         >
           <input
@@ -473,30 +473,30 @@ function resetForm() {
             type="radio"
             name="drop-point"
             :value="point.id"
-            class="mt-1 h-4 w-4 shrink-0 text-emerald-700 focus:ring-emerald-600"
+            class="mt-1 h-4 w-4 shrink-0 text-vermilion-dark focus:ring-vermilion"
             :disabled="submitting"
           />
           <span class="min-w-0">
-            <span class="block text-sm font-semibold text-stone-900">{{ point.name }}</span>
-            <span class="block text-xs text-stone-600">
+            <span class="block text-sm font-semibold text-ink">{{ point.name }}</span>
+            <span class="block text-xs text-ink-soft">
               {{ point.address }} · {{ point.area }}
             </span>
-            <span class="mt-0.5 block text-xs text-stone-500">Aperto {{ point.hours }}</span>
+            <span class="mt-0.5 block text-xs text-ink-muted">Aperto {{ point.hours }}</span>
           </span>
         </label>
-        <p v-if="fieldErrors.dropPoint" class="text-xs font-medium text-rose-700">
+        <p v-if="fieldErrors.dropPoint" class="text-xs font-medium text-rust">
           {{ fieldErrors.dropPoint }}
         </p>
       </section>
 
       <section class="card space-y-3">
-        <div class="flex items-start gap-3 rounded-xl bg-stone-50 p-3 text-sm text-stone-700">
+        <div class="flex items-start gap-3 rounded-md bg-paper p-3 text-sm text-ink-soft">
           <svg
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
             stroke-width="1.8"
-            class="mt-0.5 h-5 w-5 shrink-0 text-emerald-700"
+            class="mt-0.5 h-5 w-5 shrink-0 text-vermilion-dark"
             aria-hidden="true"
           >
             <path
@@ -517,7 +517,7 @@ function resetForm() {
         </div>
 
         <RightsAssignment v-model="rights" :mode="mode" :disabled="submitting" />
-        <p v-if="fieldErrors.rights" class="text-xs font-medium text-rose-700">
+        <p v-if="fieldErrors.rights" class="text-xs font-medium text-rust">
           {{ fieldErrors.rights }}
         </p>
       </section>
@@ -526,7 +526,7 @@ function resetForm() {
         <button type="submit" class="btn btn-primary w-full sm:w-auto" :disabled="submitting">
           <span
             v-if="submitting"
-            class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+            class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"
             aria-hidden="true"
           ></span>
           {{ submitting ? "Invio in corso…" : "Registra l'oggetto" }}
@@ -546,8 +546,8 @@ function resetForm() {
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  background-color: #d1fae5;
-  color: #065f46;
+  background-color: #fbe4db;
+  color: #b8371d;
   font-size: 0.75rem;
   font-weight: 700;
 }

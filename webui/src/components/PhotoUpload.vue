@@ -145,7 +145,7 @@ onBeforeUnmount(() => {
   <div>
     <div class="flex items-baseline justify-between gap-3">
       <span class="label mb-0">Foto dell'oggetto</span>
-      <span class="text-xs text-stone-500">
+      <span class="text-xs text-ink-muted">
         {{ modelValue.length }}/{{ max }} · almeno 1
       </span>
     </div>
@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
       <div
         v-for="preview in previews"
         :key="preview.url"
-        class="group relative aspect-square overflow-hidden rounded-xl border border-stone-200 bg-stone-100"
+        class="group relative aspect-square overflow-hidden rounded-md border border-line bg-paper"
       >
         <img
           :src="preview.url"
@@ -163,7 +163,7 @@ onBeforeUnmount(() => {
         />
         <button
           type="button"
-          class="absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-stone-900/70 text-white transition hover:bg-rose-600"
+          class="absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-ink/70 text-paper transition hover:bg-rust"
           :disabled="disabled"
           :aria-label="`Rimuovi ${preview.name}`"
           @click="remove(preview.file)"
@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         <span
-          class="absolute bottom-1.5 left-1.5 rounded bg-stone-900/60 px-1.5 py-0.5 text-[10px] text-white"
+          class="absolute bottom-1.5 left-1.5 rounded bg-ink/60 px-1.5 py-0.5 text-[10px] text-paper"
           >{{ preview.size }} KB</span
         >
       </div>
@@ -188,11 +188,11 @@ onBeforeUnmount(() => {
       <button
         v-if="modelValue.length < max"
         type="button"
-        class="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-2 text-center transition disabled:cursor-not-allowed disabled:opacity-60"
+        class="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-2 text-center transition disabled:cursor-not-allowed disabled:opacity-60"
         :class="
           dragOver
-            ? 'border-emerald-500 bg-emerald-50'
-            : 'border-stone-300 bg-white hover:border-emerald-400 hover:bg-emerald-50/40'
+            ? 'border-vermilion bg-vermilion-soft'
+            : 'border-line bg-paper-card hover:border-vermilion/60 hover:bg-vermilion-soft/40'
         "
         :disabled="disabled || processing"
         @click="openPicker"
@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
           fill="none"
           stroke="currentColor"
           stroke-width="1.8"
-          class="h-6 w-6 text-stone-500"
+          class="h-6 w-6 text-ink-muted"
           aria-hidden="true"
         >
           <path
@@ -217,13 +217,13 @@ onBeforeUnmount(() => {
         </svg>
         <span
           v-else
-          class="h-5 w-5 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"
+          class="h-5 w-5 animate-spin rounded-full border-2 border-vermilion border-t-transparent"
           aria-hidden="true"
         ></span>
-        <span class="text-xs font-medium text-stone-600">
+        <span class="text-xs font-medium text-ink-soft">
           {{ processing ? "Elaboro…" : "Aggiungi foto" }}
         </span>
-        <span v-if="remaining > 1" class="text-[10px] text-stone-500"
+        <span v-if="remaining > 1" class="text-[10px] text-ink-muted"
           >ancora {{ remaining }}</span
         >
       </button>
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
       Le foto vengono ridimensionate a 1200px e compresse sul tuo dispositivo
       prima dell'invio.
     </p>
-    <p v-if="error" class="mt-2 text-xs font-medium text-rose-700" role="alert">
+    <p v-if="error" class="mt-2 text-xs font-medium text-rust" role="alert">
       {{ error }}
     </p>
   </div>

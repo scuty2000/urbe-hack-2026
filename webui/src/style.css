@@ -1,9 +1,51 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Archivo";
+  src: url("./assets/fonts/archivo-latin.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archivo Black";
+  src: url("./assets/fonts/archivo-black-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --font-sans:
-    "Inter", "SF Pro Text", ui-sans-serif, system-ui, -apple-system,
+    "Archivo", "SF Pro Text", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display:
+    "Archivo Black", "Archivo", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Brand — sampled from assets/o-rivojo-logo.svg */
+  --color-paper: #f2e8d5;
+  --color-paper-soft: #f4ead8;
+  --color-paper-card: #fffcf4;
+  --color-paper-deep: #e7dac4;
+  --color-ink: #14110f;
+  --color-ink-soft: #413a33;
+  --color-ink-muted: #6f6457;
+  --color-line: #d9ccb6;
+  --color-vermilion: #e14b2a;
+  --color-vermilion-dark: #b8371d;
+  --color-vermilion-soft: #fbe4db;
+
+  /* Derived semantic tints, kept in the same warm range */
+  --color-olive: #4d6438;
+  --color-olive-soft: #e9eddc;
+  --color-ochre: #7f5513;
+  --color-ochre-soft: #f6ead4;
+  --color-rust: #9e2b1a;
+  --color-rust-soft: #f7dfd8;
+  --color-teal: #2f5d5a;
+  --color-teal-soft: #e3ece7;
 }
 
 @layer base {
@@ -15,117 +57,128 @@
   body {
     margin: 0;
     min-height: 100dvh;
-    background-color: #fafaf9;
-    color: #1c1917;
+    background-color: var(--color-paper-soft);
+    color: var(--color-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 
   ::selection {
-    background-color: #a7f3d0;
-    color: #064e3b;
+    background-color: var(--color-vermilion);
+    color: var(--color-paper);
   }
 
   :focus-visible {
-    outline: 2px solid #047857;
+    outline: 2px solid var(--color-vermilion);
     outline-offset: 2px;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-stone-200 bg-white p-5 shadow-sm;
+    @apply rounded-lg border border-line bg-paper-card p-5;
   }
 
   .card-tight {
-    @apply rounded-2xl border border-stone-200 bg-white p-4 shadow-sm;
+    @apply rounded-lg border border-line bg-paper-card p-4;
   }
 
   .eyebrow {
-    @apply text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700;
+    @apply text-[11px] font-bold uppercase tracking-[0.22em] text-vermilion-dark;
   }
 
   .page-title {
-    @apply text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl;
+    @apply font-display text-2xl leading-[0.98] tracking-tight text-ink uppercase sm:text-3xl;
   }
 
   .page-subtitle {
-    @apply mt-1 text-sm leading-6 text-stone-600;
+    @apply mt-2 text-sm leading-6 text-ink-soft;
   }
 
   .section-title {
-    @apply text-base font-semibold text-stone-900;
+    @apply text-base font-bold tracking-tight text-ink;
   }
 
   .label {
-    @apply mb-1.5 block text-sm font-medium text-stone-700;
+    @apply mb-1.5 block text-sm font-semibold text-ink-soft;
   }
 
   .hint {
-    @apply mt-1.5 text-xs leading-5 text-stone-500;
+    @apply mt-1.5 text-xs leading-5 text-ink-muted;
   }
 
   .input {
-    @apply w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-sm text-stone-900 shadow-xs transition placeholder:text-stone-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-none disabled:cursor-not-allowed disabled:bg-stone-100;
+    @apply w-full rounded-md border border-line bg-paper-card px-3.5 py-2.5 text-sm text-ink transition placeholder:text-ink-muted focus:border-vermilion focus:ring-2 focus:ring-vermilion/20 focus:outline-none disabled:cursor-not-allowed disabled:bg-paper disabled:text-ink-muted;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition select-none disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-primary {
-    @apply bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:bg-emerald-900;
+    @apply bg-vermilion text-ink shadow-[3px_3px_0_#14110f] hover:bg-ink hover:text-paper hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0_#e14b2a] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none;
   }
 
   .btn-secondary {
-    @apply border border-stone-300 bg-white text-stone-800 hover:border-stone-400 hover:bg-stone-50;
+    @apply border border-ink/30 bg-paper-card text-ink hover:border-ink hover:bg-paper;
   }
 
   .btn-danger {
-    @apply border border-rose-300 bg-white text-rose-700 hover:bg-rose-50;
+    @apply border border-rust/40 bg-paper-card text-rust hover:border-rust hover:bg-rust-soft;
   }
 
   .btn-ghost {
-    @apply bg-transparent text-stone-600 hover:bg-stone-100 hover:text-stone-900;
+    @apply bg-transparent text-ink-soft hover:bg-paper hover:text-ink;
   }
 
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset;
+    @apply inline-flex items-center gap-1 rounded-[3px] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ring-1 ring-inset;
   }
 
   .badge-soft {
-    @apply inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-700 ring-1 ring-inset ring-stone-200;
+    @apply inline-flex items-center gap-1 rounded-[3px] bg-paper px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-soft ring-1 ring-inset ring-line;
   }
 
   .badge-danger {
-    @apply inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800 ring-1 ring-inset ring-rose-200;
+    @apply inline-flex items-center gap-1 rounded-[3px] bg-rust-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-rust ring-1 ring-inset ring-rust/30;
   }
 
   .banner-error {
-    @apply rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800;
+    @apply rounded-md border border-rust/30 border-l-[3px] border-l-rust bg-rust-soft px-4 py-3 text-sm text-rust;
   }
 
   .banner-success {
-    @apply rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900;
+    @apply rounded-md border border-olive/30 border-l-[3px] border-l-olive bg-olive-soft px-4 py-3 text-sm text-olive;
   }
 
   .banner-info {
-    @apply rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900;
+    @apply rounded-md border border-teal/25 border-l-[3px] border-l-teal bg-teal-soft px-4 py-3 text-sm text-teal;
   }
 
   .empty-state {
-    @apply rounded-2xl border border-dashed border-stone-300 bg-white/60 px-6 py-10 text-center;
+    @apply rounded-lg border border-dashed border-ink/25 bg-paper-card/60 px-6 py-10 text-center;
   }
 
   .data-label {
-    @apply text-xs font-medium uppercase tracking-wide text-stone-500;
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted;
   }
 
   .data-value {
-    @apply mt-1 text-sm text-stone-900;
+    @apply mt-1 text-sm text-ink;
   }
 
   .link {
-    @apply font-medium text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900;
+    @apply font-semibold text-vermilion-dark underline decoration-vermilion-dark/50 underline-offset-2 hover:text-ink;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

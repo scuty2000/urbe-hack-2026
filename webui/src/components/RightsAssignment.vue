@@ -29,10 +29,10 @@ const checkboxCopy = computed(() =>
 </script>
 
 <template>
-  <div class="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+  <div class="rounded-lg border border-ochre/30 bg-ochre-soft/70 p-4">
     <div class="flex gap-3">
       <span
-        class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 text-amber-900"
+        class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ochre-soft text-ochre"
         aria-hidden="true"
       >
         <svg
@@ -50,25 +50,25 @@ const checkboxCopy = computed(() =>
         </svg>
       </span>
       <div class="min-w-0">
-        <p class="text-sm font-semibold text-amber-950">{{ title }}</p>
-        <p class="mt-1 text-xs leading-5 text-amber-900">{{ legalCopy }}</p>
+        <p class="text-sm font-semibold text-ochre">{{ title }}</p>
+        <p class="mt-1 text-xs leading-5 text-ochre">{{ legalCopy }}</p>
       </div>
     </div>
 
     <label
       :for="checkboxId"
-      class="mt-3 flex cursor-pointer items-start gap-2.5 rounded-xl bg-white/70 p-3 text-sm text-stone-800 ring-1 ring-amber-200"
+      class="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md bg-paper-card/70 p-3 text-sm text-ink ring-1 ring-ochre/30"
     >
       <input
         :id="checkboxId"
         v-model="agreed"
         type="checkbox"
-        class="mt-0.5 h-4 w-4 shrink-0 rounded border-stone-300 text-emerald-700 focus:ring-emerald-600"
+        class="mt-0.5 h-4 w-4 shrink-0 rounded border-line text-vermilion-dark focus:ring-vermilion"
         :disabled="disabled"
       />
       <span>
         {{ checkboxCopy }}
-        <span class="font-medium text-rose-700">Obbligatorio per registrare l'oggetto.</span>
+        <span class="font-medium text-rust">Obbligatorio per registrare l'oggetto.</span>
       </span>
     </label>
   </div>

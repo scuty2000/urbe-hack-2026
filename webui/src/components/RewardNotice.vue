@@ -28,7 +28,7 @@ const amount = computed(() => {
     <div class="flex items-start justify-between gap-3">
       <div>
         <h2 class="section-title">Ricompensa al finder</h2>
-        <p class="mt-1 text-xs text-stone-500">
+        <p class="mt-1 text-xs text-ink-muted">
           Art. 930 c.c.: la ricompensa è facoltativa e si concorda fuori dalla
           piattaforma.
         </p>
@@ -37,8 +37,8 @@ const amount = computed(() => {
         class="badge shrink-0"
         :class="
           notice?.requested
-            ? 'bg-sky-50 text-sky-800 ring-sky-200'
-            : 'bg-stone-100 text-stone-700 ring-stone-200'
+            ? 'bg-teal-soft text-teal ring-teal/25'
+            : 'bg-paper text-ink-soft ring-line'
         "
       >
         {{ notice?.requested ? "Richiesta" : "Nessuna richiesta" }}
@@ -46,39 +46,39 @@ const amount = computed(() => {
     </div>
 
     <div v-if="loading" class="mt-4 animate-pulse space-y-2">
-      <div class="h-4 w-1/2 rounded bg-stone-200"></div>
-      <div class="h-3 w-2/3 rounded bg-stone-200"></div>
+      <div class="h-4 w-1/2 rounded bg-paper-deep"></div>
+      <div class="h-3 w-2/3 rounded bg-paper-deep"></div>
     </div>
 
-    <p v-else-if="error" class="mt-4 text-sm text-stone-600">{{ error }}</p>
+    <p v-else-if="error" class="mt-4 text-sm text-ink-soft">{{ error }}</p>
 
     <template v-else-if="notice">
-      <p class="mt-4 text-lg font-semibold text-stone-900">{{ amount }}</p>
+      <p class="mt-4 text-lg font-semibold text-ink">{{ amount }}</p>
       <dl class="mt-3 space-y-2 text-xs">
         <div class="flex items-center justify-between gap-3">
-          <dt class="text-stone-500">Finder legale</dt>
-          <dd class="font-medium text-stone-800">
+          <dt class="text-ink-muted">Finder legale</dt>
+          <dd class="font-medium text-ink">
             {{ organisationLabel(notice.legalFinderId) }}
           </dd>
         </div>
         <div class="flex items-center justify-between gap-3">
-          <dt class="text-stone-500">Stato</dt>
-          <dd class="font-medium text-stone-800">
+          <dt class="text-ink-muted">Stato</dt>
+          <dd class="font-medium text-ink">
             {{ notice.paymentStatus === "outside_system" ? "Fuori piattaforma" : notice.paymentStatus }}
           </dd>
         </div>
         <div v-if="notice.shownToSearcherAt" class="flex items-center justify-between gap-3">
-          <dt class="text-stone-500">Mostrata a chi cerca</dt>
-          <dd class="font-medium text-stone-800">Sì</dd>
+          <dt class="text-ink-muted">Mostrata a chi cerca</dt>
+          <dd class="font-medium text-ink">Sì</dd>
         </div>
       </dl>
-      <p class="mt-3 text-[11px] leading-5 text-stone-500">
+      <p class="mt-3 text-[11px] leading-5 text-ink-muted">
         La piattaforma non incassa né garantisce la ricompensa: nessun pagamento
         avviene tramite l'app.
       </p>
     </template>
 
-    <p v-else class="mt-4 text-sm text-stone-600">
+    <p v-else class="mt-4 text-sm text-ink-soft">
       Nessuna richiesta di ricompensa registrata per questo oggetto.
     </p>
   </section>

@@ -146,29 +146,29 @@ async function transfer(item: InstitutionPickupItem) {
     <dl class="mt-5 grid grid-cols-3 gap-2.5 sm:gap-4">
       <div class="card-tight">
         <dt class="data-label">Da ritirare</dt>
-        <dd class="mt-1 text-2xl font-semibold text-stone-900">{{ total }}</dd>
+        <dd class="mt-1 font-display text-3xl leading-none text-ink">{{ total }}</dd>
       </div>
       <div class="card-tight">
         <dt class="data-label">Sensibili</dt>
-        <dd class="mt-1 text-2xl font-semibold text-rose-700">{{ sensitiveCount }}</dd>
+        <dd class="mt-1 font-display text-3xl leading-none text-rust">{{ sensitiveCount }}</dd>
       </div>
       <div class="card-tight">
         <dt class="data-label">In ritardo</dt>
-        <dd class="mt-1 text-2xl font-semibold text-amber-700">{{ overdueCount }}</dd>
+        <dd class="mt-1 font-display text-3xl leading-none text-ochre">{{ overdueCount }}</dd>
       </div>
     </dl>
 
     <div v-if="loading" class="mt-6 space-y-3">
       <div v-for="index in 2" :key="index" class="card animate-pulse">
-        <div class="h-4 w-1/3 rounded bg-stone-200"></div>
-        <div class="mt-3 h-3 w-2/3 rounded bg-stone-200"></div>
-        <div class="mt-2 h-3 w-1/2 rounded bg-stone-200"></div>
+        <div class="h-4 w-1/3 rounded bg-paper-deep"></div>
+        <div class="mt-3 h-3 w-2/3 rounded bg-paper-deep"></div>
+        <div class="mt-2 h-3 w-1/2 rounded bg-paper-deep"></div>
       </div>
     </div>
 
     <div v-else-if="groups.length === 0" class="empty-state mt-6">
-      <p class="text-sm font-medium text-stone-700">Nessun ritiro in attesa</p>
-      <p class="mt-1 text-xs text-stone-500">
+      <p class="text-sm font-medium text-ink-soft">Nessun ritiro in attesa</p>
+      <p class="mt-1 text-xs text-ink-muted">
         Quando scade il termine di custodia di un oggetto, comparirà qui.
       </p>
     </div>
@@ -178,7 +178,7 @@ async function transfer(item: InstitutionPickupItem) {
         v-for="group in groups"
         :key="`${group.intermediaryId}-${group.zone}`"
         class="card"
-        :class="group.sensitive ? 'border-rose-200' : ''"
+        :class="group.sensitive ? 'border-rust/30' : ''"
       >
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -186,33 +186,33 @@ async function transfer(item: InstitutionPickupItem) {
               <h2 class="section-title">{{ organisationLabel(group.intermediaryId) }}</h2>
               <span
                 v-if="group.sensitive"
-                class="badge bg-rose-50 text-rose-800 ring-rose-200"
+                class="badge bg-rust-soft text-rust ring-rust/30"
               >
                 Sensibile
               </span>
             </div>
-            <p class="mt-0.5 text-xs text-stone-500">
+            <p class="mt-0.5 text-xs text-ink-muted">
               {{ group.zone || "Zona non indicata" }} · {{ group.count }}
               {{ group.count === 1 ? "oggetto" : "oggetti" }}
             </p>
           </div>
-          <p class="font-mono text-[11px] text-stone-500">{{ group.intermediaryId }}</p>
+          <p class="font-mono text-[11px] text-ink-muted">{{ group.intermediaryId }}</p>
         </div>
 
         <div class="mt-3 space-y-2">
           <article
             v-for="item in group.items"
             :key="item.id"
-            class="rounded-xl border border-stone-200 bg-white px-3 py-3"
-            :class="item.sensitive ? 'border-rose-200 bg-rose-50/30' : ''"
+            class="rounded-md border border-line bg-paper-card px-3 py-3"
+            :class="item.sensitive ? 'border-rust/30 bg-rust-soft/30' : ''"
           >
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <p class="truncate text-sm font-semibold text-stone-900">
+                  <p class="truncate text-sm font-semibold text-ink">
                     {{ displayItemName(item) }}
                   </p>
-                  <span class="font-mono text-[11px] text-stone-500">{{ item.publicCode }}</span>
+                  <span class="font-mono text-[11px] text-ink-muted">{{ item.publicCode }}</span>
                 </div>
                 <div class="mt-1 flex flex-wrap items-center gap-1.5">
                   <StatusBadge
@@ -221,14 +221,14 @@ async function transfer(item: InstitutionPickupItem) {
                   />
                   <span
                     v-if="item.daysOverdue > 0"
-                    class="badge bg-amber-50 text-amber-800 ring-amber-200"
+                    class="badge bg-ochre-soft text-ochre ring-ochre/30"
                   >
                     {{ item.daysOverdue }}
                     {{ item.daysOverdue === 1 ? "giorno" : "giorni" }} di ritardo
                   </span>
-                  <span v-else class="text-xs text-stone-500">In scadenza oggi</span>
+                  <span v-else class="text-xs text-ink-muted">In scadenza oggi</span>
                 </div>
-                <p class="mt-1 text-xs text-stone-600">
+                <p class="mt-1 text-xs text-ink-soft">
                   Termine: {{ formatDateTime(item.dueAt) }} ·
                   {{ item.foundZone || "zona non indicata" }}
                 </p>

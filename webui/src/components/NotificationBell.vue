@@ -103,7 +103,7 @@ onBeforeUnmount(() => {
   <div class="relative">
     <button
       type="button"
-      class="relative flex h-9 w-9 items-center justify-center rounded-xl text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+      class="relative flex h-9 w-9 items-center justify-center rounded-md text-ink-muted transition hover:bg-paper hover:text-ink"
       :aria-label="unread > 0 ? `Notifiche, ${unread} non lette` : 'Notifiche'"
       :aria-expanded="open"
       aria-haspopup="true"
@@ -125,7 +125,7 @@ onBeforeUnmount(() => {
       </svg>
       <span
         v-if="unread > 0"
-        class="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold text-white"
+        class="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rust px-1 text-[10px] font-semibold text-paper"
       >
         {{ unread > 9 ? "9+" : unread }}
       </span>
@@ -134,58 +134,58 @@ onBeforeUnmount(() => {
     <template v-if="open">
       <div class="fixed inset-0 z-30" aria-hidden="true" @click="open = false"></div>
       <div
-        class="absolute right-0 z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl"
+        class="absolute right-0 z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-ink/20 bg-paper-card shadow-[4px_4px_0_#14110f]"
         role="dialog"
         aria-label="Notifiche"
       >
-        <div class="flex items-center justify-between border-b border-stone-100 px-4 py-3">
-          <p class="text-sm font-semibold text-stone-900">Notifiche</p>
+        <div class="flex items-center justify-between border-b border-line px-4 py-3">
+          <p class="text-sm font-semibold text-ink">Notifiche</p>
           <button type="button" class="link text-xs" :disabled="loading" @click="load()">
             {{ loading ? "Aggiorno…" : "Aggiorna" }}
           </button>
         </div>
 
-        <p v-if="error" class="border-b border-rose-100 bg-rose-50 px-4 py-2 text-xs text-rose-800">
+        <p v-if="error" class="border-b border-rust/20 bg-rust-soft px-4 py-2 text-xs text-rust">
           {{ error }}
         </p>
 
         <div v-if="loading && notifications.length === 0" class="space-y-2 p-4">
-          <div v-for="index in 3" :key="index" class="h-10 animate-pulse rounded-lg bg-stone-100"></div>
+          <div v-for="index in 3" :key="index" class="h-10 animate-pulse rounded-lg bg-paper"></div>
         </div>
 
-        <p v-else-if="notifications.length === 0" class="px-4 py-8 text-center text-sm text-stone-500">
+        <p v-else-if="notifications.length === 0" class="px-4 py-8 text-center text-sm text-ink-muted">
           Nessuna notifica.
         </p>
 
-        <ul v-else class="max-h-96 divide-y divide-stone-100 overflow-y-auto">
+        <ul v-else class="max-h-96 divide-y divide-line overflow-y-auto">
           <li v-for="notification in notifications" :key="notification.id">
             <button
               type="button"
-              class="flex w-full gap-2.5 px-4 py-3 text-left transition hover:bg-stone-50"
-              :class="{ 'bg-emerald-50/40': !notification.read }"
+              class="flex w-full gap-2.5 px-4 py-3 text-left transition hover:bg-paper"
+              :class="{ 'bg-vermilion-soft/40': !notification.read }"
               @click="markRead(notification)"
             >
               <span
                 class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                :class="notification.read ? 'bg-stone-200' : 'bg-emerald-600'"
+                :class="notification.read ? 'bg-paper-deep' : 'bg-vermilion'"
                 aria-hidden="true"
               ></span>
               <span class="min-w-0 flex-1">
                 <span class="flex items-baseline justify-between gap-2">
-                  <span class="text-sm font-medium text-stone-900">
+                  <span class="text-sm font-medium text-ink">
                     {{ notificationTypeLabels[notification.type] ?? notification.type }}
                   </span>
-                  <span class="shrink-0 text-[10px] text-stone-500">
+                  <span class="shrink-0 text-[10px] text-ink-muted">
                     {{ formatDateTime(notification.createdAt) }}
                   </span>
                 </span>
                 <span
                   v-if="payloadSummary(notification)"
-                  class="mt-0.5 block truncate font-mono text-[10px] text-stone-500"
+                  class="mt-0.5 block truncate font-mono text-[10px] text-ink-muted"
                 >
                   {{ payloadSummary(notification) }}
                 </span>
-                <span v-if="!notification.read" class="mt-1 block text-[10px] font-medium text-emerald-700">
+                <span v-if="!notification.read" class="mt-1 block text-[10px] font-medium text-vermilion-dark">
                   {{ markingId === notification.id ? "Segno come letta…" : "Segna come letta" }}
                 </span>
               </span>

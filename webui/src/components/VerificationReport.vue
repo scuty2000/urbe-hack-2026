@@ -38,13 +38,13 @@ function questionLabel(key: string): string {
 const decisionTone = computed(() => {
   switch (props.report.decision) {
     case "auto_approve":
-      return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+      return "bg-olive-soft text-olive ring-olive/30";
     case "reject":
-      return "bg-rose-50 text-rose-800 ring-rose-200";
+      return "bg-rust-soft text-rust ring-rust/30";
     case "more_info":
-      return "bg-amber-50 text-amber-800 ring-amber-200";
+      return "bg-ochre-soft text-ochre ring-ochre/30";
     default:
-      return "bg-sky-50 text-sky-800 ring-sky-200";
+      return "bg-teal-soft text-teal ring-teal/25";
   }
 });
 
@@ -64,7 +64,7 @@ const questions = computed(() =>
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 class="section-title">Relazione di verifica</h2>
-        <p class="mt-1 text-xs text-stone-500">
+        <p class="mt-1 text-xs text-ink-muted">
           Domande, risposte e confidenza del motore. Nessun valore privato del
           profilo viene mostrato.
         </p>
@@ -85,7 +85,7 @@ const questions = computed(() =>
       </div>
     </dl>
 
-    <p v-if="report.rationale" class="mt-3 rounded-xl bg-stone-50 px-3 py-2 text-xs leading-5 text-stone-700">
+    <p v-if="report.rationale" class="mt-3 rounded-md bg-paper px-3 py-2 text-xs leading-5 text-ink-soft">
       {{ report.rationale }}
     </p>
 
@@ -93,35 +93,35 @@ const questions = computed(() =>
       <span
         v-for="flag in report.flags"
         :key="flag"
-        class="badge bg-amber-50 text-amber-800 ring-amber-200"
+        class="badge bg-ochre-soft text-ochre ring-ochre/30"
       >
         {{ verificationFlagLabels[flag] ?? flag }}
       </span>
     </div>
 
-    <div v-if="questions.length > 0" class="mt-4 overflow-hidden rounded-xl border border-stone-200">
-      <table class="min-w-full divide-y divide-stone-200 text-sm">
-        <thead class="bg-stone-50">
+    <div v-if="questions.length > 0" class="mt-4 overflow-hidden rounded-md border border-line">
+      <table class="min-w-full divide-y divide-line text-sm">
+        <thead class="bg-paper">
           <tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold tracking-wide text-stone-500 uppercase">
+            <th class="px-3 py-2 text-left text-xs font-semibold tracking-wide text-ink-muted uppercase">
               Domanda
             </th>
-            <th class="px-3 py-2 text-left text-xs font-semibold tracking-wide text-stone-500 uppercase">
+            <th class="px-3 py-2 text-left text-xs font-semibold tracking-wide text-ink-muted uppercase">
               Risposta
             </th>
-            <th class="px-3 py-2 text-right text-xs font-semibold tracking-wide text-stone-500 uppercase">
+            <th class="px-3 py-2 text-right text-xs font-semibold tracking-wide text-ink-muted uppercase">
               Confidenza
             </th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-stone-100 bg-white">
+        <tbody class="divide-y divide-line bg-paper-card">
           <tr v-for="question in questions" :key="question.key">
             <td class="px-3 py-2">
-              <p class="font-medium text-stone-800">{{ question.label }}</p>
-              <p class="font-mono text-[10px] text-stone-500">{{ question.type }}</p>
+              <p class="font-medium text-ink">{{ question.label }}</p>
+              <p class="font-mono text-[10px] text-ink-muted">{{ question.type }}</p>
             </td>
-            <td class="px-3 py-2 text-stone-700">{{ question.answer }}</td>
-            <td class="px-3 py-2 text-right text-xs text-stone-600">
+            <td class="px-3 py-2 text-ink-soft">{{ question.answer }}</td>
+            <td class="px-3 py-2 text-right text-xs text-ink-soft">
               {{ question.probability ? percent(question.probability.confidence ?? question.probability.score) : "—" }}
             </td>
           </tr>
@@ -130,25 +130,25 @@ const questions = computed(() =>
     </div>
 
     <div v-if="report.reasons.length > 0" class="mt-4">
-      <h3 class="text-xs font-semibold tracking-wide text-stone-500 uppercase">Motivazioni</h3>
-      <ul class="mt-1.5 space-y-1 text-xs leading-5 text-stone-700">
+      <h3 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Motivazioni</h3>
+      <ul class="mt-1.5 space-y-1 text-xs leading-5 text-ink-soft">
         <li v-for="reason in report.reasons" :key="reason" class="flex gap-2">
-          <span class="text-stone-500" aria-hidden="true">•</span>
+          <span class="text-ink-muted" aria-hidden="true">•</span>
           <span>{{ verificationReasonLabel(reason) }}</span>
         </li>
       </ul>
     </div>
 
     <div v-if="report.evidence.length > 0" class="mt-4">
-      <h3 class="text-xs font-semibold tracking-wide text-stone-500 uppercase">Prove</h3>
-      <ul class="mt-1.5 space-y-1 text-xs text-stone-700">
+      <h3 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">Prove</h3>
+      <ul class="mt-1.5 space-y-1 text-xs text-ink-soft">
         <li v-for="evidence in report.evidence" :key="evidence" class="font-mono">
           {{ evidence }}
         </li>
       </ul>
     </div>
 
-    <p v-if="report.flags.length === 0 && report.reasons.length === 0" class="mt-4 text-xs text-stone-500">
+    <p v-if="report.flags.length === 0 && report.reasons.length === 0" class="mt-4 text-xs text-ink-muted">
       Nessun segnale o motivazione aggiuntiva.
     </p>
   </section>

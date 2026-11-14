@@ -203,40 +203,40 @@ async function confirmRefuse(item: Item) {
     <dl class="mt-5 grid grid-cols-3 gap-2.5 sm:gap-4">
       <div class="card-tight">
         <dt class="data-label">In attesa</dt>
-        <dd class="mt-1 text-2xl font-semibold text-amber-700">{{ pending.length }}</dd>
+        <dd class="mt-1 font-display text-3xl leading-none text-ochre">{{ pending.length }}</dd>
       </div>
       <div class="card-tight">
         <dt class="data-label">In custodia</dt>
-        <dd class="mt-1 text-2xl font-semibold text-emerald-700">{{ inCustody.length }}</dd>
+        <dd class="mt-1 font-display text-3xl leading-none text-olive-dark">{{ inCustody.length }}</dd>
       </div>
       <div class="card-tight">
         <dt class="data-label">Sensibili</dt>
-        <dd class="mt-1 text-2xl font-semibold text-rose-700">{{ sensitiveCount }}</dd>
+        <dd class="mt-1 font-display text-3xl leading-none text-rust">{{ sensitiveCount }}</dd>
       </div>
     </dl>
 
     <section class="mt-7">
       <div class="flex items-baseline justify-between gap-3">
         <h2 class="section-title">Da accettare</h2>
-        <span class="text-xs text-stone-500">{{ pending.length }} oggetti</span>
+        <span class="text-xs text-ink-muted">{{ pending.length }} oggetti</span>
       </div>
 
       <div v-if="loading" class="mt-3 grid gap-3 sm:grid-cols-2">
         <div v-for="index in 2" :key="index" class="card-tight animate-pulse">
           <div class="flex gap-3">
-            <div class="h-16 w-16 rounded-lg bg-stone-200"></div>
+            <div class="h-16 w-16 rounded-lg bg-paper-deep"></div>
             <div class="flex-1 space-y-2">
-              <div class="h-3 w-2/3 rounded bg-stone-200"></div>
-              <div class="h-3 w-1/3 rounded bg-stone-200"></div>
-              <div class="h-3 w-1/2 rounded bg-stone-200"></div>
+              <div class="h-3 w-2/3 rounded bg-paper-deep"></div>
+              <div class="h-3 w-1/3 rounded bg-paper-deep"></div>
+              <div class="h-3 w-1/2 rounded bg-paper-deep"></div>
             </div>
           </div>
         </div>
       </div>
 
       <div v-else-if="pending.length === 0" class="empty-state mt-3">
-        <p class="text-sm font-medium text-stone-700">Nessun oggetto in attesa</p>
-        <p class="mt-1 text-xs text-stone-500">
+        <p class="text-sm font-medium text-ink-soft">Nessun oggetto in attesa</p>
+        <p class="mt-1 text-xs text-ink-muted">
           Le nuove segnalazioni dei finder compariranno qui.
         </p>
       </div>
@@ -244,7 +244,7 @@ async function confirmRefuse(item: Item) {
       <div v-else class="mt-3 grid gap-3 sm:grid-cols-2">
         <article v-for="item in pending" :key="item.id" class="card-tight">
           <div class="flex gap-3">
-            <div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+            <div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-paper">
               <img
                 v-if="item.photos.length"
                 :src="item.photos[0]"
@@ -254,20 +254,20 @@ async function confirmRefuse(item: Item) {
               />
               <span
                 v-else
-                class="flex h-full w-full items-center justify-center text-xs text-stone-600"
+                class="flex h-full w-full items-center justify-center text-xs text-ink-soft"
                 >Nessuna foto</span
               >
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-start justify-between gap-2">
-                <p class="truncate text-sm font-semibold text-stone-900">
+                <p class="truncate text-sm font-semibold text-ink">
                   {{ displayItemName(item) }}
                 </p>
-                <span class="shrink-0 font-mono text-[11px] text-stone-500">
+                <span class="shrink-0 font-mono text-[11px] text-ink-muted">
                   {{ item.publicCode }}
                 </span>
               </div>
-              <p class="mt-0.5 text-xs text-stone-600">
+              <p class="mt-0.5 text-xs text-ink-soft">
                 {{ item.foundZone || "Zona non indicata" }} ·
                 {{ formatDateTime(item.foundAt) }}
               </p>
@@ -279,7 +279,7 @@ async function confirmRefuse(item: Item) {
 
           <div
             v-if="item.sensitive"
-            class="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900"
+            class="mt-3 rounded-lg border border-rust/30 bg-rust-soft px-3 py-2 text-xs text-rust"
           >
             Oggetto sensibile: dopo l'accettazione hai 24 ore di custodia.
           </div>
@@ -324,7 +324,7 @@ async function confirmRefuse(item: Item) {
             >
               <span
                 v-if="busyId === item.id"
-                class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                class="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"
                 aria-hidden="true"
               ></span>
               {{ busyId === item.id ? "Accetto…" : "Accetta custodia" }}
@@ -351,17 +351,17 @@ async function confirmRefuse(item: Item) {
     <section class="mt-8">
       <div class="flex items-baseline justify-between gap-3">
         <h2 class="section-title">In custodia</h2>
-        <span class="text-xs text-stone-500">{{ inCustody.length }} oggetti</span>
+        <span class="text-xs text-ink-muted">{{ inCustody.length }} oggetti</span>
       </div>
 
       <div v-if="loading" class="card mt-3 animate-pulse">
-        <div class="h-4 w-1/3 rounded bg-stone-200"></div>
-        <div class="mt-3 h-3 w-2/3 rounded bg-stone-200"></div>
+        <div class="h-4 w-1/3 rounded bg-paper-deep"></div>
+        <div class="mt-3 h-3 w-2/3 rounded bg-paper-deep"></div>
       </div>
 
       <div v-else-if="inCustody.length === 0" class="empty-state mt-3">
-        <p class="text-sm font-medium text-stone-700">Nessun oggetto in custodia</p>
-        <p class="mt-1 text-xs text-stone-500">
+        <p class="text-sm font-medium text-ink-soft">Nessun oggetto in custodia</p>
+        <p class="mt-1 text-xs text-ink-muted">
           Accetta una segnalazione per iniziare a custodire un oggetto.
         </p>
       </div>
@@ -375,7 +375,7 @@ async function confirmRefuse(item: Item) {
           class="card-tight block"
         >
           <div class="flex gap-3">
-            <div class="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+            <div class="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-paper">
               <img
                 v-if="item.photos.length"
                 :src="item.photos[0]"
@@ -386,14 +386,14 @@ async function confirmRefuse(item: Item) {
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-start justify-between gap-2">
-                <p class="truncate text-sm font-semibold text-stone-900">
+                <p class="truncate text-sm font-semibold text-ink">
                   {{ displayItemName(item) }}
                 </p>
-                <span class="shrink-0 font-mono text-[11px] text-stone-500">
+                <span class="shrink-0 font-mono text-[11px] text-ink-muted">
                   {{ item.publicCode }}
                 </span>
               </div>
-              <p class="mt-0.5 text-xs text-stone-600">
+              <p class="mt-0.5 text-xs text-ink-soft">
                 {{ item.foundZone || "Zona non indicata" }}
               </p>
               <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -403,8 +403,8 @@ async function confirmRefuse(item: Item) {
                   class="badge"
                   :class="
                     (daysLeft(item) ?? 0) <= 1
-                      ? 'bg-rose-50 text-rose-800 ring-rose-200'
-                      : 'bg-stone-100 text-stone-700 ring-stone-200'
+                      ? 'bg-rust-soft text-rust ring-rust/30'
+                      : 'bg-paper text-ink-soft ring-line'
                   "
                 >
                   {{ remainingLabel(item) }}
@@ -417,31 +417,31 @@ async function confirmRefuse(item: Item) {
 
       <!-- Desktop table -->
       <div v-if="!loading && inCustody.length > 0" class="card mt-3 hidden overflow-hidden p-0 md:block">
-        <table class="min-w-full divide-y divide-stone-200 text-sm">
-          <thead class="bg-stone-50">
+        <table class="min-w-full divide-y divide-line text-sm">
+          <thead class="bg-paper">
             <tr>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-stone-500">
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 Oggetto
               </th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-stone-500">
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 Codice
               </th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-stone-500">
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 Stato
               </th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-stone-500">
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 Termine
               </th>
-              <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-stone-500">
+              <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 Azioni
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-stone-100 bg-white">
-            <tr v-for="item in inCustody" :key="item.id" class="hover:bg-stone-50/60">
+          <tbody class="divide-y divide-line bg-paper-card">
+            <tr v-for="item in inCustody" :key="item.id" class="hover:bg-paper/60">
               <td class="px-4 py-3">
                 <div class="flex items-center gap-3">
-                  <div class="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+                  <div class="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-paper">
                     <img
                       v-if="item.photos.length"
                       :src="item.photos[0]"
@@ -451,25 +451,25 @@ async function confirmRefuse(item: Item) {
                     />
                   </div>
                   <div class="min-w-0">
-                    <p class="truncate font-medium text-stone-900">
+                    <p class="truncate font-medium text-ink">
                       {{ displayItemName(item) }}
                     </p>
-                    <p class="text-xs text-stone-500">
+                    <p class="text-xs text-ink-muted">
                       {{ item.foundZone || "Zona non indicata" }}
                     </p>
                   </div>
                 </div>
               </td>
-              <td class="px-4 py-3 font-mono text-xs text-stone-600">{{ item.publicCode }}</td>
+              <td class="px-4 py-3 font-mono text-xs text-ink-soft">{{ item.publicCode }}</td>
               <td class="px-4 py-3">
                 <StatusBadge :status="item.status" :sensitive="item.sensitive" />
               </td>
               <td class="px-4 py-3">
-                <p class="text-xs text-stone-700">{{ deadlineLabel(item) }}</p>
+                <p class="text-xs text-ink-soft">{{ deadlineLabel(item) }}</p>
                 <p
                   v-if="daysLeft(item) !== null"
                   class="mt-0.5 text-xs font-semibold"
-                  :class="(daysLeft(item) ?? 0) <= 1 ? 'text-rose-700' : 'text-stone-500'"
+                  :class="(daysLeft(item) ?? 0) <= 1 ? 'text-rust' : 'text-ink-muted'"
                 >
                   {{ remainingLabel(item) }}
                 </p>
@@ -487,7 +487,7 @@ async function confirmRefuse(item: Item) {
         </table>
       </div>
 
-      <p v-if="missingDeadlines" class="mt-2 text-xs text-amber-700">
+      <p v-if="missingDeadlines" class="mt-2 text-xs text-ochre">
         Per alcuni oggetti il server non ha restituito il termine di custodia:
         il valore è mostrato come “Termine non disponibile”. Aggiorna la
         dashboard dopo aver accettato la custodia.
