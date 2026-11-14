@@ -13,7 +13,13 @@ services:
     volumes: ["./data/qdrant:/qdrant/storage"]
   tunnel:
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate --url http://api:3000
+    # Named tunnel: its public hostnames are configured in the Cloudflare
+    # dashboard and routed to http://api:3000. The token stays in .env and is
+    # passed to cloudflared as an environment variable (TUNNEL_TOKEN), never in
+    # the committed command line.
+    command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [api]
+    restart: unless-stopped
     profiles: ["tunnel"]

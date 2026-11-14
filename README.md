@@ -33,6 +33,33 @@ All error responses are JSON: `{"error": "<message>"}`.
 
 ---
 
+## Demo (oggetti smarriti)
+
+This repository now runs the full lost-and-found MVP: a Vue UI embedded in the
+Go binary, a SQLite registry, finder/intermediary/searcher/institution roles,
+privacy-safe claim verification and a single-use pickup pass.
+
+```bash
+# local development with the demo dataset
+scripts/dev-up.sh
+
+# or the container stack
+docker compose up --build -d api qdrant
+open http://localhost:3000/dashboard/
+```
+
+- 3-minute demo script: [`docs/demo-script.md`](docs/demo-script.md)
+- Submission checklist: [`docs/submission.md`](docs/submission.md)
+- Full API end-to-end test: `go test ./tests/e2e/... -v`
+- Reset between rehearsals: `scripts/demo-reset.sh`
+- Optional public URL: `scripts/tunnel.sh` (requires a Cloudflare tunnel token)
+
+The demo works without DeepSeek, D3, embeddings or a payment provider: search
+falls back to SQLite, claims use the local scorer and the agent runs its
+deterministic mock.
+
+---
+
 ## Project structure
 
 ```
