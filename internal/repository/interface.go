@@ -57,6 +57,16 @@ type ItemRepository interface {
 	GetItemByID(ctx context.Context, id string) (record.ItemRecord, error)
 	// UpdateItem applies a partial update: zero-valued fields are left as-is.
 	UpdateItem(ctx context.Context, item record.ItemRecord) error
+	// UpdateItemFields is the map-based escape hatch for writing zero values
+	// (sensitive=false, custodian_id="", transferred_at=nil). Column allowlist:
+	// public_code, source, custody_mode, status, legal_finder_id,
+	// rights_assigned_at, category, brand, model, color, condition,
+	// private_profile, photos, found_at, found_lat, found_lng, found_zone,
+	// found_notes, custodian_id, risk_tier, sensitive, transferred_at,
+	// legal_term_start, offered_to_finder_at, disposed_at, updated_at.
+	// Unknown columns or an empty map return errs.ErrInvalidInput; updated_at
+	// defaults to now. Timestamps are stored in UTC.
+	UpdateItemFields(ctx context.Context, id string, fields map[string]any) error
 	ListItemsByCustodian(ctx context.Context, custodianID string) ([]record.ItemRecord, error)
 	SearchItems(ctx context.Context, filter ItemFilter) ([]record.ItemRecord, error)
 	// ListPickupDue returns items whose current custody is open and due at or
@@ -75,6 +85,12 @@ type CustodyRepository interface {
 	// the most recently inserted row when every custody is closed.
 	GetCustodyByItemID(ctx context.Context, itemID string) (record.CustodyRecord, error)
 	UpdateCustody(ctx context.Context, custody record.CustodyRecord) error
+	// UpdateCustodyFields writes zero values (accepted_at=nil, closed_at=nil,
+	// custodian_id=""). Allowlist: custodian_type, custodian_id,
+	// legal_finder_id, rights_assigned_at, approval_authority,
+	// max_custody_days, accepted_at, due_at, closed_at. Unknown columns or an
+	// empty map return errs.ErrInvalidInput; timestamps are stored in UTC.
+	UpdateCustodyFields(ctx context.Context, id string, fields map[string]any) error
 	CreateCustodyEvent(ctx context.Context, event record.CustodyEventRecord) error
 	// ListCustodyEvents returns the item timeline in chronological order.
 	ListCustodyEvents(ctx context.Context, itemID string) ([]record.CustodyEventRecord, error)
@@ -85,6 +101,11 @@ type ClaimRepository interface {
 	CreateClaim(ctx context.Context, claim record.ClaimRecord) error
 	GetClaimByID(ctx context.Context, id string) (record.ClaimRecord, error)
 	UpdateClaim(ctx context.Context, claim record.ClaimRecord) error
+	// UpdateClaimFields writes zero values (approval_by="", approved_at=nil,
+	// confidence=0). Allowlist: status, return_channel, confidence, evidence,
+	// approval_by, approved_at, pickup_pass_id, reward_notice_id. Unknown
+	// columns or an empty map return errs.ErrInvalidInput.
+	UpdateClaimFields(ctx context.Context, id string, fields map[string]any) error
 	CreateVerificationSession(ctx context.Context, session record.VerificationSessionRecord) error
 	// GetVerificationSessionByClaimID returns the most recent session.
 	GetVerificationSessionByClaimID(ctx context.Context, claimID string) (record.VerificationSessionRecord, error)
@@ -98,13 +119,22 @@ type PassRepository interface {
 	GetPassByID(ctx context.Context, id string) (record.PassRecord, error)
 	GetPassByTokenHash(ctx context.Context, tokenHash string) (record.PassRecord, error)
 	UpdatePass(ctx context.Context, pass record.PassRecord) error
+	// UpdatePassFields writes zero values (identity_required=false,
+	// payment_id=""). Allowlist: searcher_id, custodian_id, token_hash,
+	// issued_at, expires_at, status, identity_required, return_channel,
+	// payment_id, approval_id, fee_id, reward_notice_id. claim_id and item_id
+	// are immutable. Unknown columns or an empty map return
+	// errs.ErrInvalidInput; issued_at/expires_at cannot be null.
+	UpdatePassFields(ctx context.Context, id string, fields map[string]any) error
 	// IssuePass atomically inserts the pass and links it onto its claim.
 	IssuePass(ctx context.Context, pass record.PassRecord) error
 	// RevokePassesByItem revokes every still-open pass for the item except
 	// exceptPassID (pass "" to revoke all) and returns the number revoked.
 	RevokePassesByItem(ctx context.Context, itemID, exceptPassID string) (int64, error)
 	// RedeemPass atomically marks the pass redeemed, the item returned and the
-	// claim handed over.
+	// claim handed over. itemID and claimID are derived from the stored pass;
+	// the arguments are optional assertions (pass "" to skip) and a mismatch is
+	// errs.ErrInvalidInput. A non-open pass is errs.ErrConflict.
 	RedeemPass(ctx context.Context, passID, itemID, claimID string, at time.Time) error
 }
 
@@ -115,6 +145,10 @@ type FeeRepository interface {
 	// GetFeeByItemID returns the most recently created fee for the item.
 	GetFeeByItemID(ctx context.Context, itemID string) (record.FeeRecord, error)
 	UpdateFee(ctx context.Context, fee record.FeeRecord) error
+	// UpdateFeeFields writes zero values (amount_cents=0, pa_tariff_id="").
+	// Allowlist: applies, pa_tariff_id, custody_days, amount_cents, currency,
+	// status. Unknown columns or an empty map return errs.ErrInvalidInput.
+	UpdateFeeFields(ctx context.Context, id string, fields map[string]any) error
 
 	CreatePayment(ctx context.Context, payment record.PaymentRecord) error
 	GetPaymentByID(ctx context.Context, id string) (record.PaymentRecord, error)
@@ -125,6 +159,11 @@ type FeeRepository interface {
 	// GetRewardNoticeByItemID returns the most recently created notice.
 	GetRewardNoticeByItemID(ctx context.Context, itemID string) (record.RewardNoticeRecord, error)
 	UpdateRewardNotice(ctx context.Context, notice record.RewardNoticeRecord) error
+	// UpdateRewardNoticeFields writes zero values (requested=false,
+	// amount_cents=0, shown_to_searcher_at=nil). Allowlist: legal_finder_id,
+	// requested, amount_cents, shown_to_searcher_at, payment_status. Unknown
+	// columns or an empty map return errs.ErrInvalidInput.
+	UpdateRewardNoticeFields(ctx context.Context, id string, fields map[string]any) error
 }
 
 // NotificationRepository persists in-app notifications.

@@ -63,6 +63,16 @@ func (r *repo) UpdatePass(ctx context.Context, pass record.PassRecord) error {
 	return nil
 }
 
+// UpdatePassFields is the map-based escape hatch for values that a struct
+// update cannot write: identity_required=false, payment_id="", approval_id="".
+// Allowed columns are listed in passUpdateColumns.
+func (r *repo) UpdatePassFields(ctx context.Context, id string, fields map[string]any) error {
+	if err := rejectNilColumns(fields, "issued_at", "expires_at"); err != nil {
+		return fmt.Errorf("UpdatePassFields: %w", err)
+	}
+	return r.updateFields(ctx, "UpdatePassFields", "pickup_passes", id, fields, passUpdateColumns)
+}
+
 // IssuePass inserts the pass and links it onto its claim atomically, so a pass
 // can never exist without the claim pointing at it.
 func (r *repo) IssuePass(ctx context.Context, pass record.PassRecord) error {
@@ -102,40 +112,59 @@ func (r *repo) RevokePassesByItem(ctx context.Context, itemID, exceptPassID stri
 }
 
 // RedeemPass performs the handover state change: pass redeemed, item returned,
-// claim handed over. All three writes happen in one transaction, and an
-// already redeemed/revoked/expired pass is a conflict, which enforces the
-// single-use rule at the storage layer.
+// claim handed over. All three writes happen in one transaction.
+//
+// The pass row is the source of truth: item and claim are derived from
+// pass.ItemID/pass.ClaimID. The itemID and claimID arguments are optional
+// assertions (pass "" to skip); when provided they must match the stored pass,
+// otherwise errs.ErrInvalidInput is returned. This prevents a caller (or a
+// tampered token) from redeeming one pass while closing a different item or
+// claim. An already redeemed/revoked/expired pass is errs.ErrConflict, which
+// enforces the single-use rule at the storage layer.
 func (r *repo) RedeemPass(ctx context.Context, passID, itemID, claimID string, at time.Time) error {
 	at = at.UTC()
 	return r.gormdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var pass record.PassRecord
+		if err := tx.Where("id = ?", passID).First(&pass).Error; err != nil {
+			return wrapErr("RedeemPass load pass", err)
+		}
+		if itemID != "" && itemID != pass.ItemID {
+			return fmt.Errorf("RedeemPass item %q does not match pass item %q: %w",
+				itemID, pass.ItemID, errs.ErrInvalidInput)
+		}
+		if claimID != "" && claimID != pass.ClaimID {
+			return fmt.Errorf("RedeemPass claim %q does not match pass claim %q: %w",
+				claimID, pass.ClaimID, errs.ErrInvalidInput)
+		}
+
 		passRes := tx.Model(&record.PassRecord{}).
-			Where("id = ? AND status IN ?", passID, openPassStatuses).
+			Where("id = ? AND status IN ?", pass.ID, openPassStatuses).
 			Update("status", "redeemed")
 		if passRes.Error != nil {
 			return wrapErr("RedeemPass pass", passRes.Error)
 		}
 		if passRes.RowsAffected == 0 {
-			return fmt.Errorf("RedeemPass pass id=%s: %w", passID, errs.ErrConflict)
+			return fmt.Errorf("RedeemPass pass id=%s: %w", pass.ID, errs.ErrConflict)
 		}
 
 		itemRes := tx.Model(&record.ItemRecord{}).
-			Where("id = ?", itemID).
+			Where("id = ?", pass.ItemID).
 			Updates(map[string]any{"status": "returned", "updated_at": at})
 		if itemRes.Error != nil {
 			return wrapErr("RedeemPass item", itemRes.Error)
 		}
 		if itemRes.RowsAffected == 0 {
-			return notFound("RedeemPass item", itemID)
+			return notFound("RedeemPass item", pass.ItemID)
 		}
 
 		claimRes := tx.Model(&record.ClaimRecord{}).
-			Where("id = ?", claimID).
+			Where("id = ?", pass.ClaimID).
 			Update("status", "handed_over")
 		if claimRes.Error != nil {
 			return wrapErr("RedeemPass claim", claimRes.Error)
 		}
 		if claimRes.RowsAffected == 0 {
-			return notFound("RedeemPass claim", claimID)
+			return notFound("RedeemPass claim", pass.ClaimID)
 		}
 		return nil
 	})

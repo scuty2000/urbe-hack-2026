@@ -58,6 +58,7 @@ func TestMigrationsCreateLostFoundTables(t *testing.T) {
 	wantIndexes := []string{
 		"idx_items_status_category_zone",
 		"idx_custody_due_at",
+		"idx_custody_open_item",
 		"idx_claims_item_id",
 		"idx_pickup_passes_token_hash",
 		"idx_sessions_expires_at",
@@ -476,25 +477,44 @@ func TestCustodyLifecycleAndEvents(t *testing.T) {
 	if err := db.CreateCustody(ctx, first); err != nil {
 		t.Fatal(err)
 	}
+
+	// §7.3: at most one open custody per item. The partial unique index
+	// enforces it even when a future caller forgets to close the old row.
+	if err := db.CreateCustody(ctx, record.CustodyRecord{
+		ID: "custody-conflict", ItemID: "item-wallet", CustodianType: "institution",
+	}); !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("second open custody: want ErrConflict, got %v", err)
+	}
+
+	got, err := db.GetCustodyByItemID(ctx, "item-wallet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "custody-1" {
+		t.Fatalf("current custody: got %q", got.ID)
+	}
+
+	// Transfer closes the old row, then opens the new one.
 	closed := now.Add(time.Hour)
+	if err := db.UpdateCustody(ctx, record.CustodyRecord{ID: "custody-1", ClosedAt: &closed}); err != nil {
+		t.Fatal(err)
+	}
 	second := record.CustodyRecord{
 		ID: "custody-2", ItemID: "item-wallet", CustodianType: "institution", CustodianID: "institution-demo",
 		AcceptedAt: &closed,
 	}
 	if err := db.CreateCustody(ctx, second); err != nil {
-		t.Fatal(err)
+		t.Fatalf("custody after closing the previous one: %v", err)
 	}
-
-	// GetCustodyByItemID returns the current (latest open) custody row.
-	got, err := db.GetCustodyByItemID(ctx, "item-wallet")
+	got, err = db.GetCustodyByItemID(ctx, "item-wallet")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.ID != "custody-2" {
-		t.Fatalf("current custody: got %q", got.ID)
+		t.Fatalf("current custody after transfer: got %q", got.ID)
 	}
 
-	// Closing the newest row falls back to the previous open row.
+	// With every row closed, the most recently inserted row is returned.
 	if err := db.UpdateCustody(ctx, record.CustodyRecord{ID: "custody-2", ClosedAt: &closed}); err != nil {
 		t.Fatal(err)
 	}
@@ -502,8 +522,8 @@ func TestCustodyLifecycleAndEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != "custody-1" {
-		t.Fatalf("open custody: got %q", got.ID)
+	if got.ID != "custody-2" {
+		t.Fatalf("closed custody fallback: got %q", got.ID)
 	}
 
 	events := []record.CustodyEventRecord{
@@ -651,13 +671,21 @@ func TestPassIssueRevokeAndRedeem(t *testing.T) {
 		t.Fatalf("pass: %+v", got)
 	}
 
-	// A second pass on the same item is revoked when the custodian is replaced.
+	// A second pass on the same item is linked to the claim and then the old
+	// one is revoked, as after a custodian transfer.
 	second := pass
 	second.ID = "pass-2"
 	second.TokenHash = "hash-2"
 	second.CustodianID = "institution-demo"
-	if err := db.CreatePass(ctx, second); err != nil {
+	if err := db.IssuePass(ctx, second); err != nil {
 		t.Fatal(err)
+	}
+	claim, err = db.GetClaimByID(ctx, "claim-phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.PickupPassID != "pass-2" {
+		t.Fatalf("claim pickup_pass_id after re-issue: %q", claim.PickupPassID)
 	}
 	revoked, err := db.RevokePassesByItem(ctx, "item-phone", "pass-2")
 	if err != nil {
@@ -674,8 +702,32 @@ func TestPassIssueRevokeAndRedeem(t *testing.T) {
 		t.Fatalf("revoked pass status: %q", got.Status)
 	}
 
-	// Redeeming updates pass, item and claim in one transaction.
-	if err := db.RedeemPass(ctx, "pass-2", "item-phone", "claim-phone", now.Add(5*time.Minute)); err != nil {
+	// Item and claim are derived from the pass. Supplying a different item or
+	// claim is rejected before any state changes.
+	if err := db.RedeemPass(ctx, "pass-2", "other-item", "claim-phone", now.Add(4*time.Minute)); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("item mismatch: want ErrInvalidInput, got %v", err)
+	}
+	if err := db.RedeemPass(ctx, "pass-2", "item-phone", "other-claim", now.Add(4*time.Minute)); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("claim mismatch: want ErrInvalidInput, got %v", err)
+	}
+	got, err = db.GetPassByTokenHash(ctx, "hash-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "issued" {
+		t.Fatalf("mismatch must not change pass: %q", got.Status)
+	}
+	item, err := db.GetItemByID(ctx, "item-phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != "in_custody" {
+		t.Fatalf("mismatch must not change item: %q", item.Status)
+	}
+
+	// Redeeming updates pass, item and claim in one transaction; empty
+	// assertions mean "trust the stored pass".
+	if err := db.RedeemPass(ctx, "pass-2", "", "", now.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	got, err = db.GetPassByTokenHash(ctx, "hash-2")
@@ -685,7 +737,7 @@ func TestPassIssueRevokeAndRedeem(t *testing.T) {
 	if got.Status != "redeemed" {
 		t.Fatalf("redeemed pass status: %q", got.Status)
 	}
-	item, err := db.GetItemByID(ctx, "item-phone")
+	item, err = db.GetItemByID(ctx, "item-phone")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -942,6 +994,180 @@ func TestTariffsAndLostReports(t *testing.T) {
 	}
 	if len(open) != 1 || open[0].ID != "lr-1" {
 		t.Fatalf("ListLostReports open: %+v", open)
+	}
+}
+
+func TestFieldUpdatesCanWriteZeroValues(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	cest := time.FixedZone("CEST", 2*60*60)
+	cestTime := time.Date(2026, 11, 13, 12, 0, 0, 0, cest)
+	transferredAt := now
+	approvedAt := now
+	dueAt := now.Add(48 * time.Hour)
+	shownAt := now
+
+	if err := db.CreateItem(ctx, record.ItemRecord{
+		ID: "item-clear", Status: "in_custody", CustodianID: "bar-x", RiskTier: "sensitive",
+		Sensitive: true, TransferredAt: &transferredAt, FoundAt: now, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateClaim(ctx, record.ClaimRecord{
+		ID: "claim-clear", ItemID: "item-clear", SearcherID: "searcher-demo", Status: "approved",
+		ApprovalBy: "bar-x", ApprovedAt: &approvedAt, Confidence: 0.9, CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateCustody(ctx, record.CustodyRecord{
+		ID: "custody-clear", ItemID: "item-clear", CustodianType: "intermediary", CustodianID: "bar-x",
+		AcceptedAt: &now, DueAt: &dueAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreatePass(ctx, record.PassRecord{
+		ID: "pass-clear", ClaimID: "claim-clear", ItemID: "item-clear", SearcherID: "searcher-demo",
+		CustodianID: "bar-x", TokenHash: "hash-clear", IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+		Status: "issued", IdentityRequired: true, PaymentID: "pay-1", ApprovalID: "bar-x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateFee(ctx, record.FeeRecord{
+		ID: "fee-clear", ItemID: "item-clear", Applies: "pa_tariff", PATariffID: "tariff-1",
+		CustodyDays: 9, AmountCents: 1500, Currency: "EUR", Status: "paid",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateRewardNotice(ctx, record.RewardNoticeRecord{
+		ID: "reward-clear", ItemID: "item-clear", LegalFinderID: "bar-x", Requested: true,
+		AmountCents: 500, ShownToSearcherAt: &shownAt, PaymentStatus: "outside_system",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Item: false, empty string, nil pointer and a UTC-normalised timestamp.
+	if err := db.UpdateItemFields(ctx, "item-clear", map[string]any{
+		"sensitive": false, "custodian_id": "", "transferred_at": nil,
+		"risk_tier": "high", "found_at": cestTime,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	item, err := db.GetItemByID(ctx, "item-clear")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Sensitive {
+		t.Error("item.sensitive was not cleared to false")
+	}
+	if item.CustodianID != "" {
+		t.Errorf("item.custodian_id was not cleared: %q", item.CustodianID)
+	}
+	if item.TransferredAt != nil {
+		t.Errorf("item.transferred_at was not cleared: %v", item.TransferredAt)
+	}
+	if item.RiskTier != "high" {
+		t.Errorf("item.risk_tier override not applied: %q", item.RiskTier)
+	}
+	if !item.FoundAt.Equal(cestTime) || item.FoundAt.Location() != time.UTC {
+		t.Errorf("item.found_at not normalised: %v (%v)", item.FoundAt, item.FoundAt.Location())
+	}
+
+	// Claim: revert an approval.
+	if err := db.UpdateClaimFields(ctx, "claim-clear", map[string]any{
+		"approval_by": "", "approved_at": nil, "confidence": float64(0), "status": "under_review",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := db.GetClaimByID(ctx, "claim-clear")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.ApprovalBy != "" || claim.ApprovedAt != nil {
+		t.Errorf("claim approval was not cleared: %+v", claim)
+	}
+	if claim.Confidence != 0 || claim.Status != "under_review" {
+		t.Errorf("claim fields not updated: %+v", claim)
+	}
+
+	// Custody: clear the acceptance and the due date, empty the custodian.
+	if err := db.UpdateCustodyFields(ctx, "custody-clear", map[string]any{
+		"accepted_at": nil, "due_at": nil, "custodian_id": "",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	custody, err := db.GetCustodyByID(ctx, "custody-clear")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if custody.AcceptedAt != nil || custody.DueAt != nil || custody.CustodianID != "" {
+		t.Errorf("custody fields not cleared: %+v", custody)
+	}
+
+	// Pass: identity not required anymore, payment/approval cleared.
+	if err := db.UpdatePassFields(ctx, "pass-clear", map[string]any{
+		"identity_required": false, "payment_id": "", "approval_id": "",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pass, err := db.GetPassByID(ctx, "pass-clear")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pass.IdentityRequired || pass.PaymentID != "" || pass.ApprovalID != "" {
+		t.Errorf("pass fields not cleared: %+v", pass)
+	}
+
+	// Fee: waive a previously paid fee and zero the amount.
+	if err := db.UpdateFeeFields(ctx, "fee-clear", map[string]any{
+		"amount_cents": int64(0), "pa_tariff_id": "", "status": "waived",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fee, err := db.GetFeeByID(ctx, "fee-clear")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fee.AmountCents != 0 || fee.PATariffID != "" || fee.Status != "waived" {
+		t.Errorf("fee fields not updated: %+v", fee)
+	}
+
+	// Reward notice: withdraw the request.
+	if err := db.UpdateRewardNoticeFields(ctx, "reward-clear", map[string]any{
+		"requested": false, "amount_cents": int64(0), "shown_to_searcher_at": nil,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reward, err := db.GetRewardNoticeByItemID(ctx, "item-clear")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reward.Requested || reward.AmountCents != 0 || reward.ShownToSearcherAt != nil {
+		t.Errorf("reward notice not cleared: %+v", reward)
+	}
+
+	// Unknown columns and empty maps are rejected, not silently ignored.
+	if err := db.UpdateItemFields(ctx, "item-clear", map[string]any{"private_password": "x"}); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Errorf("unknown column: want ErrInvalidInput, got %v", err)
+	}
+	if err := db.UpdateFeeFields(ctx, "fee-clear", map[string]any{}); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Errorf("empty map: want ErrInvalidInput, got %v", err)
+	}
+	// Non-pointer timestamp fields cannot be set to NULL.
+	if err := db.UpdateItemFields(ctx, "item-clear", map[string]any{"found_at": nil}); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Errorf("null found_at: want ErrInvalidInput, got %v", err)
+	}
+	if err := db.UpdatePassFields(ctx, "pass-clear", map[string]any{"expires_at": nil}); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Errorf("null expires_at: want ErrInvalidInput, got %v", err)
+	}
+
+	if err := db.UpdatePassFields(ctx, "missing", map[string]any{"status": "issued"}); !errors.Is(err, errs.ErrNotFound) {
+		t.Errorf("missing row: want ErrNotFound, got %v", err)
+	}
+
+	// Successful field updates refresh items.updated_at.
+	if item.UpdatedAt.IsZero() {
+		t.Error("item.updated_at not set by UpdateItemFields")
 	}
 }
 

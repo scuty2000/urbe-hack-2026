@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -54,6 +55,28 @@ func (r *repo) UpdateItem(ctx context.Context, item record.ItemRecord) error {
 		return notFound("UpdateItem", item.ID)
 	}
 	return nil
+}
+
+// UpdateItemFields is the map-based escape hatch for values that a struct
+// update cannot write: sensitive=false, custodian_id="", transferred_at=nil.
+// Allowed columns are listed in itemUpdateColumns. updated_at is set
+// automatically when the caller does not provide it.
+func (r *repo) UpdateItemFields(ctx context.Context, id string, fields map[string]any) error {
+	if len(fields) == 0 {
+		return r.updateFields(ctx, "UpdateItemFields", "items", id, fields, itemUpdateColumns)
+	}
+	if err := rejectNilColumns(fields, "found_at", "updated_at"); err != nil {
+		return fmt.Errorf("UpdateItemFields: %w", err)
+	}
+	if _, ok := fields["updated_at"]; !ok {
+		withTimestamp := make(map[string]any, len(fields)+1)
+		for column, value := range fields {
+			withTimestamp[column] = value
+		}
+		withTimestamp["updated_at"] = time.Now().UTC()
+		fields = withTimestamp
+	}
+	return r.updateFields(ctx, "UpdateItemFields", "items", id, fields, itemUpdateColumns)
 }
 
 func (r *repo) ListItemsByCustodian(ctx context.Context, custodianID string) ([]record.ItemRecord, error) {

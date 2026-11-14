@@ -50,6 +50,13 @@ func (r *repo) UpdateFee(ctx context.Context, fee record.FeeRecord) error {
 	return nil
 }
 
+// UpdateFeeFields is the map-based escape hatch for values that a struct
+// update cannot write: amount_cents=0, pa_tariff_id="".
+// Allowed columns are listed in feeUpdateColumns.
+func (r *repo) UpdateFeeFields(ctx context.Context, id string, fields map[string]any) error {
+	return r.updateFields(ctx, "UpdateFeeFields", "fees", id, fields, feeUpdateColumns)
+}
+
 func (r *repo) CreatePayment(ctx context.Context, payment record.PaymentRecord) error {
 	payment.PaidAt = utcPtr(payment.PaidAt)
 	if err := r.gormdb.WithContext(ctx).Create(&payment).Error; err != nil {
@@ -76,6 +83,14 @@ func (r *repo) GetPaymentByFeeID(ctx context.Context, feeID string) (record.Paym
 		return payment, wrapErr("GetPaymentByFeeID", err)
 	}
 	return payment, nil
+}
+
+// UpdateRewardNoticeFields is the map-based escape hatch for values that a
+// struct update cannot write: requested=false, amount_cents=0,
+// shown_to_searcher_at=nil. Allowed columns are listed in
+// rewardNoticeUpdateColumns.
+func (r *repo) UpdateRewardNoticeFields(ctx context.Context, id string, fields map[string]any) error {
+	return r.updateFields(ctx, "UpdateRewardNoticeFields", "reward_notices", id, fields, rewardNoticeUpdateColumns)
 }
 
 func (r *repo) CreateRewardNotice(ctx context.Context, notice record.RewardNoticeRecord) error {

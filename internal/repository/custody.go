@@ -62,6 +62,13 @@ func (r *repo) UpdateCustody(ctx context.Context, custody record.CustodyRecord) 
 	return nil
 }
 
+// UpdateCustodyFields is the map-based escape hatch for values that a struct
+// update cannot write: accepted_at=nil, closed_at=nil, custodian_id="".
+// Allowed columns are listed in custodyUpdateColumns.
+func (r *repo) UpdateCustodyFields(ctx context.Context, id string, fields map[string]any) error {
+	return r.updateFields(ctx, "UpdateCustodyFields", "custody", id, fields, custodyUpdateColumns)
+}
+
 func (r *repo) CreateCustodyEvent(ctx context.Context, event record.CustodyEventRecord) error {
 	event = withEventDefaults(event)
 	if err := r.gormdb.WithContext(ctx).Create(&event).Error; err != nil {

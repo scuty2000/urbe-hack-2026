@@ -44,6 +44,13 @@ func (r *repo) UpdateClaim(ctx context.Context, claim record.ClaimRecord) error 
 	return nil
 }
 
+// UpdateClaimFields is the map-based escape hatch for values that a struct
+// update cannot write: approval_by="", approved_at=nil, confidence=0.
+// Allowed columns are listed in claimUpdateColumns.
+func (r *repo) UpdateClaimFields(ctx context.Context, id string, fields map[string]any) error {
+	return r.updateFields(ctx, "UpdateClaimFields", "claims", id, fields, claimUpdateColumns)
+}
+
 func (r *repo) CreateVerificationSession(ctx context.Context, session record.VerificationSessionRecord) error {
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = time.Now().UTC()
