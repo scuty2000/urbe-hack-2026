@@ -64,18 +64,22 @@ func (s *service) mockChat(ctx context.Context, searcherID string, messages []Me
 			Done:       true,
 		}, nil
 	}
+	flags := best.evaluation.claimFlags()
 	if best.evaluation.Decision == verification.DecisionMoreInfo {
-		return Reply{
-			Message:    "Ci siamo quasi: descrivi un altro dettaglio che solo il proprietario conosce, anche in modo approssimativo, ad esempio il colore di un accessorio o un segno particolare.",
-			Candidates: results,
-		}, nil
+		if !undecidedLimitReached(messages) {
+			return Reply{
+				Message:    "Ci siamo quasi: descrivi un altro dettaglio che solo il proprietario conosce, anche in modo approssimativo, ad esempio il colore di un accessorio o un segno particolare.",
+				Candidates: results,
+			}, nil
+		}
+		flags = append(flags, verification.FlagMissingEvidence)
 	}
 
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
 		ItemID:     best.itemID,
 		SearcherID: searcherID,
 		Session:    claim.Session{Answers: answers},
-		Flags:      best.evaluation.claimFlags(),
+		Flags:      flags,
 	})
 	if err != nil {
 		if errors.Is(err, errs.ErrConflict) {
@@ -91,7 +95,7 @@ func (s *service) mockChat(ctx context.Context, searcherID string, messages []Me
 	}
 
 	return Reply{
-		Message:    mockClaimMessage(created),
+		Message:    s.claimMessage(ctx, best.itemID, created, best.evaluation),
 		Candidates: results,
 		ClaimID:    created.ID,
 		Done:       true,
@@ -107,6 +111,44 @@ func mockQuestion(results []search.SearchResult) string {
 	return fmt.Sprintf(
 		"Ho trovato %s compatibile. Descrivi un dettaglio che solo il proprietario conosce: un segno particolare, il colore di un accessorio o cosa conteneva.",
 		kind,
+	)
+}
+
+// claimMessage is the searcher-facing outcome of a recorded claim.
+//
+// In-person verification is the third outcome between approval (pickup pass)
+// and refusal. It applies to low but not null confidence: a claim under review
+// on the intermediary channel whose answers carry some ownership evidence. The
+// agent then tells the searcher where the item is kept, without a pickup pass,
+// so the custodian verifies in person and decides from the dashboard. Under
+// total uncertainty the pickup point is never revealed: the claim waits for
+// the custodian's remote review.
+func (s *service) claimMessage(ctx context.Context, itemID string, created claim.Claim, evaluation ownershipEvaluation) string {
+	if created.Status != claim.StatusUnderReview || created.ReturnChannel != claim.ReturnChannelIntermediaryDirect ||
+		s.deps.Places == nil || !evaluation.partialEvidence() {
+		return mockClaimMessage(created)
+	}
+	item, err := s.deps.Items.ItemForAgent(ctx, itemID)
+	if err != nil || strings.TrimSpace(item.CustodianID) == "" {
+		return mockClaimMessage(created)
+	}
+	place, err := s.deps.Places.GetIntermediaryByID(ctx, item.CustodianID)
+	if err != nil || strings.TrimSpace(place.Name) == "" {
+		return mockClaimMessage(created)
+	}
+	where := place.Name
+	if address := strings.TrimSpace(place.Address); address != "" {
+		where += ", " + address
+	}
+	if hours := strings.TrimSpace(place.Hours); hours != "" {
+		where += " (orari: " + hours + ")"
+	}
+	return fmt.Sprintf(
+		"Ho registrato la richiesta. Da qui non posso confermare che l'oggetto sia tuo, ma puoi verificarlo di persona: "+
+			"è custodito presso %s. Presentati con un documento e comunica il codice della richiesta (%s): "+
+			"sarà il commerciante a verificare i dettagli e, se tutto torna, a consegnarti l'oggetto. "+
+			"Per questa strada non serve il pass di ritiro.",
+		where, created.ID,
 	)
 }
 
@@ -157,6 +199,9 @@ func mockAnswers(text string) map[string]string {
 		tokens []string
 		value  string
 	}{
+		// Transparent comes first: "cover trasparente con ring bianco"
+		// describes a transparent case with a white detail.
+		{[]string{"trasparente", "transparent"}, "trasparente"},
 		{[]string{"nero", "black", "nera"}, "nero"},
 		{[]string{"blu", "blue", "azzurro", "azzurra"}, "blu"},
 		{[]string{"bianco", "white", "bianca"}, "bianco"},
@@ -185,6 +230,14 @@ func mockAnswers(text string) map[string]string {
 	}
 	if colorValue != "" {
 		answers["color"] = colorValue
+	}
+
+	// Mentioning a case/cover at all answers has_case, which is often the
+	// easiest private detail to get right.
+	if containsAny(lower, "senza custodia", "senza cover", "non ha custodia", "non ha la cover") {
+		answers["has_case"] = "no"
+	} else if containsAny(lower, "custodia", "cover", "case ") {
+		answers["has_case"] = "sì"
 	}
 
 	if containsAny(lower, "senza crepe", "non ha crepe", "non è rotto", "no crack") {

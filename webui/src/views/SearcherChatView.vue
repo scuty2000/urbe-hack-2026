@@ -31,7 +31,6 @@ const claim = ref<ClaimOwner | null>(null);
 
 const claimOutcomeMessages: Record<string, string> = {
   approved: "Ottima notizia: l'oggetto è stato riconosciuto come tuo e la richiesta è approvata! Puoi procedere al ritiro: genera il pass dalla scheda della richiesta e mostralo al custode.",
-  under_review: "Ho registrato la richiesta: è in verifica da parte del custode.",
   more_info: "Ho registrato la richiesta, ma servono altre informazioni per completare la verifica.",
   rejected: "La richiesta non è stata approvata.",
 };
@@ -314,7 +313,12 @@ function resetConversation() {
         <div class="border-t border-stone-100 px-4 py-3 sm:px-5">
           <div v-if="done" class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-xs text-stone-600">
-              <template v-if="claim">
+              <template v-if="claim && claim.status === 'under_review'">
+                La richiesta è in verifica dal custode. Se in chat ti è stato
+                indicato il punto di custodia, comunica il codice {{ claim.id }}:
+                il commerciante verificherà di persona, senza pass.
+              </template>
+              <template v-else-if="claim">
                 La richiesta è stata registrata. Puoi aprire il pass dalla scheda
                 a destra quando è approvata.
               </template>

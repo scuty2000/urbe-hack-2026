@@ -98,6 +98,16 @@ func (s *service) route(ctx context.Context, searcherID string, normalized []Mes
 	return reply, "llm", nil
 }
 
+// maxUndecidedUserTurns is the number of searcher messages after which an
+// undecided ownership check stops asking and goes to human review. The catalog
+// can be wrong (a transparent case recorded as black), so an honest searcher
+// must never be stuck in an endless "tell me more" loop.
+const maxUndecidedUserTurns = 4
+
+func undecidedLimitReached(messages []Message) bool {
+	return len(messagesFromUser(messages)) >= maxUndecidedUserTurns
+}
+
 func newTurnID() string {
 	id, err := uuid.NewV4()
 	if err != nil {
@@ -204,20 +214,26 @@ func (s *service) preflightChat(ctx context.Context, searcherID string, messages
 			Done:       true,
 		}, true, nil
 	}
+	flags := best.evaluation.claimFlags()
 	if best.evaluation.Decision == verification.DecisionMoreInfo {
-		// The server asks, so the model cannot turn an undecided case into an
-		// escalation or a forwarded claim.
-		return Reply{
-			Message:    moreInfoMessage,
-			Candidates: results,
-		}, true, nil
+		if !undecidedLimitReached(messages) {
+			// The server asks, so the model cannot turn an undecided case
+			// into an escalation or a forwarded claim.
+			return Reply{
+				Message:    moreInfoMessage,
+				Candidates: results,
+			}, true, nil
+		}
+		// The searcher kept answering without a decision: a human decides
+		// instead of asking forever. missing_evidence forces review.
+		flags = append(flags, verification.FlagMissingEvidence)
 	}
 
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
 		ItemID:     best.itemID,
 		SearcherID: searcherID,
 		Session:    claim.Session{Answers: answers},
-		Flags:      best.evaluation.claimFlags(),
+		Flags:      flags,
 	})
 	if err != nil {
 		return Reply{}, false, nil
@@ -234,7 +250,7 @@ func (s *service) preflightChat(ctx context.Context, searcherID string, messages
 		return Reply{}, false, nil
 	}
 	return Reply{
-		Message:    mockClaimMessage(created),
+		Message:    s.claimMessage(ctx, best.itemID, created, best.evaluation),
 		Candidates: results,
 		ClaimID:    created.ID,
 		Done:       true,

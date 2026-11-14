@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:22-bookworm AS web
 WORKDIR /web
 COPY webui/package*.json ./
@@ -10,7 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev
 WORKDIR /src
 COPY . .
 COPY --from=web /web/dist ./webui/dist
-RUN CGO_ENABLED=1 go build -tags webui -o /out/webapi ./cmd/webapi
+# The Go build cache survives between builds: without it every build recompiles
+# everything, including the SQLite C amalgamation of go-sqlite3 (minutes).
+# Dependencies are vendored, so no module download is needed.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go build -mod=vendor -tags webui -o /out/webapi ./cmd/webapi
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*

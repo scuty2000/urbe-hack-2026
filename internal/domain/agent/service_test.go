@@ -489,9 +489,10 @@ func TestPreflightMixedPrivateDetailsGoToHumanReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
-	// One right and one wrong detail: a human decides, the claim is recorded.
-	if !reply.Done || reply.ClaimID == "" || !strings.Contains(reply.Message, "in verifica") {
-		t.Fatalf("reply = %+v, want a claim under review", reply)
+	// One right and one wrong detail: low but not null confidence. The claim
+	// goes to the custodian, who verifies in person without a pickup pass.
+	if !reply.Done || reply.ClaimID == "" || !strings.Contains(reply.Message, "di persona") {
+		t.Fatalf("reply = %+v, want in-person verification", reply)
 	}
 }
 
@@ -1005,5 +1006,100 @@ func TestClaimOnLastToolRoundRepliesWithClaimOutcome(t *testing.T) {
 	}
 	if strings.Contains(reply.Message, "operatore") {
 		t.Fatalf("reply contradicts the approved claim: %q", reply.Message)
+	}
+}
+
+// An honest searcher whose details stay undecided (e.g. the catalog recorded a
+// transparent case as black) must reach a human instead of looping forever.
+func TestPreflightUndecidedTooLongGoesToHumanReview(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-review", Status: claim.StatusUnderReview}}
+	llm := &scriptedLLM{}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha un cinturino giallo"},
+		{Role: "assistant", Content: "Non basta ancora."},
+		{Role: "user", Content: "era nero"},
+		{Role: "assistant", Content: "Non basta ancora."},
+		{Role: "user", Content: "non ricordo altro"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || reply.ClaimID != "claim-review" || !strings.Contains(reply.Message, "in verifica") {
+		t.Fatalf("reply = %+v, want a claim under human review", reply)
+	}
+	found := false
+	for _, flag := range claims.input.Flags {
+		if flag == "missing_evidence" {
+			found = true
+		}
+	}
+	if !found || len(llm.calls) != 0 {
+		t.Fatalf("flags=%v llm=%d, want missing_evidence and no LLM call", claims.input.Flags, len(llm.calls))
+	}
+}
+
+func TestMockAnswersRecognisesTransparentCase(t *testing.T) {
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "cover trasparente con ring bianco"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	// Seeded phone: case_color blu, no has_case. One wrong colour alone asks
+	// again; it must not be read as "bianco".
+	if reply.Done {
+		t.Fatalf("reply = %+v, want another-detail question", reply)
+	}
+}
+
+func TestInPersonVerificationOnlyWithPartialEvidence(t *testing.T) {
+	cases := []struct {
+		name      string
+		answer    string
+		wantPlace bool
+	}{
+		// case_color right, has_crack wrong: low confidence, some evidence.
+		{"partial evidence reveals the pickup point", "ha una custodia blu ed è senza crepe", true},
+		// Only wrong answers after many turns: total uncertainty.
+		{"total uncertainty keeps it private", "ha un cinturino giallo", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+			messages := []agent.Message{
+				{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+				{Role: "assistant", Content: "Descrivi un dettaglio."},
+				{Role: "user", Content: tc.answer},
+			}
+			if !tc.wantPlace {
+				messages = append(messages,
+					agent.Message{Role: "assistant", Content: "Non basta ancora."},
+					agent.Message{Role: "user", Content: "non ricordo"},
+					agent.Message{Role: "assistant", Content: "Non basta ancora."},
+					agent.Message{Role: "user", Content: "davvero non ricordo"},
+				)
+			}
+			reply, err := svc.Chat(context.Background(), "searcher-demo", messages)
+			if err != nil {
+				t.Fatalf("Chat() error = %v", err)
+			}
+			if !reply.Done || reply.ClaimID == "" {
+				t.Fatalf("reply = %+v, want a claim under review", reply)
+			}
+			revealed := strings.Contains(reply.Message, "Bar X") || strings.Contains(reply.Message, "Via dei Volsci")
+			if revealed != tc.wantPlace {
+				t.Fatalf("pickup point revealed = %v, want %v: %q", revealed, tc.wantPlace, reply.Message)
+			}
+			if tc.wantPlace && !strings.Contains(reply.Message, "non serve il pass") {
+				t.Fatalf("message = %q, want the no-pass in-person explanation", reply.Message)
+			}
+		})
 	}
 }

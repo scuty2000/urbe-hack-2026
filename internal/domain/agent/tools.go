@@ -514,6 +514,22 @@ func (e ownershipEvaluation) unverifiable() bool {
 	return len(e.PrivateKeys) == 0
 }
 
+// inPersonMinConfidence is the private confidence from which a claim under
+// review counts as "low but not null" evidence, even without a single
+// ownership-grade match.
+const inPersonMinConfidence = 0.40
+
+// partialEvidence reports some ownership evidence: at least one private detail
+// matched, or the private confidence is not negligible. It separates "low
+// confidence" (verify in person) from "total uncertainty" (never reveal where
+// the item is).
+func (e ownershipEvaluation) partialEvidence() bool {
+	if e.unverifiable() {
+		return false
+	}
+	return hasPrivateMatch(e.Answers, e.PrivateKeys) || e.Confidence >= inPersonMinConfidence
+}
+
 // claimFlags are the flags the agent adds to a claim. An unverifiable item is
 // marked missing_evidence, which the policy always maps to human review.
 func (e ownershipEvaluation) claimFlags() []string {
@@ -762,7 +778,7 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 		}),
 		claimID:         created.ID,
 		terminal:        true,
-		terminalMessage: mockClaimMessage(created),
+		terminalMessage: s.claimMessage(ctx, itemID, created, evaluation),
 	}
 }
 
