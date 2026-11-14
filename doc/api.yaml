@@ -1508,7 +1508,7 @@ paths:
       operationId: resetDemo
       summary: Reset the demo dataset
       description: |
-        Replaces the registry data with the deterministic demo seed: six users,
+        Replaces the registry data with the deterministic demo seed: seven users,
         two intermediaries, the active PA tariff and the four demo items
         (`item-phone` in custody, `item-wallet` transferred, `item-umbrella`
         and `item-document` pending). Users and sessions are preserved, so the

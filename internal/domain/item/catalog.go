@@ -201,16 +201,19 @@ func catalogFromForm(form CatalogForm) CatalogResult {
 }
 
 // documentCategoryTerms are never sent to D3 as images. The classification of a
-// document still runs in text/form mode, but an identity or payment document
-// must not leave the application perimeter. Matching is normalized (lowercase)
-// and substring-based so "carta di credito", "identity card" and the risk.go
-// vocabulary are all covered.
+// document still runs in text/form mode, but an identity, payment, medical or
+// key document must not leave the application perimeter. Matching is normalized
+// (lowercase) and substring-based so the main document/sensitive vocabulary is
+// covered; bare "key" is intentionally omitted to avoid matching "keyboard".
 var documentCategoryTerms = []string{
 	"passport", "passaporto",
 	"identity", "identità", "identita",
-	"patente", "driving license",
+	"patente", "driving license", "driving licence",
 	"credit card", "carta di credito",
+	"debit card", "carta di debito", "bancomat",
 	"health card", "tessera sanitaria",
+	"medical", "medicale", "medico", "dispositivo medico",
+	"keychain", "chiave", "chiavi", "mazzo di chiavi",
 	"sim",
 	"document", "documento", "documenti", "documents",
 }
