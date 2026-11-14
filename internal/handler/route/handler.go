@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 
+	agentdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/agent"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
@@ -44,11 +45,17 @@ type WebAPIHandler struct {
 	// Claims is the verification and claim service.
 	Claims claimdomain.Service
 
+	// Agent is the searcher conversational orchestrator.
+	Agent agentdomain.Service
+
 	// DemoReset replaces the demo dataset. Nil disables the reset route.
 	DemoReset func(context.Context) error
 
 	// DemoResetSecret is the shared secret required by the reset route.
 	DemoResetSecret string
+
+	// chatLimiter enforces the per-searcher chat message rate.
+	chatLimiter *chatLimiter
 }
 
 // New creates a WebAPIHandler with the given domain services.
@@ -60,6 +67,7 @@ func New(
 	custodyService custodydomain.Service,
 	searchService search.Service,
 	claimService claimdomain.Service,
+	agentService agentdomain.Service,
 	demoReset func(context.Context) error,
 	demoResetSecret string,
 ) *WebAPIHandler {
@@ -71,7 +79,9 @@ func New(
 		Custody:         custodyService,
 		Search:          searchService,
 		Claims:          claimService,
+		Agent:           agentService,
 		DemoReset:       demoReset,
 		DemoResetSecret: demoResetSecret,
+		chatLimiter:     newChatLimiter(chatRateLimit, chatRateWindow),
 	}
 }

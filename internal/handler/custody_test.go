@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-contrib/cors"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/agent"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
@@ -53,6 +54,7 @@ func newCustodyRouter(t *testing.T, searches ...search.Service) (http.Handler, r
 		CustodyService: custodydomain.New(db),
 		SearchService:  searchService,
 		ClaimService:   claimdomain.New(db),
+		AgentService:   agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)

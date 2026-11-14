@@ -39,6 +39,7 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/gin-contrib/cors"
 	_ "github.com/mattn/go-sqlite3"
+	agentdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/agent"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
@@ -249,6 +250,24 @@ func run() error {
 		Vectors:  vectors,
 	})
 
+	// The conversational agent is the searcher's public interface. It uses the
+	// search service and the claim policy server-side; without a DeepSeek key
+	// (or with the feature disabled) it runs the deterministic mock.
+	deepSeekKey := ""
+	if cfg.Features.DeepSeek {
+		deepSeekKey = cfg.DeepSeek.Key
+	}
+	agentService := agentdomain.New(db, agentdomain.Deps{
+		Search:          searchService,
+		Claim:           claimService,
+		Engine:          claimdomain.D3Engine(cataloger),
+		DeepSeekKey:     deepSeekKey,
+		DeepSeekURL:     cfg.DeepSeek.URL,
+		DeepSeekModel:   cfg.DeepSeek.Model,
+		DeepSeekTimeout: cfg.DeepSeek.Timeout,
+		MaxToolRounds:   cfg.DeepSeek.MaxToolRounds,
+	})
+
 	// Make a channel to listen for an interrupt or terminate signal from the OS.
 	// Use a buffered channel because the signal package requires it.
 	shutdown := make(chan os.Signal, 1)
@@ -286,6 +305,7 @@ func run() error {
 			CustodyService:  custodyService,
 			SearchService:   searchService,
 			ClaimService:    claimService,
+			AgentService:    agentService,
 			DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
 			DemoResetSecret: cfg.Demo.ResetSecret,
 			TrustedProxies:  cfg.Web.TrustedProxies,
