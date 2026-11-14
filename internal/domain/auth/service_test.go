@@ -167,13 +167,14 @@ func TestSeedDemoUsersIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListUsers() error = %v", err)
 	}
-	if len(users) != 6 {
-		t.Fatalf("seeded users = %d, want 6", len(users))
+	if len(users) != 7 {
+		t.Fatalf("seeded users = %d, want 7", len(users))
 	}
 
 	wantRoles := map[string]string{
 		"finder-demo":         RoleFinder,
 		"searcher-demo":       RoleSearcher,
+		"searcher-alt":        RoleSearcher,
 		"bar-x":               RoleIntermediary,
 		"portineria-sapienza": RoleIntermediary,
 		"institution-demo":    RoleInstitution,

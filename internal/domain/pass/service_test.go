@@ -34,7 +34,7 @@ func TestPassRedeemsOnceAndRejectsWrongCustodian(t *testing.T) {
 	svc := pass.New(db, pass.Deps{PassSecret: testSecret, PassTTL: 30 * time.Minute})
 	now := time.Now().UTC()
 
-	p, err := svc.Issue(context.Background(), "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(context.Background(), "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestPassValidateRejectsExpiredAndTamperedTokens(t *testing.T) {
 	svc := newService(t)
 	now := time.Now().UTC()
 
-	p, err := svc.Issue(context.Background(), "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(context.Background(), "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -128,7 +128,7 @@ func TestPassFailsClosedWithoutSecret(t *testing.T) {
 	svc := pass.New(db, pass.Deps{})
 	now := time.Now().UTC()
 
-	if _, err := svc.Issue(context.Background(), "claim-phone", "searcher-demo", now); !errors.Is(err, errs.ErrUnavailable) {
+	if _, err := svc.Issue(context.Background(), "claim-phone", "searcher-alt", now); !errors.Is(err, errs.ErrUnavailable) {
 		t.Fatalf("Issue() without secret error = %v, want unavailable", err)
 	}
 	if _, err := svc.Validate(context.Background(), "any-token", "bar-x", now); !errors.Is(err, errs.ErrUnavailable) {
@@ -303,7 +303,7 @@ func TestPassDirectReturnIgnoresFeesAndZeroFeeIsFree(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateFee(phone) error = %v", err)
 	}
-	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue(direct) error = %v", err)
 	}
@@ -341,7 +341,7 @@ func TestPassRevokeByItem(t *testing.T) {
 	now := time.Now().UTC()
 	ctx := context.Background()
 
-	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -370,11 +370,11 @@ func TestPassReissueRevokesPreviousToken(t *testing.T) {
 	now := time.Now().UTC()
 	ctx := context.Background()
 
-	first, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	first, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("first Issue() error = %v", err)
 	}
-	second, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	second, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("second Issue() error = %v", err)
 	}
@@ -396,7 +396,7 @@ func TestPassStoresOnlyTheTokenHash(t *testing.T) {
 	now := time.Now().UTC()
 	ctx := context.Background()
 
-	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -445,7 +445,7 @@ func TestPassValidateCannotResurrectRevokedStatus(t *testing.T) {
 	now := time.Now().UTC()
 	ctx := context.Background()
 
-	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -480,7 +480,7 @@ func TestPassValidateReportsItemNotInCustodyAndClaimNotApproved(t *testing.T) {
 	now := time.Now().UTC()
 	ctx := context.Background()
 
-	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -516,7 +516,7 @@ func TestPassSensitiveItemRequiresPA(t *testing.T) {
 
 	// A direct pass issued before the item became sensitive cannot be used once
 	// it is sensitive and still held by the intermediary.
-	direct, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	direct, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue(non-sensitive) error = %v", err)
 	}
@@ -593,7 +593,7 @@ func TestPassCustodyDeadlineIsEnforced(t *testing.T) {
 	now := time.Now().UTC()
 	ctx := context.Background()
 
-	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -606,7 +606,7 @@ func TestPassCustodyDeadlineIsEnforced(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("backdating the custody deadline: %v", err)
 	}
-	if _, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now); !errors.Is(err, errs.ErrConflict) {
+	if _, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now); !errors.Is(err, errs.ErrConflict) {
 		t.Fatalf("Issue(elapsed deadline) error = %v, want conflict", err)
 	}
 	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); pass.ReasonOf(err) != pass.ReasonCustodyExpired {

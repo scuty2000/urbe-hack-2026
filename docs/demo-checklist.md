@@ -43,14 +43,14 @@ scripts/demo-reset.sh --seed
 ```
 
 Verify the seed before opening the UI. `/api/health` only reports dependencies;
-it does not prove the dataset was reset. Log in as the demo searcher and read
-the seeded claim instead:
+it does not prove the dataset was reset. Log in as the fixture account that owns
+the seeded claim and read it:
 
 ```bash
 curl -sS -c /tmp/ritrova-cookies -H 'Content-Type: application/json' \
-  -d '{"userId":"searcher-demo"}' http://localhost:3000/api/auth/login >/dev/null
+  -d '{"userId":"searcher-alt"}' http://localhost:3000/api/auth/login >/dev/null
 curl -sS -b /tmp/ritrova-cookies http://localhost:3000/api/claims/claim-phone | jq
-# expected: the seeded approved claim for item-phone
+# expected: the seeded approved claim for item-phone, owned by searcher-alt
 ```
 
 - [ ] Reset exits 0 and prints either the HTTP reset or the local seed path.
@@ -178,9 +178,11 @@ If the live demo fails:
    Without `-tags webui` the binary serves the API only (no `/dashboard/`): in
    that case use the Vite path instead (`scripts/dev-up.sh` +
    `npm --prefix webui run dev`, open `http://localhost:5173/dashboard/`).
-4. Or use the seeded fast path with either UI:
-   `http://localhost:3000/dashboard/searcher?claim=claim-phone` (embedded) or
-   `http://localhost:5173/dashboard/searcher?claim=claim-phone` (Vite).
+4. Or open the claim card for the claim code created in the chat:
+   `http://localhost:3000/dashboard/searcher?claim=<claim code>` (embedded) or
+   `http://localhost:5173/dashboard/searcher?claim=<claim code>` (Vite).
+   The seeded `claim-phone` belongs to the fixture account `searcher-alt`, not to
+   the demo searcher.
 
 ## 7. Public URL (human/account step)
 

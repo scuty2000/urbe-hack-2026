@@ -400,7 +400,10 @@ func TestCatalogSendsImagesWhenAllowedForNonDocuments(t *testing.T) {
 }
 
 func TestCatalogNeverSendsDocumentImagesToD3(t *testing.T) {
-	for _, category := range []string{"document", "documento", "documenti", "documents", "identity_document"} {
+	for _, category := range []string{
+		"document", "documento", "documenti", "documents", "identity_document",
+		"passport", "carta di credito", "",
+	} {
 		cataloger := &fakeCataloger{}
 		svc, _ := newService(t, item.Deps{D3: cataloger, AllowD3Images: true})
 

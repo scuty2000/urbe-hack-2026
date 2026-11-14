@@ -22,8 +22,8 @@ func TestDemoSeedsDeterministicDataset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListUsers: %v", err)
 	}
-	if len(users) != 6 {
-		t.Fatalf("users = %d, want 6", len(users))
+	if len(users) != 7 {
+		t.Fatalf("users = %d, want 7", len(users))
 	}
 
 	intermediaries, err := db.ListIntermediaries(ctx)
@@ -115,11 +115,14 @@ func TestDemoSeedsDeterministicDataset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetClaimByID(claim-phone): %v", err)
 	}
-	if claim.ItemID != "item-phone" || claim.SearcherID != "searcher-demo" || claim.Status != "approved" {
+	if claim.ItemID != "item-phone" || claim.SearcherID != "searcher-alt" || claim.Status != "approved" {
 		t.Fatalf("claim-phone = %+v", claim)
 	}
 	if claim.ReturnChannel != "intermediary_direct" || claim.ApprovalBy != "bar-x" {
 		t.Fatalf("claim-phone = %+v", claim)
+	}
+	if claim.Evidence != `["colore nero","crepa sullo schermo"]` {
+		t.Fatalf("claim-phone evidence = %q, want the safe JSON array", claim.Evidence)
 	}
 
 	wallet, err := db.GetItemByID(ctx, "item-wallet")

@@ -2191,8 +2191,8 @@ components:
     VerificationReport:
       type: object
       description: |
-        Full verification report for the custodian and the institution. It
-        never contains the item's private profile values.
+        Full verification report for the institution and admin. It never
+        contains the item's private profile values.
       properties:
         questions:
           type: object

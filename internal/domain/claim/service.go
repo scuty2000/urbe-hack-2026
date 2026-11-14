@@ -407,6 +407,14 @@ func (s *service) ReviewClaim(ctx context.Context, claimID, decision, actorID st
 			return fmt.Errorf("review claim %q: %w", claimID, err)
 		}
 
+		// The return channel is a function of the current item state: a claim
+		// approved after the transfer must follow the PA, never a stale direct
+		// channel recorded while the intermediary still held the item.
+		channel, claimable := returnChannelForStatus(itemRow.Status, itemRow.Sensitive)
+		if !claimable {
+			return fmt.Errorf("review claim %q: item is %q: %w", claimID, itemRow.Status, errs.ErrConflict)
+		}
+
 		fields := map[string]any{
 			"status":      decision,
 			"approval_by": actorID,
@@ -414,6 +422,9 @@ func (s *service) ReviewClaim(ctx context.Context, claimID, decision, actorID st
 		}
 		if decision == DecisionApproved {
 			fields["approved_at"] = now
+		}
+		if row.ReturnChannel != channel {
+			fields["return_channel"] = channel
 		}
 		if err := tx.UpdateClaimFields(ctx, claimID, fields); err != nil {
 			return fmt.Errorf("review claim %q: %w", claimID, err)
@@ -444,6 +455,7 @@ func (s *service) ReviewClaim(ctx context.Context, claimID, decision, actorID st
 		row.Status = decision
 		row.ApprovalBy = actorID
 		row.ApprovedAt = nil
+		row.ReturnChannel = channel
 		if decision == DecisionApproved {
 			row.ApprovedAt = &now
 		}

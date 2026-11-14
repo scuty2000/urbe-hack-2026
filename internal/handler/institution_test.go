@@ -217,10 +217,10 @@ func TestInstitutionHttpFlow(t *testing.T) {
 	// Seed an under-review claim plus its verification report.
 	if err := db.CreateClaim(ctx, record.ClaimRecord{
 		ID:            "claim-review",
-		ItemID:        "item-phone",
+		ItemID:        "item-wallet",
 		SearcherID:    "searcher-demo",
 		Status:        claimdomain.StatusUnderReview,
-		ReturnChannel: claimdomain.ReturnChannelIntermediaryDirect,
+		ReturnChannel: claimdomain.ReturnChannelPA,
 		Confidence:    0.6,
 		Evidence:      `["receipt"]`,
 		CreatedAt:     now,

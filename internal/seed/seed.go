@@ -214,11 +214,11 @@ func demoRows(now time.Time) demoData {
 			{
 				ID:            "claim-phone",
 				ItemID:        "item-phone",
-				SearcherID:    "searcher-demo",
+				SearcherID:    "searcher-alt",
 				Status:        "approved",
 				ReturnChannel: "intermediary_direct",
 				Confidence:    0.92,
-				Evidence:      `{"answers":[{"attribute":"color","answer":"nero"}],"probabilities":{"color":0.95}}`,
+				Evidence:      `["colore nero","crepa sullo schermo"]`,
 				ApprovalBy:    "bar-x",
 				ApprovedAt:    timePtr(now.Add(-30 * time.Minute)),
 				CreatedAt:     phoneFound,

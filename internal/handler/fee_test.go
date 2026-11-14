@@ -205,7 +205,7 @@ func TestFeeHttpPATariffAndMockPayment(t *testing.T) {
 
 func TestFeeHttpPayFreeReturnConflicts(t *testing.T) {
 	api, _ := newFeeRouter(t)
-	searcher := loginAs(t, api, "searcher-demo")
+	searcher := loginAs(t, api, "searcher-alt")
 
 	fee := doRequest(t, api, http.MethodGet, "/api/items/item-phone/fee", "", searcher)
 	var body map[string]any

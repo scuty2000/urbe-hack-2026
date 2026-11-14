@@ -114,6 +114,10 @@ func TestClaimReviewHttpFlow(t *testing.T) {
 		t.Fatalf("wrong custodian review status = %d, want 403", got)
 	}
 	if got := doRequest(t, api, http.MethodPost, "/api/claims/"+approveClaim+"/review",
+		`{"decision":"approved","confidence":0.99}`, intermediary).Code; got != http.StatusBadRequest {
+		t.Fatalf("unknown review field status = %d, want 400", got)
+	}
+	if got := doRequest(t, api, http.MethodPost, "/api/claims/"+approveClaim+"/review",
 		`{"decision":"maybe"}`, intermediary).Code; got != http.StatusBadRequest {
 		t.Fatalf("invalid decision status = %d, want 400", got)
 	}

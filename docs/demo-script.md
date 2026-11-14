@@ -170,9 +170,10 @@ monouso, zero dati personali esposti."
   `go run ./cmd/webapi/` without `-tags webui` serves the API only and does not
   mount `/dashboard/`; in that case use the Vite path (`scripts/dev-up.sh` plus
   `npm --prefix webui run dev`, open `http://localhost:5173/dashboard/`).
-- **Chat, claim or review stalls:** open `/dashboard/searcher?claim=claim-phone`;
-  the seeded approved claim lets you generate the pass immediately. This is the
-  intended fast path for a short recording.
+- **Chat, claim or review stalls:** open
+  `/dashboard/searcher?claim=<claim code>` with the claim code from the chat; the
+  seeded `claim-phone` belongs to the fixture account `searcher-alt`, not to the
+  demo searcher.
 - **Dataset dirty:** `scripts/demo-reset.sh --seed` (or `scripts/demo-reset.sh`
   against the running API). Reset before every rehearsal and recording.
 - **Institution queue empty:** the seeded wallet is already in PA custody; show

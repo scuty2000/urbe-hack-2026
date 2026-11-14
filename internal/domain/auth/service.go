@@ -42,6 +42,7 @@ type demoUser struct {
 var demoUsers = []demoUser{
 	{id: "finder-demo", role: RoleFinder, name: "Giulia Ferrari", email: "finder-demo@example.test"},
 	{id: "searcher-demo", role: RoleSearcher, name: "Marco Bianchi", email: "searcher-demo@example.test"},
+	{id: "searcher-alt", role: RoleSearcher, name: "Luca Verdi", email: "searcher-alt@example.test"},
 	{id: "bar-x", role: RoleIntermediary, name: "Bar X", email: "bar-x@example.test"},
 	{id: "portineria-sapienza", role: RoleIntermediary, name: "Portineria Sapienza", email: "portineria-sapienza@example.test"},
 	{id: "institution-demo", role: RoleInstitution, name: "Comune di Roma", email: "institution-demo@example.test"},

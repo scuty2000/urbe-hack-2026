@@ -26,7 +26,7 @@ func TestPassUsesFeeServiceForFreeAndUnpaidPA(t *testing.T) {
 	svc := pass.New(db, pass.Deps{PassSecret: testSecret, PassTTL: 30 * time.Minute, Fees: fees})
 	ctx := context.Background()
 
-	free, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	free, err := svc.Issue(ctx, "claim-phone", "searcher-alt", now)
 	if err != nil {
 		t.Fatalf("Issue(free) error = %v", err)
 	}

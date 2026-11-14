@@ -379,6 +379,46 @@ func TestReviewClaimByCustodianAndInstitution(t *testing.T) {
 	}
 }
 
+func TestReviewClaimReclassifiesChannelAfterTransfer(t *testing.T) {
+	ctx := context.Background()
+	svc, db := newClaimService(t, fixedEngine(0.9))
+	seedClaimItem(t, db, "item-review-transfer", itemdomain.StatusInCustody, itemdomain.RiskHigh, false)
+
+	created, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:     "item-review-transfer",
+		SearcherID: "searcher-demo",
+		Session:    claim.Session{Answers: map[string]string{"color": "black", "case_color": "blu"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateClaim() error = %v", err)
+	}
+	if created.ReturnChannel != claim.ReturnChannelIntermediaryDirect {
+		t.Fatalf("created channel = %q, want intermediary_direct", created.ReturnChannel)
+	}
+
+	// The PA takes custody before the custodian approves the claim.
+	if err := db.UpdateItemFields(ctx, "item-review-transfer", map[string]any{
+		"status": itemdomain.StatusTransferred,
+	}); err != nil {
+		t.Fatalf("transferring the item: %v", err)
+	}
+
+	reviewed, err := svc.ReviewClaim(ctx, created.ID, claim.DecisionApproved, "bar-x")
+	if err != nil {
+		t.Fatalf("ReviewClaim() error = %v", err)
+	}
+	if reviewed.ReturnChannel != claim.ReturnChannelPA {
+		t.Fatalf("reviewed channel = %q, want pa after transfer", reviewed.ReturnChannel)
+	}
+	stored, err := db.GetClaimByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetClaimByID() error = %v", err)
+	}
+	if stored.ReturnChannel != claim.ReturnChannelPA {
+		t.Fatalf("stored channel = %q, want pa", stored.ReturnChannel)
+	}
+}
+
 func TestGetClaimHidesReportFromOwnerAndExposesItToInstitution(t *testing.T) {
 	svc, db := newClaimService(t, fixedEngine(0.9))
 	seedClaimItem(t, db, "item-privacy", itemdomain.StatusInCustody, itemdomain.RiskLow, false)

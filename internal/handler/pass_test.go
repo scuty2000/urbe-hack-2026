@@ -59,7 +59,7 @@ func newPassRouter(t *testing.T) (http.Handler, repository.Database) {
 func TestPassHttpFlow(t *testing.T) {
 	api, db := newPassRouter(t)
 
-	searcher := loginAs(t, api, "searcher-demo")
+	searcher := loginAs(t, api, "searcher-alt")
 	barX := loginAs(t, api, "bar-x")
 	otherIntermediary := loginAs(t, api, "portineria-sapienza")
 	finder := loginAs(t, api, "finder-demo")

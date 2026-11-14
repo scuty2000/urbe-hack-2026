@@ -284,6 +284,7 @@ export const organisationLabels: Record<string, string> = {
   "portineria-sapienza": "Portineria Sapienza",
   "institution-demo": "Comune di Roma",
   "searcher-demo": "Marco Bianchi",
+  "searcher-alt": "Luca Verdi",
   "finder-demo": "Giulia Ferrari",
 };
 

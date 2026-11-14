@@ -104,8 +104,10 @@ func (h *WebAPIHandler) PostClaimReview(ctx *reqcontext.RequestContext) {
 	}
 
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxClaimBody)
+	decoder := json.NewDecoder(ctx.Request.Body)
+	decoder.DisallowUnknownFields()
 	var payload dto.ReviewClaimPayload
-	if err := json.NewDecoder(ctx.Request.Body).Decode(&payload); err != nil {
+	if err := decoder.Decode(&payload); err != nil {
 		ctx.Logger.Error("PostClaimReview invalid body", "err", err)
 		respondWithJSONError(ctx, http.StatusBadRequest, "body must be JSON with a decision")
 		return

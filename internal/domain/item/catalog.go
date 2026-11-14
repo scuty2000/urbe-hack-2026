@@ -200,20 +200,24 @@ func catalogFromForm(form CatalogForm) CatalogResult {
 	}
 }
 
-// documentCategories are never sent to D3 as images. The classification of a
+// documentCategoryTerms are never sent to D3 as images. The classification of a
 // document still runs in text/form mode, but an identity or payment document
-// must not leave the application perimeter.
-var documentCategories = map[string]bool{
-	"document":          true,
-	"documento":         true,
-	"documenti":         true,
-	"documents":         true,
-	"identity_document": true,
+// must not leave the application perimeter. Matching is normalized (lowercase)
+// and substring-based so "carta di credito", "identity card" and the risk.go
+// vocabulary are all covered.
+var documentCategoryTerms = []string{
+	"passport", "passaporto",
+	"identity", "identità", "identita",
+	"patente", "driving license",
+	"credit card", "carta di credito",
+	"health card", "tessera sanitaria",
+	"sim",
+	"document", "documento", "documenti", "documents",
 }
 
 // catalogImages returns the photos to send to D3. Images are opt-in and are
-// always skipped for document categories; the caller still gets a valid
-// classification from the form values and the text questions.
+// always skipped for document categories and for a blank category; the caller
+// still gets a valid classification from the form values and text questions.
 func (s *service) catalogImages(photos []ImageInput, category string) []string {
 	if !s.deps.AllowD3Images || isDocumentCategory(category) {
 		return []string{}
@@ -221,9 +225,20 @@ func (s *service) catalogImages(photos []ImageInput, category string) []string {
 	return s.dataURLs(photos)
 }
 
-// isDocumentCategory reports whether the form category is a document category.
+// isDocumentCategory reports whether the form category belongs to the sensitive
+// document vocabulary. A blank category is treated as a document: the D3 opt-in
+// must never ship an unclassified photo.
 func isDocumentCategory(category string) bool {
-	return documentCategories[strings.ToLower(strings.TrimSpace(category))]
+	normalized := strings.ToLower(strings.TrimSpace(category))
+	if normalized == "" {
+		return true
+	}
+	for _, term := range documentCategoryTerms {
+		if strings.Contains(normalized, term) {
+			return true
+		}
+	}
+	return false
 }
 
 // dataURLs converts the photos into the inline data URLs accepted by d3.

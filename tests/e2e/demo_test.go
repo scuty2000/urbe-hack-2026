@@ -156,7 +156,7 @@ func TestDemoFlow(t *testing.T) {
 	t.Run("seeded approved claim to returned phone", func(t *testing.T) {
 		testserver.ResetDemo(t, server)
 
-		searcher := login(t, server, "searcher-demo")
+		searcher := login(t, server, "searcher-alt")
 		barX := login(t, server, "bar-x")
 
 		pass := searcher.json(http.MethodPost, "/api/passes", map[string]any{"claimId": "claim-phone"}, http.StatusCreated)
@@ -180,15 +180,6 @@ func TestDemoFlow(t *testing.T) {
 
 	t.Run("seeded phone chat and institution approval", func(t *testing.T) {
 		testserver.ResetDemo(t, server)
-
-		// The seeded phone already has an approved claim for the demo searcher.
-		// Retire it so the chat exercises the allowed retry path instead of the
-		// one-open-claim-per-searcher guard.
-		if err := server.DB.UpdateClaimFields(t.Context(), "claim-phone", map[string]any{
-			"status": "rejected",
-		}); err != nil {
-			t.Fatalf("retiring the seeded claim: %v", err)
-		}
 
 		searcher := login(t, server, "searcher-demo")
 		institution := login(t, server, "institution-demo")
@@ -217,6 +208,16 @@ func TestDemoFlow(t *testing.T) {
 		claimID, _ := second["claimId"].(string)
 		if claimID == "" || second["done"] != true {
 			t.Fatalf("second chat turn did not create a claim: %+v", second)
+		}
+
+		// Regression: the demo searcher can create a fresh claim on item-phone
+		// while the seeded claim-phone remains approved for its own owner.
+		seededClaim, err := server.DB.GetClaimByID(t.Context(), "claim-phone")
+		if err != nil {
+			t.Fatalf("reading the seeded claim: %v", err)
+		}
+		if seededClaim.Status != "approved" || seededClaim.SearcherID != "searcher-alt" {
+			t.Fatalf("seeded claim = %+v, want approved for searcher-alt", seededClaim)
 		}
 
 		claim := searcher.json(http.MethodGet, "/api/claims/"+claimID, nil, http.StatusOK)

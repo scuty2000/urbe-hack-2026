@@ -177,16 +177,7 @@ func TestMockAgentDoesNotLeakPrivateData(t *testing.T) {
 }
 
 func TestMockAgentCreatesClaimFromDetails(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	seed.Demo(t, db)
-	// The seeded phone already has an approved claim for the demo searcher. Mark
-	// it rejected to exercise the allowed retry instead of the duplicate guard.
-	if err := db.UpdateClaimFields(context.Background(), "claim-phone", map[string]any{
-		"status": "rejected",
-	}); err != nil {
-		t.Fatalf("retiring the seeded claim: %v", err)
-	}
-	svc := agent.New(db, agent.Deps{DeepSeekKey: ""})
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
