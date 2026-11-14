@@ -395,8 +395,10 @@ paths:
         rendered as a QR code by the client.
 
         A PA return with an unpaid fee yields a `pending_payment` pass: it is
-        issued but cannot be validated or redeemed until the fee is paid.
-        Direct returns before the transfer to the PA are free.
+        issued but cannot be validated or redeemed until the fee is paid. Once
+        the fee is settled, validating or redeeming the same token transitions
+        it to `issued` with a guarded status update. Direct returns before the
+        transfer to the PA are free.
 
         If the signing secret is not configured the endpoint fails closed with
         `503`.
@@ -411,6 +413,12 @@ paths:
       responses:
         "201":
           description: Pass issued; the raw token is included only here
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+              description: The response contains a bearer token and must never be cached.
           content:
             application/json:
               schema:

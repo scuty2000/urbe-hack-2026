@@ -39,6 +39,7 @@ func (h *WebAPIHandler) PostPass(ctx *reqcontext.RequestContext) {
 		return
 	}
 
+	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusCreated, dto.ToPassResponse(issued))
 }
 

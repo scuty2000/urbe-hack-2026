@@ -725,6 +725,33 @@ func TestPassIssueRevokeAndRedeem(t *testing.T) {
 		t.Fatalf("mismatch must not change item: %q", item.Status)
 	}
 
+	// The guarded transition must never overwrite a terminal status. The
+	// revoked first pass cannot be flipped back to validated, while the live
+	// second pass transitions exactly once.
+	if ok, err := db.TransitionPassStatus(ctx, "pass-1", "issued", "validated"); err != nil || ok {
+		t.Fatalf("TransitionPassStatus(revoked) = %v, %v; want false, nil", ok, err)
+	}
+	if ok, err := db.TransitionPassStatus(ctx, "pass-2", "issued", "validated"); err != nil || !ok {
+		t.Fatalf("TransitionPassStatus(issued) = %v, %v; want true, nil", ok, err)
+	}
+	if ok, err := db.TransitionPassStatus(ctx, "pass-2", "issued", "validated"); err != nil || ok {
+		t.Fatalf("TransitionPassStatus(validated) = %v, %v; want false, nil", ok, err)
+	}
+	got, err = db.GetPassByTokenHash(ctx, "hash-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "revoked" {
+		t.Fatalf("guarded transition resurrected revoked pass: %q", got.Status)
+	}
+	got, err = db.GetPassByTokenHash(ctx, "hash-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "validated" {
+		t.Fatalf("guarded transition status: %q want validated", got.Status)
+	}
+
 	// Redeeming updates pass, item and claim in one transaction; empty
 	// assertions mean "trust the stored pass".
 	if err := db.RedeemPass(ctx, "pass-2", "", "", now.Add(5*time.Minute)); err != nil {

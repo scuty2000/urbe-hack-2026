@@ -81,6 +81,9 @@ func TestPassHttpFlow(t *testing.T) {
 	if issued.Code != http.StatusCreated {
 		t.Fatalf("POST /api/passes status = %d (body %s)", issued.Code, issued.Body.String())
 	}
+	if got := issued.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
 	var passBody map[string]any
 	if err := json.NewDecoder(issued.Body).Decode(&passBody); err != nil {
 		t.Fatalf("decoding pass: %v", err)

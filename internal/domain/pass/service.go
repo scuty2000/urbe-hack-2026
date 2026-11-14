@@ -246,6 +246,27 @@ func (s *service) validate(
 		return invalidValidation(ReasonInvalidToken, errs.ErrInvalidInput)
 	}
 
+	// Terminal states win before any fee lookup, so a revoked or already
+	// redeemed token never triggers payment work.
+	switch row.Status {
+	case StatusRedeemed:
+		return invalidValidation(ReasonAlreadyRedeemed, errs.ErrConflict)
+	case StatusRevoked:
+		return invalidValidation(ReasonRevoked, errs.ErrConflict)
+	case StatusExpired:
+		return invalidValidation(ReasonExpired, errs.ErrInvalidInput)
+	}
+	if row.ExpiresAt.IsZero() || !now.Before(row.ExpiresAt) {
+		return invalidValidation(ReasonExpired, errs.ErrInvalidInput)
+	}
+
+	// Fee first: a pending_payment pass whose fee is now settled is unlocked
+	// to issued with a guarded transition. If a concurrent revoke/redeem wins,
+	// settleFee reloads that row and the switch below reports it.
+	row, fee, err := s.settleFee(ctx, s.db.Repository(), row)
+	if err != nil {
+		return validationFromError(err)
+	}
 	switch row.Status {
 	case StatusIssued, StatusValidated:
 	case StatusRedeemed:
@@ -259,8 +280,8 @@ func (s *service) validate(
 	default:
 		return invalidValidation(ReasonInvalidToken, errs.ErrInvalidInput)
 	}
-	if row.ExpiresAt.IsZero() || !now.Before(row.ExpiresAt) {
-		return invalidValidation(ReasonExpired, errs.ErrInvalidInput)
+	if fee.Required && !fee.Paid {
+		return invalidValidation(ReasonUnpaid, errs.ErrConflict)
 	}
 
 	claim, err := s.db.GetClaimByID(ctx, row.ClaimID)
@@ -291,19 +312,31 @@ func (s *service) validate(
 		return invalidValidation(ReasonItemNotInCustody, errs.ErrConflict)
 	}
 
-	fee, err := s.deps.Fees.Check(ctx, s.db.Repository(), row.ItemID, row.ReturnChannel)
-	if err != nil {
-		return Validation{}, fmt.Errorf("validate pass: checking fee: %w", err)
-	}
-	if fee.Required && !fee.Paid {
-		return invalidValidation(ReasonUnpaid, errs.ErrConflict)
-	}
-
 	if markValidated && row.Status == StatusIssued {
-		if err := s.db.UpdatePassFields(ctx, row.ID, map[string]any{"status": StatusValidated}); err != nil {
+		transitioned, err := s.db.TransitionPassStatus(ctx, row.ID, StatusIssued, StatusValidated)
+		if err != nil {
 			return Validation{}, fmt.Errorf("validate pass: marking validated: %w", err)
 		}
-		row.Status = StatusValidated
+		if transitioned {
+			row.Status = StatusValidated
+		} else {
+			// A concurrent revoke/redeem/expire (or another Validate) won the
+			// race. Reload so this response reports the winning state instead
+			// of silently treating a terminal pass as valid.
+			current, err := s.db.GetPassByID(ctx, row.ID)
+			if err != nil {
+				return Validation{}, fmt.Errorf("validate pass: reloading after status race: %w", err)
+			}
+			switch current.Status {
+			case StatusRedeemed:
+				return invalidValidation(ReasonAlreadyRedeemed, errs.ErrConflict)
+			case StatusRevoked:
+				return invalidValidation(ReasonRevoked, errs.ErrConflict)
+			case StatusExpired:
+				return invalidValidation(ReasonExpired, errs.ErrInvalidInput)
+			}
+			row.Status = current.Status
+		}
 	}
 
 	return Validation{
@@ -364,6 +397,27 @@ func (s *service) Redeem(
 			return fmt.Errorf("redeem pass: %w", err)
 		}
 
+		// Terminal states win before any fee lookup.
+		switch row.Status {
+		case StatusRedeemed:
+			return reasonError(ReasonAlreadyRedeemed, errs.ErrConflict)
+		case StatusRevoked:
+			return reasonError(ReasonRevoked, errs.ErrConflict)
+		case StatusExpired:
+			return reasonError(ReasonExpired, errs.ErrInvalidInput)
+		}
+		if row.ExpiresAt.IsZero() || !now.Before(row.ExpiresAt) {
+			return reasonError(ReasonExpired, errs.ErrInvalidInput)
+		}
+
+		// Fee first: a pending pass whose fee was settled after issue is
+		// unlocked to issued atomically here. The guarded transition cannot
+		// overwrite a concurrent revoke/redeem; in that case settleFee returns
+		// the winning row and the switch below reports it.
+		row, fee, err := s.settleFee(ctx, tx, row)
+		if err != nil {
+			return err
+		}
 		switch row.Status {
 		case StatusIssued, StatusValidated:
 		case StatusRedeemed:
@@ -377,8 +431,8 @@ func (s *service) Redeem(
 		default:
 			return reasonError(ReasonInvalidToken, errs.ErrInvalidInput)
 		}
-		if row.ExpiresAt.IsZero() || !now.Before(row.ExpiresAt) {
-			return reasonError(ReasonExpired, errs.ErrInvalidInput)
+		if fee.Required && !fee.Paid {
+			return reasonError(ReasonUnpaid, errs.ErrConflict)
 		}
 		if row.CustodianID != custodianID {
 			return reasonError(ReasonWrongCustodian, errs.ErrForbidden)
@@ -408,14 +462,6 @@ func (s *service) Redeem(
 		channel, ok := returnChannelFor(itemRow.Status)
 		if !ok || row.ReturnChannel != channel {
 			return reasonError(ReasonItemNotInCustody, errs.ErrConflict)
-		}
-
-		fee, err := s.deps.Fees.Check(ctx, tx, row.ItemID, row.ReturnChannel)
-		if err != nil {
-			return fmt.Errorf("redeem pass: checking fee: %w", err)
-		}
-		if fee.Required && !fee.Paid {
-			return reasonError(ReasonUnpaid, errs.ErrConflict)
 		}
 
 		// RedeemPass performs the guarded, single-use state transition for the
@@ -554,6 +600,52 @@ func returnChannelFor(itemStatus string) (string, bool) {
 
 func invalidValidation(reason string, sentinel error) (Validation, error) {
 	return Validation{Valid: false, Reason: reason}, reasonError(reason, sentinel)
+}
+
+// validationFromError keeps the machine-readable reason when a helper already
+// produced a ReasonError, and otherwise returns an internal error.
+func validationFromError(err error) (Validation, error) {
+	if reason := ReasonOf(err); reason != "" {
+		return Validation{Valid: false, Reason: reason}, err
+	}
+	return Validation{}, err
+}
+
+// settleFee checks the fee before any lifecycle decision. A pending_payment
+// pass whose fee is now settled (paid or free) is unlocked to issued with a
+// guarded UPDATE, so a concurrent revoke/redeem can never be overwritten. When
+// the guard loses, the reloaded row is returned and the caller reports the
+// winning state.
+func (s *service) settleFee(
+	ctx context.Context,
+	repo repository.Repository,
+	row record.PassRecord,
+) (record.PassRecord, FeeStatus, error) {
+	fee, err := s.deps.Fees.Check(ctx, repo, row.ItemID, row.ReturnChannel)
+	if err != nil {
+		return row, fee, fmt.Errorf("checking fee: %w", err)
+	}
+	if row.Status != StatusPendingPayment {
+		return row, fee, nil
+	}
+	if fee.Required && !fee.Paid {
+		return row, fee, reasonError(ReasonUnpaid, errs.ErrConflict)
+	}
+
+	unlocked, err := repo.TransitionPassStatus(ctx, row.ID, StatusPendingPayment, StatusIssued)
+	if err != nil {
+		return row, fee, fmt.Errorf("unlocking pending pass: %w", err)
+	}
+	if unlocked {
+		row.Status = StatusIssued
+		return row, fee, nil
+	}
+
+	current, err := repo.GetPassByID(ctx, row.ID)
+	if err != nil {
+		return row, fee, fmt.Errorf("reloading pass after unlock race: %w", err)
+	}
+	return current, fee, nil
 }
 
 func reasonError(reason string, sentinel error) error {

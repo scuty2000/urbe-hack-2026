@@ -11,6 +11,7 @@ import (
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/seed"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/testutil"
@@ -46,6 +47,8 @@ func TestPassRedeemsOnceAndRejectsWrongCustodian(t *testing.T) {
 	if p.Status != pass.StatusIssued {
 		t.Fatalf("Status = %q, want %q", p.Status, pass.StatusIssued)
 	}
+	assertCustodyEvent(t, db, "item-phone", pass.EventPassIssued)
+	assertAuditAction(t, db, p.ID, "pass.issued")
 
 	if _, err := svc.Validate(context.Background(), p.Token, "other-shop", now); !errors.Is(err, errs.ErrForbidden) {
 		t.Fatalf("Validate(other custodian) error = %v, want forbidden", err)
@@ -60,6 +63,8 @@ func TestPassRedeemsOnceAndRejectsWrongCustodian(t *testing.T) {
 	if item.Status != itemdomain.StatusReturned {
 		t.Fatalf("Redeem() item status = %q, want returned", item.Status)
 	}
+	assertCustodyEvent(t, db, "item-phone", pass.EventHandover)
+	assertAuditAction(t, db, p.ID, "pass.redeemed")
 
 	if _, err := svc.Redeem(context.Background(), p.Token, "bar-x", "bar-x", now); !errors.Is(err, errs.ErrConflict) {
 		t.Fatalf("second Redeem() error = %v, want conflict", err)
@@ -222,26 +227,64 @@ func TestPassPAFeeMustBePaidBeforeRedemption(t *testing.T) {
 		t.Fatalf("Redeem(unpaid) error = %v, want conflict", err)
 	}
 
-	// Marking the fee paid allows a fresh pass to be issued and redeemed.
+	// Settling the fee unlocks the *same* token: pending_payment -> issued.
 	if err := db.UpdateFeeFields(ctx, "fee-wallet", map[string]any{"status": "paid"}); err != nil {
 		t.Fatalf("UpdateFeeFields() error = %v", err)
 	}
-	p, err := svc.Issue(ctx, "claim-wallet", "searcher-demo", now)
+	validation, err := svc.Validate(ctx, pending.Token, "institution-demo", now)
 	if err != nil {
-		t.Fatalf("Issue(paid PA) error = %v", err)
-	}
-	if p.Status != pass.StatusIssued {
-		t.Fatalf("paid pass status = %q, want %q", p.Status, pass.StatusIssued)
-	}
-	if _, err := svc.Validate(ctx, p.Token, "institution-demo", now); err != nil {
 		t.Fatalf("Validate(paid PA) error = %v", err)
 	}
-	item, err := svc.Redeem(ctx, p.Token, "institution-demo", "institution-demo", now)
+	if !validation.Valid || validation.Status != pass.StatusValidated {
+		t.Fatalf("Validate(paid PA) = %+v, want valid and validated", validation)
+	}
+	item, err := svc.Redeem(ctx, pending.Token, "institution-demo", "institution-demo", now)
 	if err != nil {
 		t.Fatalf("Redeem(paid PA) error = %v", err)
 	}
 	if item.ID != "item-wallet" || item.Status != itemdomain.StatusReturned {
 		t.Fatalf("Redeem(paid PA) item = %+v, want returned wallet", item)
+	}
+}
+
+func TestPassPendingPaymentUnlocksOnRedeem(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	svc := pass.New(db, pass.Deps{PassSecret: testSecret, PassTTL: 30 * time.Minute})
+	now := time.Now().UTC()
+	ctx := context.Background()
+
+	if err := db.CreateClaim(ctx, record.ClaimRecord{
+		ID: "claim-wallet-redeem", ItemID: "item-wallet", SearcherID: "searcher-demo",
+		Status: "approved", ReturnChannel: "pa", Evidence: "[]",
+		ApprovalBy: "institution-demo", CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("CreateClaim(wallet) error = %v", err)
+	}
+	if err := db.CreateFee(ctx, record.FeeRecord{
+		ID: "fee-wallet-redeem", ItemID: "item-wallet", Applies: "pa_return",
+		AmountCents: 1500, Currency: "EUR", Status: "unpaid",
+	}); err != nil {
+		t.Fatalf("CreateFee(wallet) error = %v", err)
+	}
+
+	pending, err := svc.Issue(ctx, "claim-wallet-redeem", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue(unpaid PA) error = %v", err)
+	}
+	if pending.Status != pass.StatusPendingPayment {
+		t.Fatalf("unpaid pass status = %q, want pending_payment", pending.Status)
+	}
+	if err := db.UpdateFeeFields(ctx, "fee-wallet-redeem", map[string]any{"status": "paid"}); err != nil {
+		t.Fatalf("UpdateFeeFields() error = %v", err)
+	}
+
+	item, err := svc.Redeem(ctx, pending.Token, "institution-demo", "institution-demo", now)
+	if err != nil {
+		t.Fatalf("Redeem(pending paid) error = %v", err)
+	}
+	if item.ID != "item-wallet" || item.Status != itemdomain.StatusReturned {
+		t.Fatalf("Redeem(pending paid) item = %+v, want returned wallet", item)
 	}
 }
 
@@ -371,4 +414,126 @@ func TestPassStoresOnlyTheTokenHash(t *testing.T) {
 	if _, err := db.GetPassByTokenHash(ctx, p.Token); !errors.Is(err, errs.ErrNotFound) {
 		t.Fatalf("GetPassByTokenHash(raw token) error = %v, want not found", err)
 	}
+}
+
+// revokeOnCheck is a FeeChecker that revokes the item's open passes while the
+// validation service is between its read and its guarded status write. It pins
+// the "never resurrect a terminal status" guarantee.
+type revokeOnCheck struct {
+	itemID string
+	armed  bool
+}
+
+func (c *revokeOnCheck) Check(
+	ctx context.Context,
+	repo repository.Repository,
+	itemID, returnChannel string,
+) (pass.FeeStatus, error) {
+	if c.armed {
+		if _, err := repo.RevokePassesByItem(ctx, c.itemID, ""); err != nil {
+			return pass.FeeStatus{}, err
+		}
+	}
+	return pass.FeeStatus{}, nil
+}
+
+func TestPassValidateCannotResurrectRevokedStatus(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	fees := &revokeOnCheck{itemID: "item-phone"}
+	svc := pass.New(db, pass.Deps{PassSecret: testSecret, PassTTL: 30 * time.Minute, Fees: fees})
+	now := time.Now().UTC()
+	ctx := context.Background()
+
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+
+	// The fee check happens between Validate's read and its guarded write.
+	fees.armed = true
+	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("Validate(during revoke) error = %v, want conflict", err)
+	} else if pass.ReasonOf(err) != pass.ReasonRevoked {
+		t.Fatalf("Validate(during revoke) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonRevoked)
+	}
+	fees.armed = false
+
+	row, err := db.GetPassByID(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("GetPassByID() error = %v", err)
+	}
+	if row.Status != pass.StatusRevoked {
+		t.Fatalf("pass status after concurrent revoke = %q, want revoked", row.Status)
+	}
+	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("Validate(revoked) error = %v, want conflict", err)
+	} else if pass.ReasonOf(err) != pass.ReasonRevoked {
+		t.Fatalf("Validate(revoked) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonRevoked)
+	}
+}
+
+func TestPassValidateReportsItemNotInCustodyAndClaimNotApproved(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	svc := pass.New(db, pass.Deps{PassSecret: testSecret, PassTTL: 30 * time.Minute})
+	now := time.Now().UTC()
+	ctx := context.Background()
+
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+
+	if err := db.UpdateItemFields(ctx, "item-phone", map[string]any{"status": itemdomain.StatusReturned}); err != nil {
+		t.Fatalf("UpdateItemFields() error = %v", err)
+	}
+	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("Validate(item returned) error = %v, want conflict", err)
+	} else if pass.ReasonOf(err) != pass.ReasonItemNotInCustody {
+		t.Fatalf("Validate(item returned) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonItemNotInCustody)
+	}
+
+	if err := db.UpdateItemFields(ctx, "item-phone", map[string]any{"status": itemdomain.StatusInCustody}); err != nil {
+		t.Fatalf("restoring item status: %v", err)
+	}
+	if err := db.UpdateClaimFields(ctx, "claim-phone", map[string]any{"status": "rejected"}); err != nil {
+		t.Fatalf("UpdateClaimFields() error = %v", err)
+	}
+	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("Validate(claim rejected) error = %v, want conflict", err)
+	} else if pass.ReasonOf(err) != pass.ReasonClaimNotApproved {
+		t.Fatalf("Validate(claim rejected) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonClaimNotApproved)
+	}
+}
+
+func assertCustodyEvent(t *testing.T, db repository.Database, itemID, eventType string) {
+	t.Helper()
+	events, err := db.ListCustodyEvents(context.Background(), itemID)
+	if err != nil {
+		t.Fatalf("ListCustodyEvents() error = %v", err)
+	}
+	for _, event := range events {
+		if event.Type == eventType {
+			return
+		}
+	}
+	t.Fatalf("no %q custody event for %s (got %+v)", eventType, itemID, events)
+}
+
+func assertAuditAction(t *testing.T, db repository.Database, passID, action string) {
+	t.Helper()
+	logs, err := db.ListAuditLogs(context.Background(), repository.AuditLogFilter{
+		Entity:   "pass",
+		EntityID: passID,
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLogs() error = %v", err)
+	}
+	for _, entry := range logs {
+		if entry.Action == action {
+			return
+		}
+	}
+	t.Fatalf("no %q audit entry for pass %s (got %+v)", action, passID, logs)
 }

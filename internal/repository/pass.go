@@ -94,6 +94,21 @@ func (r *repo) IssuePass(ctx context.Context, pass record.PassRecord) error {
 	})
 }
 
+// TransitionPassStatus applies a guarded UPDATE pickup_passes SET status=?
+// WHERE id=? AND status=? and reports whether a row changed. A false result
+// means a concurrent revoke/redeem/expire won the race; callers must leave the
+// stored state alone rather than overwriting a terminal status.
+func (r *repo) TransitionPassStatus(ctx context.Context, id, fromStatus, toStatus string) (bool, error) {
+	res := r.gormdb.WithContext(ctx).
+		Model(&record.PassRecord{}).
+		Where("id = ? AND status = ?", id, fromStatus).
+		Update("status", toStatus)
+	if res.Error != nil {
+		return false, wrapErr("TransitionPassStatus", res.Error)
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // RevokePassesByItem revokes open passes for an item, except the pass that
 // must survive a re-issue (pass "" to revoke all).
 func (r *repo) RevokePassesByItem(ctx context.Context, itemID, exceptPassID string) (int64, error) {

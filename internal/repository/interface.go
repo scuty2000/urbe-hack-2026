@@ -145,6 +145,10 @@ type PassRepository interface {
 	// RevokePassesByItem revokes every still-open pass for the item except
 	// exceptPassID (pass "" to revoke all) and returns the number revoked.
 	RevokePassesByItem(ctx context.Context, itemID, exceptPassID string) (int64, error)
+	// TransitionPassStatus applies a guarded UPDATE ... WHERE id=? AND
+	// status=? and reports whether a row changed. It exists so state changes
+	// can never overwrite a terminal status (revoked/redeemed/expired).
+	TransitionPassStatus(ctx context.Context, id, fromStatus, toStatus string) (bool, error)
 	// RedeemPass atomically marks the pass redeemed, the item returned and the
 	// claim handed over. itemID and claimID are derived from the stored pass;
 	// the arguments are optional assertions (pass "" to skip) and a mismatch is
