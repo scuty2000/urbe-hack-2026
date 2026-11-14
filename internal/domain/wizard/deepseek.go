@@ -30,9 +30,10 @@ italiano e restituisci esclusivamente il tool submit_wizard_analysis con:
   mostrare dati personali. Mai contenuto di documenti, notifiche o interni di
   portafogli con carte visibili.
 - prefill: categoria, marca, modello, colore e condizioni in italiano. Compila
-  marca e modello solo se sono leggibili o riconoscibili con ragionevole
-  certezza dalla foto (logo, scritta, forma); se non lo sono, lascia la stringa
-  vuota. Non inventare.
+  sempre marca e modello con la migliore ipotesi basata su logo, scritta, forma,
+  colori e dettagli visibili. Se il modello esatto non è distinguibile, indica
+  il modello o la famiglia più probabile (ad esempio "iPhone 15" o "iPhone").
+  Lascia vuoto solo se la foto non contiene alcun indizio utile.
 - privatePrefill: 1-3 frasi specifiche sui dettagli visibili che aiutano a
   riconoscere l'oggetto: colore e materiale di custodia o cinturino, graffi,
   crepe, adesivi, incisioni, segni d'uso. Descrivi solo ciò che vedi; non
@@ -114,7 +115,8 @@ func plannerTool() deepseek.Tool {
 						},
 					},
 					"prefill": map[string]any{
-						"type": "object",
+						"type":     "object",
+						"required": []string{"category", "brand", "model", "color", "condition"},
 						"properties": map[string]any{
 							"category":  map[string]any{"type": "string"},
 							"brand":     map[string]any{"type": "string"},
