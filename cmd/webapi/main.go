@@ -271,10 +271,17 @@ func run() error {
 			}
 		}
 	}()
-	// Claims use D3 when configured and the deterministic local scorer
-	// otherwise; the verification engine itself falls back on outage.
+	// Ownership is judged by DeepSeek only: D3 stays for item classification
+	// and the wizard. Without DeepSeek (or on a provider outage) the
+	// deterministic local scorer answers, so a claim never blocks.
+	var ownershipJudge claimdomain.Completer
+	if cfg.Features.DeepSeek && strings.TrimSpace(cfg.DeepSeek.Key) != "" {
+		ownershipJudge = deepseek.New(cfg.DeepSeek.URL, cfg.DeepSeek.Key, cfg.DeepSeek.Model, cfg.DeepSeek.Timeout).
+			WithTrace(tracer, "verification")
+	}
+	ownershipEngine := claimdomain.DeepSeekEngine(ownershipJudge)
 	claimService := claimdomain.New(db, claimdomain.Deps{
-		Engine:   claimdomain.D3Engine(cataloger),
+		Engine:   ownershipEngine,
 		Notifier: platformService,
 	})
 	// PA fees use the seeded active tariff; the configured values are a
@@ -337,7 +344,7 @@ func run() error {
 	agentService := agentdomain.New(db, agentdomain.Deps{
 		Search:          searchService,
 		Claim:           claimService,
-		Engine:          claimdomain.D3Engine(cataloger),
+		Engine:          ownershipEngine,
 		DeepSeekKey:     deepSeekKey,
 		DeepSeekURL:     cfg.DeepSeek.URL,
 		DeepSeekModel:   cfg.DeepSeek.Model,

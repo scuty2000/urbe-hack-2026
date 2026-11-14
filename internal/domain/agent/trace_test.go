@@ -21,7 +21,7 @@ func TestChatWritesTurnToolDecisionAndReplyToTrace(t *testing.T) {
 	}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
 			`{"item_id":"item-phone","answers":{"case_color":"giallo"}}`)}},
 		{Content: "Mi descriva un altro dettaglio."},
 	}}
@@ -60,7 +60,7 @@ func TestChatWritesTurnToolDecisionAndReplyToTrace(t *testing.T) {
 		kinds[trace.KindToolCall] != 2 || kinds[trace.KindDecision] != 1 {
 		t.Fatalf("event kinds = %v, want 1 chat_turn, 2 tool_call, 1 decision, 1 reply", kinds)
 	}
-	if len(tools) != 2 || tools[0] != "search_items" || tools[1] != "score_with_d3" {
+	if len(tools) != 2 || tools[0] != "search_items" || tools[1] != "score_answers" {
 		t.Fatalf("traced tools = %v", tools)
 	}
 	if len(turns) != 1 || turns[""] {

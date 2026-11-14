@@ -178,7 +178,7 @@ func decisionRank(evaluation ownershipEvaluation) int {
 
 // preflightChat is the deterministic ownership gate. After the first exchange,
 // it searches with the searcher's own words, evaluates the extracted private
-// answers with the configured engine (D3 when available) against the top
+// answers with the configured engine (the DeepSeek judge, local scorer as fallback) against the top
 // candidates and either creates the claim, asks for more information, or
 // closes the conversation when every candidate clearly contradicts the answers.
 // An item without verifiable private attributes becomes a claim under human

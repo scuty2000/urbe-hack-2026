@@ -264,7 +264,7 @@ func TestToolLoopSearchesThenAnswers(t *testing.T) {
 	for _, tool := range llm.tools[0] {
 		names[tool.Function.Name] = true
 	}
-	for _, want := range []string{"search_items", "get_private_profile", "score_with_d3", "create_claim", "escalate"} {
+	for _, want := range []string{"search_items", "get_private_profile", "score_answers", "create_claim", "escalate"} {
 		if !names[want] {
 			t.Fatalf("tool %q not declared: %+v", want, names)
 		}
@@ -596,7 +596,7 @@ func TestScoreSingleWrongPrivateDetailKeepsAsking(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
 			`{"item_id":"item-phone","answers":{"case_color":"giallo"}}`)}},
 		{Content: "Mi descriva un altro dettaglio."},
 	}}
@@ -613,7 +613,7 @@ func TestScoreSingleWrongPrivateDetailKeepsAsking(t *testing.T) {
 	if claims.calls != 0 || reply.ClaimID != "" {
 		t.Fatalf("claim was forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
 	}
-	if result := toolResultFor(t, llm.call(2), "score_with_d3"); !strings.Contains(result, `"more_info"`) {
+	if result := toolResultFor(t, llm.call(2), "score_answers"); !strings.Contains(result, `"more_info"`) {
 		t.Fatalf("score result = %s, want more_info", result)
 	}
 }
@@ -622,7 +622,7 @@ func TestScoreSeveralWrongPrivateDetailsCloseWithoutClaim(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
 			`{"item_id":"item-phone","answers":{"case_color":"giallo","sticker":"cane"}}`)}},
 		{Content: "Continuiamo a provare."},
 	}}
@@ -645,7 +645,7 @@ func TestScoreNoPrivateAttributesGoesToHumanReview(t *testing.T) {
 	claims := &recordingClaims{created: claim.Claim{ID: "claim-watch", Status: claim.StatusUnderReview}}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"orologio"}`)}},
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
 			`{"item_id":"watch-x","answers":{"color":"nero"}}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-3", "create_claim",
 			`{"item_id":"watch-x","answers":{"color":"nero"}}`)}},
@@ -672,7 +672,7 @@ func TestScoreNoPrivateAttributesGoesToHumanReview(t *testing.T) {
 	if !reply.Done || reply.ClaimID != "claim-watch" {
 		t.Fatalf("reply = %+v, want a claim under human review", reply)
 	}
-	if result := toolResultFor(t, llm.call(2), "score_with_d3"); !strings.Contains(result, `"review"`) {
+	if result := toolResultFor(t, llm.call(2), "score_answers"); !strings.Contains(result, `"review"`) {
 		t.Fatalf("score result = %s, want review", result)
 	}
 	if claims.calls != 1 || len(claims.input.Flags) != 1 || claims.input.Flags[0] != "missing_evidence" {
@@ -703,7 +703,7 @@ func TestEscalateIsBlockedWhileOwnershipIsUndecided(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
 			`{"item_id":"item-phone","answers":{"color":"nero"}}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-3", "escalate", `{}`)}},
 		{Content: "Mi descriva un altro dettaglio della custodia."},
@@ -805,7 +805,7 @@ func TestMultipleCreateClaimCallsCreateOneClaim(t *testing.T) {
 func TestScoreToolReturnsNoExpectedValues(t *testing.T) {
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
 			`{"item_id":"item-phone","answers":{"color":"nero","has_crack":"sì"}}`)}},
 		{Content: "Grazie, verifico le informazioni."},
 	}}
@@ -816,7 +816,7 @@ func TestScoreToolReturnsNoExpectedValues(t *testing.T) {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	result := toolResultFor(t, llm.call(2), "score_with_d3")
+	result := toolResultFor(t, llm.call(2), "score_answers")
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(result), &decoded); err != nil {
 		t.Fatalf("decoding score result %q: %v", result, err)
@@ -988,7 +988,7 @@ func TestClaimOnLastToolRoundRepliesWithClaimOutcome(t *testing.T) {
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "search_items", `{"query":"iphone nero"}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-3", "get_private_profile", `{"item_id":"item-phone"}`)}},
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-4", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-4", "score_answers",
 			`{"item_id":"item-phone","answers":{"case_color":"blu"}}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-5", "create_claim",
 			`{"item_id":"item-phone","answers":{"case_color":"blu"}}`)}},

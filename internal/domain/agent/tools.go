@@ -145,7 +145,7 @@ func toolDefinitions() []deepseek.Tool {
 		{
 			Type: "function",
 			Function: deepseek.ToolFunction{
-				Name:        ToolScoreWithD3,
+				Name:        ToolScoreAnswers,
 				Description: "Valuta le risposte rispetto all'oggetto. Le chiavi sono gli attributi del profilo (es. case_color, has_crack, sticker, contents); i valori sono le parole scritte dall'utente, riportate alla lettera. Restituisce solo confidenza, decisione e motivazioni, mai i valori attesi.",
 				Parameters: map[string]any{
 					"type": "object",
@@ -164,7 +164,7 @@ func toolDefinitions() []deepseek.Tool {
 			Type: "function",
 			Function: deepseek.ToolFunction{
 				Name:        ToolCreateClaim,
-				Description: "Crea la richiesta di verifica per il searcher autenticato, con le stesse risposte (parole dell'utente alla lettera) passate a score_with_d3. Non accetta una confidenza dal client.",
+				Description: "Crea la richiesta di verifica per il searcher autenticato, con le stesse risposte (parole dell'utente alla lettera) passate a score_answers. Non accetta una confidenza dal client.",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -231,7 +231,7 @@ func (s *service) dispatchTool(ctx context.Context, searcherID string, call deep
 		return s.toolSearch(ctx, call, state)
 	case ToolGetPrivateProfile:
 		return s.toolPrivateProfile(ctx, call, state)
-	case ToolScoreWithD3:
+	case ToolScoreAnswers:
 		return s.toolScore(ctx, call, state)
 	case ToolCreateClaim:
 		return s.toolCreateClaim(ctx, searcherID, call, state)
@@ -851,7 +851,7 @@ func scoringAttributes(item itemdomain.Item) (map[string]any, map[string]bool) {
 	return attributes, private
 }
 
-// questionsFor maps supported values to the d3 question types used by the claim
+// questionsFor maps supported values to the question types used by the claim
 // service: lists become choice questions, everything else stays noul.
 func questionsFor(attributes map[string]any, privateKeys map[string]bool) verification.Questions {
 	questions := make(verification.Questions, len(privateKeys)+1)
