@@ -3,6 +3,7 @@ package custody_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -432,6 +433,130 @@ func TestAcceptUsesConfiguredPolicy(t *testing.T) {
 	}
 	if acceptedSensitive.MaxCustodyDays != 1 {
 		t.Fatalf("sensitive MaxCustodyDays = %d, want 1", acceptedSensitive.MaxCustodyDays)
+	}
+}
+
+func TestConcurrentAcceptsHaveSingleWinner(t *testing.T) {
+	svc, db := newCustodyService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	seedCustody(t, db, defaultFixture(now))
+
+	const attempts = 8
+	start := make(chan struct{})
+	results := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := svc.Accept(ctx, "item-umbrella", "bar-x", now)
+			results <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	successes, conflicts := 0, 0
+	var unexpected []error
+	for err := range results {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, errs.ErrConflict):
+			conflicts++
+		default:
+			unexpected = append(unexpected, err)
+		}
+	}
+	if len(unexpected) > 0 {
+		t.Fatalf("concurrent Accept() returned non-conflict errors (want a clean 409, not SQLITE_BUSY): %v", unexpected)
+	}
+	if successes != 1 {
+		t.Fatalf("successful accepts = %d, want exactly 1", successes)
+	}
+	if conflicts != attempts-1 {
+		t.Fatalf("conflicting accepts = %d, want %d", conflicts, attempts-1)
+	}
+
+	events, err := db.ListCustodyEvents(ctx, "item-umbrella")
+	if err != nil {
+		t.Fatalf("ListCustodyEvents() error = %v", err)
+	}
+	acceptedEvents := 0
+	for _, event := range events {
+		if event.Type == custody.EventAccepted {
+			acceptedEvents++
+		}
+	}
+	if acceptedEvents != 1 {
+		t.Fatalf("accepted events = %d, want exactly 1", acceptedEvents)
+	}
+}
+
+func TestConcurrentTicksEmitSinglePickupEvent(t *testing.T) {
+	svc, db := newCustodyService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	seedCustody(t, db, defaultFixture(now))
+
+	accepted, err := svc.Accept(ctx, "item-umbrella", "bar-x", now)
+	if err != nil {
+		t.Fatalf("Accept() error = %v", err)
+	}
+	due := *accepted.DueAt
+
+	type outcome struct {
+		updated int
+		err     error
+	}
+	const ticks = 8
+	start := make(chan struct{})
+	results := make(chan outcome, ticks)
+	var wg sync.WaitGroup
+	for i := 0; i < ticks; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			dueItems, err := svc.MarkPickupDue(ctx, due)
+			results <- outcome{updated: len(dueItems), err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	total := 0
+	var unexpected []error
+	for result := range results {
+		if result.err != nil {
+			unexpected = append(unexpected, result.err)
+			continue
+		}
+		total += result.updated
+	}
+	if len(unexpected) > 0 {
+		t.Fatalf("concurrent MarkPickupDue() errors (want no SQLITE_BUSY): %v", unexpected)
+	}
+	if total != 1 {
+		t.Fatalf("items transitioned across ticks = %d, want exactly 1", total)
+	}
+
+	events, err := db.ListCustodyEvents(ctx, "item-umbrella")
+	if err != nil {
+		t.Fatalf("ListCustodyEvents() error = %v", err)
+	}
+	pickupEvents := 0
+	for _, event := range events {
+		if event.Type == custody.EventPickupScheduled {
+			pickupEvents++
+		}
+	}
+	if pickupEvents != 1 {
+		t.Fatalf("pickup_scheduled events = %d, want exactly 1", pickupEvents)
 	}
 }
 

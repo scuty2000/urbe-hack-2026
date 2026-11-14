@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
 	"gorm.io/gorm"
 )
@@ -77,6 +78,29 @@ func (r *repo) UpdateItemFields(ctx context.Context, id string, fields map[strin
 		fields = withTimestamp
 	}
 	return r.updateFields(ctx, "UpdateItemFields", "items", id, fields, itemUpdateColumns)
+}
+
+// TransitionItemStatus applies a guarded status change and reports whether the
+// row was updated. The WHERE clause on the current status is the race-proof
+// gate: a concurrent transition that already moved the item away from
+// fromStatus leaves RowsAffected at 0, so callers can map it to
+// errs.ErrConflict (or skip the item) without risking a double transition.
+func (r *repo) TransitionItemStatus(ctx context.Context, id, fromStatus, toStatus string) (bool, error) {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(fromStatus) == "" || strings.TrimSpace(toStatus) == "" {
+		return false, fmt.Errorf("TransitionItemStatus: id, from and to statuses are required: %w", errs.ErrInvalidInput)
+	}
+
+	res := r.gormdb.WithContext(ctx).
+		Table("items").
+		Where("id = ? AND status = ?", id, fromStatus).
+		Updates(map[string]any{
+			"status":     toStatus,
+			"updated_at": time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return false, wrapErr("TransitionItemStatus", res.Error)
+	}
+	return res.RowsAffected > 0, nil
 }
 
 func (r *repo) ListItemsByCustodian(ctx context.Context, custodianID string) ([]record.ItemRecord, error) {

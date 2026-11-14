@@ -108,12 +108,19 @@ func (s *service) Accept(ctx context.Context, itemID, actorID string, now time.T
 			dueAt = now.Add(time.Duration(hours) * time.Hour)
 		}
 
-		if err := tx.UpdateItemFields(ctx, itemID, map[string]any{
-			"status":     itemdomain.StatusInCustody,
-			"updated_at": now,
-		}); err != nil {
+		// The guarded update is the race-proof gate: only one concurrent
+		// accept can move the item out of pending_custody. The pre-read above
+		// only exists for a clearer error message.
+		transitioned, err := tx.TransitionItemStatus(
+			ctx, itemID, itemdomain.StatusPendingCustody, itemdomain.StatusInCustody,
+		)
+		if err != nil {
 			return fmt.Errorf("accept custody %q: %w", itemID, err)
 		}
+		if !transitioned {
+			return fmt.Errorf("accept custody %q: status changed concurrently: %w", itemID, errs.ErrConflict)
+		}
+
 		if err := tx.UpdateCustodyFields(ctx, custodyRow.ID, map[string]any{
 			"accepted_at":      now,
 			"due_at":           dueAt,
@@ -213,11 +220,16 @@ func (s *service) Refuse(ctx context.Context, itemID, actorID, reason string) (i
 			return fmt.Errorf("refuse custody %q: no open custody: %w", itemID, errs.ErrConflict)
 		}
 
-		if err := tx.UpdateItemFields(ctx, itemID, map[string]any{
-			"status":     itemdomain.StatusCustodyRejected,
-			"updated_at": now,
-		}); err != nil {
+		// Guarded transition: a concurrent accept/refuse that already moved the
+		// item leaves this UPDATE without a row and yields a clean conflict.
+		transitioned, err := tx.TransitionItemStatus(
+			ctx, itemID, itemdomain.StatusPendingCustody, itemdomain.StatusCustodyRejected,
+		)
+		if err != nil {
 			return fmt.Errorf("refuse custody %q: %w", itemID, err)
+		}
+		if !transitioned {
+			return fmt.Errorf("refuse custody %q: status changed concurrently: %w", itemID, errs.ErrConflict)
 		}
 		if err := tx.UpdateCustodyFields(ctx, custodyRow.ID, map[string]any{
 			"closed_at": now,
@@ -288,8 +300,14 @@ func (s *service) MarkPickupDue(ctx context.Context, now time.Time) ([]itemdomai
 			notes = "sensitive custody deadline reached; pickup due"
 		}
 
-		if err := s.markOneDue(ctx, row, status, notes, now); err != nil {
+		transitioned, err := s.markOneDue(ctx, row, status, notes, now)
+		if err != nil {
 			return nil, fmt.Errorf("mark pickup due %q: %w", row.ID, err)
+		}
+		// Another concurrent tick already transitioned this item: it must not
+		// collect a second event or appear twice in the response.
+		if !transitioned {
+			continue
 		}
 
 		row.Status = status
@@ -303,35 +321,41 @@ func (s *service) MarkPickupDue(ctx context.Context, now time.Time) ([]itemdomai
 	return due, nil
 }
 
-// markOneDue writes one pickup-due transition atomically.
+// markOneDue writes one pickup-due transition atomically. It reports false when
+// a concurrent tick already moved the item away from in_custody, in which case
+// no event or audit entry is written.
 func (s *service) markOneDue(
 	ctx context.Context,
 	row record.ItemRecord,
 	status, notes string,
 	now time.Time,
-) error {
+) (bool, error) {
 	eventID, err := newID()
 	if err != nil {
-		return err
+		return false, err
 	}
 	auditID, err := newID()
 	if err != nil {
-		return err
+		return false, err
 	}
 	metadata, err := auditMetadata(map[string]any{
 		"status":    status,
 		"sensitive": row.Sensitive,
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	return s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
-		if err := tx.UpdateItemFields(ctx, row.ID, map[string]any{
-			"status":     status,
-			"updated_at": now,
-		}); err != nil {
+	transitioned := false
+	err = s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
+		ok, err := tx.TransitionItemStatus(
+			ctx, row.ID, itemdomain.StatusInCustody, status,
+		)
+		if err != nil {
 			return err
+		}
+		if !ok {
+			return nil
 		}
 		if err := tx.CreateCustodyEvent(ctx, record.CustodyEventRecord{
 			ID:        eventID,
@@ -343,7 +367,7 @@ func (s *service) markOneDue(
 		}); err != nil {
 			return err
 		}
-		return tx.CreateAuditLog(ctx, record.AuditLogRecord{
+		if err := tx.CreateAuditLog(ctx, record.AuditLogRecord{
 			ID:        auditID,
 			ActorID:   systemActor,
 			Action:    auditActionPickupScheduled,
@@ -351,8 +375,16 @@ func (s *service) markOneDue(
 			EntityID:  row.ID,
 			Metadata:  metadata,
 			Timestamp: now,
-		})
+		}); err != nil {
+			return err
+		}
+		transitioned = true
+		return nil
 	})
+	if err != nil {
+		return false, err
+	}
+	return transitioned, nil
 }
 
 // DaysLeft returns the whole days remaining before the item's open custody

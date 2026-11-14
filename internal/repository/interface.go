@@ -67,6 +67,11 @@ type ItemRepository interface {
 	// Unknown columns or an empty map return errs.ErrInvalidInput; updated_at
 	// defaults to now. Timestamps are stored in UTC.
 	UpdateItemFields(ctx context.Context, id string, fields map[string]any) error
+	// TransitionItemStatus applies a guarded UPDATE items SET status=? WHERE
+	// id=? AND status=? and reports whether a row changed. A false result means
+	// the item was already in another status (lost race or repeated request);
+	// callers map it to errs.ErrConflict or skip the item.
+	TransitionItemStatus(ctx context.Context, id, fromStatus, toStatus string) (bool, error)
 	ListItemsByCustodian(ctx context.Context, custodianID string) ([]record.ItemRecord, error)
 	SearchItems(ctx context.Context, filter ItemFilter) ([]record.ItemRecord, error)
 	// ListPickupDue returns items whose current custody is open and due at or

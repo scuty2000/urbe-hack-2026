@@ -46,6 +46,7 @@ import (
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/d3"
+	platformsqlite "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/sqlite"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -123,7 +124,7 @@ func run() error {
 
 	// 1. Establish GORM connection pool
 	gormDB, err := gorm.Open(
-		sqlite.Open(cfg.DB.Filename),
+		sqlite.Open(platformsqlite.DSN(cfg.DB.Filename)),
 		&gorm.Config{
 			SkipDefaultTransaction: true,
 		},

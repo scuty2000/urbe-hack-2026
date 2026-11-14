@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"testing"
 
+	platformsqlite "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/sqlite"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -24,7 +25,7 @@ func NewTestDB(t *testing.T) repository.Database {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	gormDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	gormDB, err := gorm.Open(sqlite.Open(platformsqlite.DSN(dbPath)), &gorm.Config{
 		SkipDefaultTransaction: true,
 		Logger:                 logger.Default.LogMode(logger.Silent),
 	})
