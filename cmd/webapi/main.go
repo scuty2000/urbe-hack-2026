@@ -43,10 +43,12 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
+	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/d3"
@@ -221,11 +223,23 @@ func run() error {
 	claimService := claimdomain.New(db, claimdomain.Deps{
 		Engine: claimdomain.D3Engine(cataloger),
 	})
+	// PA fees use the seeded active tariff; the configured values are a
+	// fallback for a fresh environment without tariff rows.
+	feeService := feedomain.New(db, feedomain.Deps{
+		Tariff: feedomain.Tariff{
+			DailyRateCents: int64(cfg.PA.DailyRateCents),
+			FixedFeeCents:  int64(cfg.PA.FixedFeeCents),
+			Currency:       cfg.PA.Currency,
+		},
+	})
+	rewardService := rewarddomain.New(db)
+
 	// Pickup passes are signed with the dedicated AUTH_PASS_SECRET. An empty
 	// secret is a deliberate fail-closed mode: passes cannot be issued.
 	passService := passdomain.New(db, passdomain.Deps{
 		PassSecret: cfg.Auth.PassSecret,
 		PassTTL:    cfg.Auth.PassTTL,
+		Fees:       feeService,
 	})
 
 	// Vector search is optional: without Qdrant or embeddings the search
@@ -313,6 +327,8 @@ func run() error {
 			SearchService:   searchService,
 			ClaimService:    claimService,
 			PassService:     passService,
+			FeeService:      feeService,
+			RewardService:   rewardService,
 			AgentService:    agentService,
 			DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
 			DemoResetSecret: cfg.Demo.ResetSecret,

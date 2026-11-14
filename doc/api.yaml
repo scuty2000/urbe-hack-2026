@@ -34,6 +34,10 @@ tags:
     description: Ownership claims, verification reports and custodian review
   - name: Passes
     description: Signed single-use pickup passes, QR validation and redemption
+  - name: Fees
+    description: PA custody fees and mock payments
+  - name: Rewards
+    description: Art. 930 reward notices settled outside the system
   - name: Chat
     description: Searcher conversational orchestrator (DeepSeek or mock fallback)
   - name: Custody
@@ -528,6 +532,172 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+# ─── /api/items/{id}/fee ─────────────────────────────────────────────────────
+
+  /api/items/{id}/fee:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    get:
+      tags: [Fees]
+      operationId: getItemFee
+      summary: Estimate the item's pickup fee
+      description: |
+        Returns the current fee for the item to an authenticated searcher,
+        intermediary or institution.
+
+        A direct return before the item is transferred is free:
+        `applies=none_direct_return` and `amountCents=0`. Once the item has been
+        transferred, the active PA tariff applies: the custody time since
+        `transferred_at` is rounded up to whole days (minimum 1) and multiplied
+        by the daily rate, plus the fixed fee. The estimate is recalculated until
+        it is paid; a paid fee is final.
+
+        The response contains no private profile, notes or exact coordinates.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Current fee estimate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Fee"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /api/fees/{id}/pay ──────────────────────────────────────────────────────
+
+  /api/fees/{id}/pay:
+    parameters:
+      - $ref: "#/components/parameters/feeId"
+
+    post:
+      tags: [Fees]
+      operationId: payFee
+      summary: Pay a PA fee with the mock provider
+      description: |
+        Settles a PA fee for the authenticated searcher who owns a claim on the
+        item. The mock provider records a `paid` payment with `provider=mock`, a
+        provider reference and a local receipt URL (`/receipts/{paymentId}`).
+        No real payment keys are involved.
+
+        A direct return is free and cannot be paid; an already settled fee cannot
+        be paid twice. The searcher then validates or redeems the same pickup
+        pass, which is unlocked from `pending_payment` to `issued`.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Payment receipt
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /api/items/{id}/reward-notice ───────────────────────────────────────────
+
+  /api/items/{id}/reward-notice:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    post:
+      tags: [Rewards]
+      operationId: requestRewardNotice
+      summary: Record the legal finder's reward request
+      description: |
+        Records the art. 930 reward requested by the item's legal finder. Only
+        the intermediary who is the legal finder may call this route.
+
+        The amount is optional. The platform never charges or pays the reward:
+        `paymentStatus` is always `outside_system`, and the settlement happens
+        between the parties outside the platform.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRewardNoticePayload"
+      responses:
+        "201":
+          description: Reward notice recorded
+          headers:
+            Location:
+              schema:
+                type: string
+                example: "/api/items/6a0f7f9e-0b9c-4d5a-9d6e-2f1a0c9b8e7d/reward-notice"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RewardNotice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    get:
+      tags: [Rewards]
+      operationId: getRewardNotice
+      summary: Read the item's reward notice
+      description: |
+        Returns the item's latest reward notice to an authenticated searcher,
+        intermediary or institution. The first searcher read before pickup sets
+        `shownToSearcherAt`; later reads preserve the original timestamp.
+
+        The response contains no private profile data or exact coordinates.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Reward notice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RewardNotice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
 # ─── /api/chat ───────────────────────────────────────────────────────────────
 
@@ -1449,6 +1619,111 @@ components:
           type: string
           format: date-time
 
+    Fee:
+      type: object
+      description: |
+        Safe fee read model. It contains no item profile, exact location or
+        payment secret.
+      required: [id, itemId, applies, custodyDays, amountCents, currency, status, paid]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        applies:
+          type: string
+          enum: [none_direct_return, pa_tariff]
+        custodyDays:
+          type: integer
+          minimum: 0
+          description: Whole custody days billed; 0 for a direct return.
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 0
+        currency:
+          type: string
+          example: "EUR"
+        status:
+          type: string
+          enum: [estimated, final, paid, waived]
+        paid:
+          type: boolean
+          description: True for a free direct return and for a settled PA fee.
+        payment:
+          $ref: "#/components/schemas/Payment"
+
+    Payment:
+      type: object
+      description: |
+        Mock-provider payment receipt. The provider reference and receipt URL are
+        local; no real payment credential is involved.
+      required: [id, feeId, provider, providerRef, status, receiptUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        feeId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [mock]
+        providerRef:
+          type: string
+        status:
+          type: string
+          enum: [paid]
+        paidAt:
+          type: string
+          format: date-time
+        receiptUrl:
+          type: string
+          example: "/receipts/2f1a0c9b-8e7d-4d5a-9d6e-6a0f7f9e0b9c"
+
+    CreateRewardNoticePayload:
+      type: object
+      description: |
+        Optional reward request body. The amount is requested, never charged by
+        the platform.
+      properties:
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 0
+
+    RewardNotice:
+      type: object
+      description: |
+        Art. 930 reward notice. It never contains the item's private profile or
+        exact coordinates.
+      required: [id, itemId, legalFinderId, requested, amountCents, paymentStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        legalFinderId:
+          type: string
+          example: "bar-x"
+        requested:
+          type: boolean
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 0
+        shownToSearcherAt:
+          type: string
+          format: date-time
+          description: Set on the first searcher read before pickup.
+        paymentStatus:
+          type: string
+          enum: [outside_system]
+
     ChatMessage:
       type: object
       required: [role, content]
@@ -1582,6 +1857,15 @@ components:
       in: path
       required: true
       description: UUID of the claim
+      schema:
+        type: string
+        format: uuid
+
+    feeId:
+      name: id
+      in: path
+      required: true
+      description: UUID of the fee
       schema:
         type: string
         format: uuid

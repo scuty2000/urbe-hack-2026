@@ -47,6 +47,8 @@ func newDemoRouter(t *testing.T) (http.Handler, repository.Database) {
 		SearchService:   search.New(db, search.Deps{}),
 		ClaimService:    claimdomain.New(db),
 		PassService:     passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
+		FeeService:      newFeeService(db),
+		RewardService:   newRewardService(db),
 		AgentService:    agent.New(db, agent.Deps{DeepSeekKey: ""}),
 		DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db) },
 		DemoResetSecret: "test-reset-secret",
@@ -113,6 +115,8 @@ func TestDemoResetIsUnavailableWithoutConfiguration(t *testing.T) {
 		SearchService:  search.New(db, search.Deps{}),
 		ClaimService:   claimdomain.New(db),
 		PassService:    passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
+		FeeService:     newFeeService(db),
+		RewardService:  newRewardService(db),
 		AgentService:   agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {

@@ -26,6 +26,8 @@ func (rt *_router) Handler() http.Handler {
 		rt.agentService,
 		rt.demoReset,
 		rt.demoResetSecret,
+		rt.feeService,
+		rt.rewardService,
 	)
 
 	rt.engine.GET("/names/:id", rt.wrap(h.GetNameByID))
@@ -60,6 +62,19 @@ func (rt *_router) Handler() http.Handler {
 	api.POST("/passes/redeem",
 		middleware.RequireAnyRole(rt.authService, auth.RoleIntermediary, auth.RoleInstitution),
 		rt.wrap(h.PostPassRedeem))
+
+	api.GET("/items/:id/fee",
+		middleware.RequireAnyRole(rt.authService, auth.RoleSearcher, auth.RoleIntermediary, auth.RoleInstitution),
+		rt.wrap(h.GetItemFee))
+	api.POST("/fees/:id/pay",
+		middleware.RequireRole(rt.authService, auth.RoleSearcher),
+		rt.wrap(h.PostFeePay))
+	api.POST("/items/:id/reward-notice",
+		middleware.RequireRole(rt.authService, auth.RoleIntermediary),
+		rt.wrap(h.PostRewardNotice))
+	api.GET("/items/:id/reward-notice",
+		middleware.RequireAnyRole(rt.authService, auth.RoleSearcher, auth.RoleIntermediary, auth.RoleInstitution),
+		rt.wrap(h.GetRewardNotice))
 
 	api.POST("/items",
 		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary),

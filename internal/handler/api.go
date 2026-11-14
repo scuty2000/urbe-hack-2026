@@ -48,10 +48,12 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
+	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
 )
@@ -89,6 +91,12 @@ type Config struct {
 
 	// PassService is the signed pickup-pass service.
 	PassService passdomain.Service
+
+	// FeeService estimates PA fees and records mock payments.
+	FeeService feedomain.Service
+
+	// RewardService records reward notices.
+	RewardService rewarddomain.Service
 
 	// AgentService is the searcher conversational orchestrator.
 	AgentService agentdomain.Service
@@ -140,6 +148,12 @@ func New(cfg Config) (Router, error) {
 	if cfg.PassService == nil {
 		return nil, errors.New("pass service is required")
 	}
+	if cfg.FeeService == nil {
+		return nil, errors.New("fee service is required")
+	}
+	if cfg.RewardService == nil {
+		return nil, errors.New("reward service is required")
+	}
 	if cfg.AgentService == nil {
 		return nil, errors.New("agent service is required")
 	}
@@ -168,6 +182,8 @@ func New(cfg Config) (Router, error) {
 		searchService:   cfg.SearchService,
 		claimService:    cfg.ClaimService,
 		passService:     cfg.PassService,
+		feeService:      cfg.FeeService,
+		rewardService:   cfg.RewardService,
 		agentService:    cfg.AgentService,
 		demoReset:       cfg.DemoReset,
 		demoResetSecret: cfg.DemoResetSecret,
@@ -185,6 +201,8 @@ type _router struct {
 	searchService   search.Service
 	claimService    claimdomain.Service
 	passService     passdomain.Service
+	feeService      feedomain.Service
+	rewardService   rewarddomain.Service
 	agentService    agentdomain.Service
 	demoReset       func(context.Context) error
 	demoResetSecret string

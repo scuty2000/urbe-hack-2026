@@ -7,10 +7,12 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
+	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 )
@@ -49,6 +51,12 @@ type WebAPIHandler struct {
 	// Passes is the signed pickup-pass service.
 	Passes passdomain.Service
 
+	// Fees estimates PA custody fees and records mock payments.
+	Fees feedomain.Service
+
+	// Rewards records the legal finder's reward notice.
+	Rewards rewarddomain.Service
+
 	// Agent is the searcher conversational orchestrator.
 	Agent agentdomain.Service
 
@@ -75,6 +83,8 @@ func New(
 	agentService agentdomain.Service,
 	demoReset func(context.Context) error,
 	demoResetSecret string,
+	feeService feedomain.Service,
+	rewardService rewarddomain.Service,
 ) *WebAPIHandler {
 	return &WebAPIHandler{
 		Names:           names,
@@ -86,6 +96,8 @@ func New(
 		Claims:          claimService,
 		Passes:          passService,
 		Agent:           agentService,
+		Fees:            feeService,
+		Rewards:         rewardService,
 		DemoReset:       demoReset,
 		DemoResetSecret: demoResetSecret,
 		chatLimiter:     newChatLimiter(chatRateLimit, chatRateWindow),

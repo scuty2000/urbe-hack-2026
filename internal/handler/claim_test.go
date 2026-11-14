@@ -44,6 +44,8 @@ func newClaimRouter(t *testing.T) http.Handler {
 		SearchService:  search.New(db, search.Deps{}),
 		ClaimService:   claimdomain.New(db),
 		PassService:    passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
+		FeeService:     newFeeService(db),
+		RewardService:  newRewardService(db),
 		AgentService:   agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {
