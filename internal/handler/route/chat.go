@@ -42,9 +42,10 @@ func (h *WebAPIHandler) PostChat(ctx *reqcontext.RequestContext) {
 		respondWithJSONError(ctx, http.StatusBadRequest, "body must be JSON with a messages array")
 		return
 	}
-	// The limit is per message, not per request: a single request may carry a
-	// whole conversation.
-	if !h.chatLimiter.allowN(ctx.User.ID, len(payload.Messages)) {
+	// The limit is per conversation turn, not per message: the client sends the
+	// full transcript every time, so charging each historical message would
+	// exhaust the budget during a normal interview.
+	if !h.chatLimiter.allow(ctx.User.ID) {
 		respondWithJSONError(ctx, http.StatusTooManyRequests, "too many chat messages, try again later")
 		return
 	}
@@ -88,14 +89,11 @@ func newChatLimiter(limit int, window time.Duration) *chatLimiter {
 	}
 }
 
-// allowN records n messages for key and reports whether the whole batch is
-// within the limit. A batch that would exceed the limit is not consumed.
-func (l *chatLimiter) allowN(key string, n int) bool {
+// allow records one conversation turn for key and reports whether it is within
+// the window. A request that would exceed the limit is not consumed.
+func (l *chatLimiter) allow(key string) bool {
 	if l == nil || key == "" {
 		return true
-	}
-	if n <= 0 {
-		n = 1
 	}
 	now := l.now().UTC()
 
@@ -107,13 +105,13 @@ func (l *chatLimiter) allowN(key string, n int) bool {
 	}
 	window, ok := l.counters[key]
 	if !ok || now.Sub(window.start) >= l.window {
-		l.counters[key] = chatWindow{start: now, count: n}
+		l.counters[key] = chatWindow{start: now, count: 1}
 		return true
 	}
-	if window.count+n > l.limit {
+	if window.count+1 > l.limit {
 		return false
 	}
-	window.count += n
+	window.count++
 	l.counters[key] = window
 	return true
 }

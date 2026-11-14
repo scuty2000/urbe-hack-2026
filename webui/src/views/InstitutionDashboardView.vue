@@ -128,6 +128,9 @@ async function transfer(item: InstitutionPickupItem) {
           </svg>
           Aggiorna
         </button>
+        <RouterLink to="/institution/scan" class="btn btn-secondary">
+          Scansiona un pass
+        </RouterLink>
         <RouterLink to="/institution/intake" class="btn btn-primary">
           + Intake ufficiale
         </RouterLink>

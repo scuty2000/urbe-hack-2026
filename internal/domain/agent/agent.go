@@ -31,8 +31,10 @@ import (
 
 const (
 	// maxClientMessages bounds the conversation history accepted from the
-	// client. The provider loop keeps the same bound.
-	maxClientMessages = 20
+	// client. The UI sends a full interview transcript, so the bound is generous;
+	// the provider conversation itself is still trimmed by
+	// maxConversationMessages before every completion.
+	maxClientMessages = 60
 	// maxConversationMessages bounds the provider conversation, including the
 	// system prompt and the tool messages.
 	maxConversationMessages = 20

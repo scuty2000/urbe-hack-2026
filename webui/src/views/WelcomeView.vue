@@ -3,13 +3,18 @@ import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { logout, user } from "../api";
 import { roleLabels } from "../format";
+import { clearAllPasses } from "../passStore";
 
 const router = useRouter();
 const roleLabel = computed(() => (user.value ? roleLabels[user.value.role] : "Ospite"));
 
 async function signOut() {
-  await logout();
-  await router.push({ name: "login" });
+  try {
+    await logout();
+  } finally {
+    clearAllPasses();
+    await router.push({ name: "login" });
+  }
 }
 </script>
 

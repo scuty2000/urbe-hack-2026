@@ -118,6 +118,12 @@ const routes: RouteRecordRaw[] = [
     meta: { roles: ["institution"], title: "Dettaglio oggetto" },
   },
   {
+    path: "/institution/scan",
+    name: "institution-scan",
+    component: () => import("./views/IntermediaryScanView.vue"),
+    meta: { roles: ["institution"], title: "Scansiona un pass" },
+  },
+  {
     path: "/:pathMatch(.*)*",
     redirect: "/",
   },

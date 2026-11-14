@@ -1,4 +1,5 @@
 import { readonly, ref } from "vue";
+import { clearAllPasses } from "./passStore";
 import type {
   AppNotification,
   ChatMessage,
@@ -87,6 +88,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (response.status === 401) {
       currentUser.value = null;
       sessionLoaded = true;
+      // A session change invalidates every cached pass token: the next user in
+      // this tab must never see the previous searcher's QR.
+      clearAllPasses();
       // An expired session found while browsing should return to the login
       // page. The initial /api/auth/me probe is handled by the router guard.
       if (
@@ -148,6 +152,8 @@ export async function login(userId: string): Promise<User> {
     method: "POST",
     json: { userId },
   });
+  // A new identity starts with a clean token cache.
+  clearAllPasses();
   currentUser.value = me;
   sessionLoaded = true;
   sessionError.value = null;
@@ -161,6 +167,7 @@ export async function logout(): Promise<void> {
     currentUser.value = null;
     sessionLoaded = true;
     sessionError.value = null;
+    clearAllPasses();
   }
 }
 
@@ -168,6 +175,7 @@ export function clearSession(): void {
   currentUser.value = null;
   sessionLoaded = true;
   sessionError.value = null;
+  clearAllPasses();
 }
 
 export async function createItem(

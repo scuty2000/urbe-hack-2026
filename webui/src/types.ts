@@ -350,4 +350,8 @@ export interface HealthStatus {
   db: boolean;
   qdrant: boolean;
   embeddings: boolean;
+  /** True when the D3 decision engine is enabled and configured. */
+  d3?: boolean;
+  /** "deepseek" when the conversational provider is active, "mock" otherwise. */
+  agentMode?: "deepseek" | "mock" | string;
 }

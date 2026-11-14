@@ -58,19 +58,34 @@ func newChatRouter(t *testing.T) (http.Handler, repository.Database) {
 	return router.Handler(), db
 }
 
-func TestChatRateLimitCountsMessages(t *testing.T) {
+func TestChatRateLimitCountsOneTurnPerRequest(t *testing.T) {
 	api, _ := newChatRouter(t)
 	searcher := loginAs(t, api, "searcher-demo")
 
-	// Two requests of ten messages consume the whole per-minute budget.
-	for i := 0; i < 2; i++ {
-		if got := doRequest(t, api, http.MethodPost, "/api/chat", chatBody(10), searcher).Code; got != http.StatusOK {
-			t.Fatalf("batch %d status = %d, want 200", i+1, got)
+	// Nineteen single-turn requests consume nineteen slots.
+	for i := 0; i < 19; i++ {
+		if got := doRequest(t, api, http.MethodPost, "/api/chat", chatBody(1), searcher).Code; got != http.StatusOK {
+			t.Fatalf("request %d status = %d, want 200", i+1, got)
 		}
 	}
-	// A third one-message request exceeds the 20-message budget immediately.
+	// A long transcript is still one new turn: it must fit in the last slot
+	// instead of consuming ten messages.
+	if got := doRequest(t, api, http.MethodPost, "/api/chat", chatBody(10), searcher).Code; got != http.StatusOK {
+		t.Fatalf("twenty-first slot (ten-message transcript) status = %d, want 200", got)
+	}
+	// The next turn is over the twenty-per-minute budget.
 	if got := doRequest(t, api, http.MethodPost, "/api/chat", chatBody(1), searcher).Code; got != http.StatusTooManyRequests {
-		t.Fatalf("request after 20 messages status = %d, want 429", got)
+		t.Fatalf("request after 20 turns status = %d, want 429", got)
+	}
+}
+
+func TestChatRejectsTooLongConversation(t *testing.T) {
+	api, _ := newChatRouter(t)
+	searcher := loginAs(t, api, "searcher-demo")
+
+	// The agent accepts at most 60 client messages; 61 is a clear 400.
+	if got := doRequest(t, api, http.MethodPost, "/api/chat", chatBody(61), searcher).Code; got != http.StatusBadRequest {
+		t.Fatalf("61-message conversation status = %d, want 400", got)
 	}
 }
 

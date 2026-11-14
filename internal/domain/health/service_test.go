@@ -109,6 +109,30 @@ func TestReadinessDisabledChecksAreHealthy(t *testing.T) {
 	if !status.OK || !status.DB || !status.Qdrant || !status.Embeddings {
 		t.Fatalf("status = %+v, want disabled checks to report true", status)
 	}
+	if status.D3 {
+		t.Fatalf("status.D3 = true, want false when D3 is not configured")
+	}
+	if status.AgentMode != "mock" {
+		t.Fatalf("status.AgentMode = %q, want mock by default", status.AgentMode)
+	}
+}
+
+func TestReadinessReportsD3AndAgentMode(t *testing.T) {
+	t.Parallel()
+
+	service := NewHealthService(fakePinger{}, Checks{
+		D3Enabled: true,
+		AgentMode: "deepseek",
+	})
+
+	status := service.Readiness(context.Background())
+
+	if !status.D3 {
+		t.Fatalf("status.D3 = false, want true when configured")
+	}
+	if status.AgentMode != "deepseek" {
+		t.Fatalf("status.AgentMode = %q, want deepseek", status.AgentMode)
+	}
 }
 
 func TestReadinessCachesEmbeddingsProbe(t *testing.T) {

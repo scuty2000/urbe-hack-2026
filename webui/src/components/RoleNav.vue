@@ -26,6 +26,7 @@ const links = computed(() => {
       return [
         { to: "/institution", label: "Ritiri" },
         { to: "/institution/intake", label: "Intake" },
+        { to: "/institution/scan", label: "Scansiona" },
       ];
     default:
       return [];

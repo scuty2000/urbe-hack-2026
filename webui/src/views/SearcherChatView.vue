@@ -7,6 +7,7 @@ import {
   createPass,
   getClaim,
   getHealth,
+  user,
 } from "../api";
 import CandidateCard from "../components/CandidateCard.vue";
 import ChatMessage from "../components/ChatMessage.vue";
@@ -42,25 +43,15 @@ const lookupBusy = ref(false);
 const transcript = ref<HTMLElement | null>(null);
 
 const mode = computed(() => {
-  if (!health.value) {
-    return healthError.value ? "fallback" : "unknown";
+  // Fail closed: only an explicit backend signal enables the "d3" badge.
+  // Older/partial health responses (or a probe failure) show the fallback.
+  if (health.value?.d3 === true && health.value?.agentMode === "deepseek") {
+    return "d3";
   }
-  // /api/health reports the optional semantic-search dependencies. When both
-  // are up the backend runs the D3/vector path; otherwise it degrades to the
-  // local fallback.
-  return health.value.qdrant && health.value.embeddings ? "d3" : "fallback";
+  return "fallback";
 });
 
-const modeLabel = computed(() => {
-  switch (mode.value) {
-    case "d3":
-      return "d3 attivo";
-    case "fallback":
-      return "modalità fallback";
-    default:
-      return "stato sconosciuto";
-  }
-});
+const modeLabel = computed(() => (mode.value === "d3" ? "d3 attivo" : "modalità fallback"));
 
 const claimTone = computed(() => {
   switch (claim.value?.status) {
@@ -124,9 +115,9 @@ async function send() {
   try {
     const reply = await chat(messages.value);
     messages.value = [...messages.value, { role: "assistant", content: reply.message }];
-    if (reply.candidates.length > 0) {
-      candidates.value = reply.candidates;
-    }
+    // Always replace the candidate list: an empty reply means the new search
+    // found nothing, so stale cards from a previous turn must disappear.
+    candidates.value = reply.candidates;
     if (reply.claimId) {
       await loadClaim(reply.claimId, true);
       notice.value = claim.value
@@ -144,6 +135,10 @@ async function send() {
     if (cause instanceof ApiError && cause.status === 429) {
       error.value =
         "Hai inviato troppi messaggi in poco tempo. Attendi un minuto e riprova.";
+    } else if (cause instanceof ApiError && cause.status === 400) {
+      error.value =
+        "La conversazione è troppo lunga. Avvia una nuova ricerca per continuare.";
+      done.value = true;
     } else if (cause instanceof ApiError) {
       error.value = cause.message;
     } else {
@@ -195,8 +190,17 @@ async function generatePass() {
   generating.value = true;
   error.value = "";
   try {
+    const owner = user.value?.id;
+    if (!owner) {
+      error.value = "La sessione non è più valida. Accedi di nuovo per generare il pass.";
+      return;
+    }
     const pass = await createPass(claim.value.id);
-    savePass(pass);
+    if (!savePass(pass, owner)) {
+      error.value =
+        "Non riesco a conservare il pass in questa sessione. Verifica le impostazioni del browser e riprova.";
+      return;
+    }
     await router.push({ name: "searcher-pass", params: { id: pass.passId } });
   } catch (cause) {
     error.value =
@@ -241,9 +245,11 @@ function resetConversation() {
               : 'bg-amber-50 text-amber-800 ring-amber-200'
           "
           :title="
-            mode === 'd3'
-              ? 'Ricerca semantica e motore D3 disponibili'
-              : 'Il backend usa il percorso locale di fallback'
+            healthError
+              ? 'Stato del backend non disponibile: uso il percorso locale di fallback'
+              : mode === 'd3'
+                ? 'D3 e agente conversazionale risultano attivi'
+                : 'Il backend usa il percorso locale di fallback'
           "
         >
           <span
@@ -332,8 +338,14 @@ function resetConversation() {
         <div class="border-t border-stone-100 px-4 py-3 sm:px-5">
           <div v-if="done" class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-xs text-stone-600">
-              La richiesta è stata registrata. Puoi aprire il pass dalla scheda
-              a destra quando è approvata.
+              <template v-if="claim">
+                La richiesta è stata registrata. Puoi aprire il pass dalla scheda
+                a destra quando è approvata.
+              </template>
+              <template v-else>
+                La conversazione è conclusa. Avvia una nuova ricerca per
+                ricominciare.
+              </template>
             </p>
             <button type="button" class="btn btn-secondary px-3 py-2" @click="resetConversation">
               Nuova ricerca

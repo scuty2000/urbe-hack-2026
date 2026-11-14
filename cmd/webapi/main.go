@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -198,6 +199,10 @@ func run() error {
 	nameService := nameservice.New(db)
 	platformService := platform.New(db)
 	authService := auth.New(db, auth.Deps{Auditor: platformService})
+	agentMode := "mock"
+	if cfg.Features.DeepSeek && strings.TrimSpace(cfg.DeepSeek.Key) != "" {
+		agentMode = "deepseek"
+	}
 	healthService := health.NewHealthService(dbconn, health.Checks{
 		QdrantURL:         cfg.Qdrant.URL,
 		QdrantAPIKey:      cfg.Qdrant.APIKey,
@@ -206,6 +211,8 @@ func run() error {
 		EmbeddingsModel:   cfg.Embeddings.Model,
 		EmbeddingsKey:     cfg.Embeddings.Key,
 		EmbeddingsEnabled: cfg.Embeddings.URL != "",
+		D3Enabled:         cfg.Features.D3 && strings.TrimSpace(cfg.D3.URL) != "",
+		AgentMode:         agentMode,
 	})
 
 	// D3 is optional: without a URL the catalog falls back to the form values.

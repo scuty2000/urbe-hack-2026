@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { ApiError, createInstitutionItem } from "../api";
 import GeoPicker from "../components/GeoPicker.vue";
@@ -35,6 +35,34 @@ const created = ref<Item | null>(null);
 
 const effectiveCategory = computed(() =>
   category.value === "altro" ? customCategory.value.trim() : category.value,
+);
+
+// A failed submit leaves an alert on screen; clear it as soon as the operator
+// changes any input so the next attempt starts from a clean state.
+watch(
+  [
+    photos,
+    category,
+    customCategory,
+    brand,
+    model,
+    color,
+    condition,
+    foundAt,
+    notes,
+    privateDetails,
+    lat,
+    lng,
+    zone,
+  ],
+  () => {
+    if (error.value) {
+      error.value = "";
+    }
+    if (Object.keys(fieldErrors.value).length > 0) {
+      fieldErrors.value = {};
+    }
+  },
 );
 
 function validate(): boolean {

@@ -606,8 +606,8 @@ func TestFinalMessageRedactsPrivateDetails(t *testing.T) {
 
 func TestRejectsTooManyMessages(t *testing.T) {
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
-	messages := make([]agent.Message, 0, 30)
-	for i := 0; i < 30; i++ {
+	messages := make([]agent.Message, 0, 61)
+	for i := 0; i < 61; i++ {
 		messages = append(messages, agent.Message{Role: "user", Content: "ciao"})
 	}
 	if _, err := svc.Chat(context.Background(), "searcher-demo", messages); !errors.Is(err, errs.ErrInvalidInput) {

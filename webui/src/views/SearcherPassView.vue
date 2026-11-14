@@ -3,9 +3,11 @@ import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import {
   ApiError,
+  getClaim,
   getItemFee,
   getRewardNotice,
   payFee,
+  user,
 } from "../api";
 import FeeSummary from "../components/FeeSummary.vue";
 import QRCode from "../components/QRCode.vue";
@@ -18,7 +20,7 @@ import {
   passStatusLabels,
   returnChannelLabels,
 } from "../format";
-import { loadPass } from "../passStore";
+import { clearPass, loadPass } from "../passStore";
 import type { Fee, PassResponse, RewardNotice } from "../types";
 
 const route = useRoute();
@@ -35,6 +37,9 @@ const actionError = ref("");
 const notice = ref("");
 const showCode = ref(true);
 const now = ref(Date.now());
+const verifying = ref(true);
+const accessError = ref("");
+const claimWarning = ref("");
 
 const passId = computed(() => String(route.params.id ?? ""));
 
@@ -119,12 +124,60 @@ const instructions = computed(() => {
 });
 
 onMounted(() => {
-  const stored = loadPass(passId.value);
-  pass.value = stored;
-  if (stored) {
-    void loadSummary(stored);
-  }
+  void initialise();
 });
+
+async function initialise() {
+  verifying.value = true;
+  accessError.value = "";
+  claimWarning.value = "";
+  const owner = user.value?.id;
+  const stored = loadPass(passId.value, owner);
+  if (!stored) {
+    pass.value = null;
+    verifying.value = false;
+    return;
+  }
+  pass.value = stored;
+  const allowed = await verifyClaim(stored);
+  verifying.value = false;
+  if (allowed && pass.value) {
+    await loadSummary(stored);
+  }
+}
+
+/**
+ * Defence in depth on top of the owner-bound sessionStorage entry: the searcher
+ * must still be able to read the claim, and the claim must point at the same
+ * item as the pass. A 403/404 clears the cached token.
+ */
+async function verifyClaim(current: PassResponse): Promise<boolean> {
+  try {
+    const claim = await getClaim(current.claimId);
+    if (claim.itemId !== current.itemId) {
+      accessError.value =
+        "Il pass non corrisponde alla richiesta registrata. Generane uno nuovo dalla ricerca.";
+      clearPass(current.passId);
+      pass.value = null;
+      return false;
+    }
+    return true;
+  } catch (cause) {
+    if (
+      cause instanceof ApiError &&
+      (cause.status === 403 || cause.status === 404)
+    ) {
+      accessError.value =
+        "Questo pass non appartiene al tuo profilo. Torna alla ricerca e apri la tua richiesta.";
+      clearPass(current.passId);
+      pass.value = null;
+      return false;
+    }
+    claimWarning.value =
+      "Non riesco a verificare la richiesta in questo momento: il pass resta visibile solo in questa sessione.";
+    return true;
+  }
+}
 
 async function loadSummary(current: PassResponse) {
   await Promise.all([loadFee(current), loadReward(current)]);
@@ -204,12 +257,22 @@ async function pay() {
       ← Torna alla ricerca
     </RouterLink>
 
-    <div v-if="!pass" class="empty-state mt-4">
-      <p class="text-sm font-medium text-stone-700">Pass non disponibile</p>
+    <div v-if="verifying" class="mt-4 card animate-pulse">
+      <div class="h-6 w-1/2 rounded bg-stone-200"></div>
+      <div class="mt-3 h-4 w-1/3 rounded bg-stone-200"></div>
+      <div class="mt-6 h-40 rounded-xl bg-stone-100"></div>
+      <p class="mt-4 text-xs text-stone-500">Verifico il pass e la richiesta…</p>
+    </div>
+
+    <div v-else-if="!pass" class="empty-state mt-4">
+      <p class="text-sm font-medium text-stone-700">
+        {{ accessError || "Pass non disponibile" }}
+      </p>
       <p class="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">
         Il codice QR viene mostrato una sola volta e resta solo nella sessione
-        del browser in cui è stato generato. Torna alla ricerca e genera un nuovo
-        pass dalla richiesta approvata.
+        del browser in cui è stato generato, legato al profilo che lo ha
+        richiesto. Torna alla ricerca e genera un nuovo pass dalla richiesta
+        approvata.
       </p>
       <RouterLink :to="{ name: 'searcher' }" class="btn btn-primary mt-4">
         Torna alla ricerca
@@ -231,6 +294,7 @@ async function pay() {
       <div class="mt-4 space-y-2">
         <p v-if="notice" class="banner-success" role="status">{{ notice }}</p>
         <p v-if="actionError" class="banner-error" role="alert">{{ actionError }}</p>
+        <p v-if="claimWarning" class="banner-info" role="status">{{ claimWarning }}</p>
         <p
           v-if="expired"
           class="banner-error"

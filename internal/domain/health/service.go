@@ -32,6 +32,12 @@ type Checks struct {
 	EmbeddingsKey     string
 	EmbeddingsEnabled bool
 
+	// D3Enabled reports that the decision engine is enabled and configured.
+	D3Enabled bool
+	// AgentMode is "deepseek" when the conversational provider is enabled and
+	// keyed, "mock" otherwise. It is reported as-is to the UI.
+	AgentMode string
+
 	// HTTPClient is optional; a default client is used when nil.
 	HTTPClient *http.Client
 }
@@ -57,9 +63,15 @@ func (s *healthService) Liveness(_ context.Context) error {
 }
 
 func (s *healthService) Readiness(ctx context.Context) Status {
+	agentMode := strings.TrimSpace(s.checks.AgentMode)
+	if agentMode == "" {
+		agentMode = "mock"
+	}
 	status := Status{
 		Qdrant:     true,
 		Embeddings: true,
+		D3:         s.checks.D3Enabled,
+		AgentMode:  agentMode,
 	}
 
 	// Run every probe concurrently so the endpoint is bounded by the slowest

@@ -1,17 +1,26 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { Html5Qrcode } from "html5-qrcode";
 import {
   ApiError,
   redeemPass,
+  user,
   validatePass,
 } from "../api";
 import {
+  categoryLabel,
   formatDateTime,
+  organisationLabel,
   passReasonLabels,
 } from "../format";
 import type { PassRedemption, PassValidation } from "../types";
+
+const isInstitution = computed(() => user.value?.role === "institution");
+const homePath = computed(() => (isInstitution.value ? "/institution" : "/intermediary"));
+const roleLabel = computed(() =>
+  isInstitution.value ? "Pubblica amministrazione" : "Intermediario",
+);
 
 const token = ref("");
 const validating = ref(false);
@@ -170,14 +179,14 @@ onBeforeUnmount(() => {
   <div class="mx-auto w-full max-w-4xl">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <p class="eyebrow">Intermediario</p>
+        <p class="eyebrow">{{ roleLabel }}</p>
         <h1 class="page-title mt-1">Scansiona un pass</h1>
         <p class="page-subtitle">
           Verifica il QR di riconsegna del proprietario e registra l'uscita
           dell'oggetto dalla custodia.
         </p>
       </div>
-      <RouterLink to="/intermediary" class="btn btn-secondary">Dashboard</RouterLink>
+      <RouterLink :to="homePath" class="btn btn-secondary">Dashboard</RouterLink>
     </div>
 
     <div class="mt-5 grid gap-4 lg:grid-cols-2">
@@ -317,7 +326,7 @@ onBeforeUnmount(() => {
           <p class="mt-1 text-sm leading-6 text-emerald-900">
             L'oggetto <span class="font-mono font-semibold">{{ redemption.item.publicCode }}</span>
             è uscito dalla custodia di
-            <span class="font-medium">{{ redemption.item.custodianId }}</span>.
+            <span class="font-medium">{{ organisationLabel(redemption.item.custodianId) }}</span>.
           </p>
           <p class="mt-1 text-xs text-emerald-800">
             Riconsegnato il {{ formatDateTime(redemption.returnedAt) }}
@@ -326,7 +335,7 @@ onBeforeUnmount(() => {
             <button type="button" class="btn btn-primary" @click="newScan">
               Nuova scansione
             </button>
-            <RouterLink to="/intermediary" class="btn btn-secondary">
+            <RouterLink :to="homePath" class="btn btn-secondary">
               Torna alla dashboard
             </RouterLink>
           </div>
@@ -380,7 +389,7 @@ onBeforeUnmount(() => {
             <p class="mt-1 text-sm text-stone-700">
               Oggetto
               <span class="font-mono font-semibold">{{ validation.item.publicCode }}</span>
-              · {{ validation.item.category }}
+              · {{ categoryLabel(validation.item.category) }}
               <template v-if="validation.item.brand || validation.item.model">
                 · {{ [validation.item.brand, validation.item.model].filter(Boolean).join(" ") }}
               </template>

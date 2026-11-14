@@ -229,7 +229,14 @@ async function loadClaim() {
   claimError.value = "";
   confirmDecision.value = null;
   try {
-    claim.value = await getInstitutionClaim(id);
+    const found = await getInstitutionClaim(id);
+    if (item.value && found.itemId !== item.value.id) {
+      claim.value = null;
+      claimError.value =
+        "La richiesta è collegata a un altro oggetto: aprila dalla scheda corretta.";
+      return;
+    }
+    claim.value = found;
     claimId.value = claim.value.id;
   } catch (cause) {
     claim.value = null;
@@ -262,6 +269,7 @@ async function review(decision: "approved" | "rejected") {
       decision === "approved"
         ? "Richiesta approvata: il searcher può generare il pass."
         : "Richiesta rifiutata.";
+    await refreshTimeline();
   } catch (cause) {
     if (cause instanceof ApiError && cause.status === 409) {
       claimError.value =
@@ -301,7 +309,12 @@ async function review(decision: "approved" | "rejected") {
           <h1 class="page-title mt-1">{{ displayItemName(item) }}</h1>
           <p class="mt-1 font-mono text-sm text-stone-600">{{ item.publicCode }}</p>
         </div>
-        <StatusBadge :status="item.status" :sensitive="item.sensitive" />
+        <div class="flex flex-wrap items-center gap-2">
+          <StatusBadge :status="item.status" :sensitive="item.sensitive" />
+          <RouterLink to="/institution/scan" class="btn btn-secondary px-3 py-2 text-xs">
+            Scansiona un pass
+          </RouterLink>
+        </div>
       </header>
 
       <div class="mt-4 space-y-2">
