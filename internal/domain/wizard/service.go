@@ -41,7 +41,11 @@ func (s *service) analyzeResult(ctx context.Context, result item.CatalogResult) 
 	if category == "" {
 		category = "altro"
 	}
-	if result.IsDocument {
+	// The category and the document type are independent signals from D3's
+	// `is_document` noul answer. A document category or a detected document
+	// type must stop the photo plan even when the noul answer is missing or
+	// below its threshold.
+	if result.IsDocument || category == "documenti" || strings.TrimSpace(result.DocumentType) != "" {
 		return documentAnalysis()
 	}
 
@@ -155,6 +159,23 @@ func validatePhotos(photos []item.ImageInput) error {
 	return nil
 }
 
+func validSlotKey(key string) bool {
+	if key == "" || len(key) > 40 {
+		return false
+	}
+	switch key {
+	case "__proto__", "prototype", "constructor":
+		return false
+	}
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func sanitizePlan(plan Plan) Plan {
 	slots := make([]PhotoSlot, 0, len(plan.PhotoPlan))
 	seen := make(map[string]bool, len(plan.PhotoPlan))
@@ -162,7 +183,7 @@ func sanitizePlan(plan Plan) Plan {
 		slot.Key = strings.TrimSpace(slot.Key)
 		slot.Label = strings.TrimSpace(slot.Label)
 		slot.Instruction = strings.TrimSpace(slot.Instruction)
-		if slot.Key == "" || slot.Label == "" || slot.Instruction == "" || seen[slot.Key] {
+		if !validSlotKey(slot.Key) || slot.Label == "" || slot.Instruction == "" || seen[slot.Key] {
 			continue
 		}
 		seen[slot.Key] = true

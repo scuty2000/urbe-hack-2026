@@ -184,12 +184,16 @@ func (h *WebAPIHandler) PostDropPoints(ctx *reqcontext.RequestContext) {
 	if !decodeWizardJSON(ctx, &payload) {
 		return
 	}
-	if !validCoordinate(payload.Lat, payload.Lng) {
-		respondWithJSONError(ctx, http.StatusBadRequest, "invalid coordinates")
-		return
+	var at *mapbox.Point
+	if payload.Lat != nil || payload.Lng != nil {
+		if payload.Lat == nil || payload.Lng == nil || !validCoordinate(*payload.Lat, *payload.Lng) {
+			respondWithJSONError(ctx, http.StatusBadRequest, "invalid coordinates")
+			return
+		}
+		at = &mapbox.Point{Lat: *payload.Lat, Lng: *payload.Lng}
 	}
 
-	points, err := h.Wizard.Nearest(ctx.Request.Context(), mapbox.Point{Lat: payload.Lat, Lng: payload.Lng}, payload.Limit)
+	points, err := h.Wizard.Nearest(ctx.Request.Context(), at, payload.Limit)
 	if err != nil {
 		respondWithWizardError(ctx, "PostDropPoints", err)
 		return

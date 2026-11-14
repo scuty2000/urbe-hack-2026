@@ -588,6 +588,7 @@ func TestToolLoopRoundCap(t *testing.T) {
 func TestFinalMessageRedactsPrivateDetails(t *testing.T) {
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "get_private_profile", `{"item_id":"item-phone"}`)}},
 		{Content: "La custodia blu ha una crepa e un adesivo a forma di gatto."},
 	}}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
@@ -597,9 +598,17 @@ func TestFinalMessageRedactsPrivateDetails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
-	for _, secret := range []string{"crepa", "gatto", "adesivo"} {
+	// The sanitized profile exposes case_color and sticker, so echoing those
+	// values must be redacted. "crepa"/"adesivo" are not actual values (the
+	// profile only says has_crack: true) and stay as ordinary prose.
+	for _, secret := range []string{"blu", "gatto"} {
 		if strings.Contains(reply.Message, secret) {
 			t.Fatalf("final message leaks %q: %q", secret, reply.Message)
+		}
+	}
+	for _, ordinary := range []string{"crepa", "adesivo"} {
+		if !strings.Contains(reply.Message, ordinary) {
+			t.Fatalf("over-redaction removed %q: %q", ordinary, reply.Message)
 		}
 	}
 }

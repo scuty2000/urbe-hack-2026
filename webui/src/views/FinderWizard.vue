@@ -68,6 +68,7 @@ const dropPoints = ref<DropPoint[]>([]);
 const dropPoint = ref("");
 const dropLoading = ref(false);
 const dropError = ref("");
+const dropSource = ref("");
 
 const rights = ref(false);
 const submitting = ref(false);
@@ -255,6 +256,9 @@ watch(
       clearTimeout(reverseTimer);
       reverseTimer = null;
     }
+    if (step.value === 4) {
+      void loadDropPoints();
+    }
     if (nextLat === null || nextLng === null || touched.zone) {
       return;
     }
@@ -288,16 +292,15 @@ watch(step, (value) => {
 
 async function loadDropPoints() {
   dropError.value = "";
-  if (lat.value === null || lng.value === null) {
-    dropError.value = "Torna al passo 2 e indica la posizione del ritrovamento.";
-    dropPoints.value = [];
-    dropPoint.value = "";
-    return;
-  }
   dropLoading.value = true;
   try {
-    const response = await nearestDropPoints(lat.value, lng.value, 5);
+    const response = await nearestDropPoints(
+      lat.value ?? undefined,
+      lng.value ?? undefined,
+      5,
+    );
     dropPoints.value = response.points;
+    dropSource.value = response.source;
     if (!dropPoints.value.some((point) => point.id === dropPoint.value)) {
       dropPoint.value = dropPoints.value[0]?.id ?? "";
     }
@@ -309,6 +312,7 @@ async function loadDropPoints() {
       cause instanceof ApiError ? cause.message : "Non riesco a calcolare i punti di raccolta.";
     dropPoints.value = [];
     dropPoint.value = "";
+    dropSource.value = "";
   } finally {
     dropLoading.value = false;
   }
@@ -414,18 +418,15 @@ function buildPayload(): CreateItemPayload {
 
 async function submit() {
   clearFieldErrors();
-  const step1 = validateStep1();
-  const step2 = validateStep2();
-  const step4 = validateStep4();
-  if (!step1) {
+  if (!validateStep1()) {
     step.value = 1;
     return;
   }
-  if (!step2) {
+  if (!validateStep2()) {
     step.value = 2;
     return;
   }
-  if (!step4) {
+  if (!validateStep4()) {
     step.value = 4;
     return;
   }
@@ -678,6 +679,10 @@ onBeforeUnmount(() => {
         </div>
         <div v-else-if="dropPoints.length === 0" class="banner-info">Nessun punto disponibile.</div>
         <div v-else class="space-y-2">
+          <div v-if="dropSource === 'none'" class="banner-info">
+            Posizione non indicata: mostro i punti in ordine alfabetico. Puoi sceglierne uno
+            in base all'indirizzo e agli orari.
+          </div>
           <label
             v-for="point in dropPoints"
             :key="point.id"
@@ -691,8 +696,14 @@ onBeforeUnmount(() => {
                 <span v-if="point.approximate" class="badge-soft">stima</span>
               </span>
               <span class="block text-xs text-stone-600">{{ point.address }} · {{ point.hours }}</span>
-              <span class="mt-1 block text-xs font-medium text-emerald-800">
+              <span
+                v-if="point.source !== 'none' && (point.walkingMinutes > 0 || point.distanceMeters > 0)"
+                class="mt-1 block text-xs font-medium text-emerald-800"
+              >
                 {{ point.walkingMinutes }} min a piedi · {{ Math.round(point.distanceMeters) }} m
+              </span>
+              <span v-else class="mt-1 block text-xs text-stone-500">
+                Distanza non disponibile: scegli in base all'indirizzo.
               </span>
             </span>
           </label>
@@ -733,7 +744,13 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <dt class="data-label">A piedi</dt>
-            <dd class="data-value">{{ selectedDropPoint ? `${selectedDropPoint.walkingMinutes} min` : "—" }}</dd>
+            <dd class="data-value">
+              {{
+                selectedDropPoint && selectedDropPoint.source !== "none"
+                  ? `${selectedDropPoint.walkingMinutes} min`
+                  : "—"
+              }}
+            </dd>
           </div>
           <div class="col-span-2">
             <dt class="data-label">Dettagli riservati</dt>
@@ -754,7 +771,7 @@ onBeforeUnmount(() => {
         <RightsAssignment v-model="rights" mode="finder" :disabled="submitting" />
         <p v-if="fieldErrors.rights" class="text-xs font-medium text-rose-700">{{ fieldErrors.rights }}</p>
 
-        <button type="submit" class="btn btn-primary w-full sm:w-auto" :disabled="submitting">
+        <button type="submit" class="btn btn-primary w-full sm:w-auto" :disabled="submitting || !rights">
           <span v-if="submitting" class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true"></span>
           {{ submitting ? "Invio in corso…" : "Registra l'oggetto" }}
         </button>

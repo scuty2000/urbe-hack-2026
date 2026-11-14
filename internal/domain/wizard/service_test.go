@@ -156,6 +156,25 @@ func TestAnalyzeFallsBackToManualWhenD3Fails(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDocumentCategoryStopsPlannerEvenWithoutNoul(t *testing.T) {
+	analyzer := &fakeAnalyzer{result: item.CatalogResult{
+		Source: item.CatalogSourceD3, Category: "document", IsDocument: false,
+	}}
+	planner := &fakePlanner{}
+	svc := wizard.New(repository.Database{}, wizard.Deps{Items: analyzer, Planner: planner})
+
+	got, err := svc.Analyze(context.Background(), wizard.AnalyzeInput{Photos: []item.ImageInput{photo()}})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if !got.IsDocument || !got.Sensitive || got.Prefill.Category != "documenti" {
+		t.Fatalf("analysis = %+v, want a document", got)
+	}
+	if len(got.PhotoPlan) != 0 || planner.calls != 0 {
+		t.Fatalf("plan = %+v planner calls=%d, want no document photos", got.PhotoPlan, planner.calls)
+	}
+}
+
 func TestAnalyzeRejectsInvalidPhotos(t *testing.T) {
 	svc := wizard.New(repository.Database{}, wizard.Deps{Items: &fakeAnalyzer{result: item.CatalogResult{Source: item.CatalogSourceD3}}})
 	cases := []wizard.AnalyzeInput{
@@ -200,6 +219,24 @@ func TestAnalyzeTruncatesPlannerSlots(t *testing.T) {
 	}
 	if len(got.PhotoPlan) != 3 {
 		t.Fatalf("photoPlan = %d slots, want 3", len(got.PhotoPlan))
+	}
+}
+
+func TestAnalyzeRejectsUnsafeSlotKeys(t *testing.T) {
+	analyzer := &fakeAnalyzer{result: item.CatalogResult{
+		Source: item.CatalogSourceD3, Category: "smartphone",
+	}}
+	planner := &fakePlanner{plan: wizard.Plan{PhotoPlan: []wizard.PhotoSlot{
+		{Key: "__proto__", Label: "Bad", Instruction: "Bad"},
+		{Key: "back", Label: "Retro", Instruction: "Fotografa il retro"},
+	}}}
+	svc := wizard.New(repository.Database{}, wizard.Deps{Items: analyzer, Planner: planner})
+	got, err := svc.Analyze(context.Background(), wizard.AnalyzeInput{Photos: []item.ImageInput{photo()}})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(got.PhotoPlan) != 1 || got.PhotoPlan[0].Key != "back" {
+		t.Fatalf("photoPlan = %+v, want only the safe key", got.PhotoPlan)
 	}
 }
 

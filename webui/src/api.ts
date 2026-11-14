@@ -205,8 +205,8 @@ export function reverseGeocode(lat: number, lng: number): Promise<ReverseGeocode
 }
 
 export function nearestDropPoints(
-  lat: number,
-  lng: number,
+  lat?: number,
+  lng?: number,
   limit = 5,
 ): Promise<DropPointsResponse> {
   return request<DropPointsResponse>("/api/drop-points", {

@@ -51,11 +51,13 @@ type ReverseGeocodeResponse struct {
 	Source    string `json:"source"`
 }
 
-// DropPointsRequest is the POST body for the walking-distance ranking.
+// DropPointsRequest is the POST body for the walking-distance ranking. Lat/Lng
+// are optional: without them the service returns the active points in
+// alphabetical order for a manual choice.
 type DropPointsRequest struct {
-	Lat   float64 `json:"lat"`
-	Lng   float64 `json:"lng"`
-	Limit int     `json:"limit"`
+	Lat   *float64 `json:"lat"`
+	Lng   *float64 `json:"lng"`
+	Limit int      `json:"limit"`
 }
 
 // DropPointResponse is one active partner with walking distance.

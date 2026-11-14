@@ -231,7 +231,15 @@ func (s *service) redactMessage(ctx context.Context, message string, turn *turnS
 // redaction cannot mangle ordinary prose.
 func privateTokens(profile map[string]any) []string {
 	tokens := make([]string, 0, len(profile))
-	for _, value := range profile {
+	for key, value := range profile {
+		// Only the structured attributes exposed to the model need a reply
+		// backstop. Free-text notes/details are never sent to the model
+		// (freeTextKeys in tools.go); splitting them into words would redact
+		// public object names and ordinary question words, producing nonsense
+		// such as "[dettaglio riservato] ritrovato in zona Testaccio".
+		if !questionAttributeKeys[normalizeKey(key)] {
+			continue
+		}
 		collectTokens(value, &tokens)
 	}
 	return tokens

@@ -56,7 +56,7 @@ posti diversi: il bar che li trova, il comando di polizia locale e chi li ha
 persi. Nessuno sa dove sia l'oggetto, chi lo custodisce o quando scade il
 termine. Questo registro unico lo risolve."
 
-Point at the four role cards: finder, intermediary, searcher, institution.
+Point at the role cards: finder, intermediary, searcher, institution.
 
 ### 0:20 — Finder enrolls an item (30 s)
 
@@ -66,8 +66,9 @@ Point at the four role cards: finder, intermediary, searcher, institution.
    the photo plan and the prefilled object card. Correct only what is needed:
    category **Ombrello**, colour **nero**.
 4. **Avanti** → use the position or type zone **San Lorenzo**.
-5. **Avanti** → the private detail is prefilled with **custodia blu** (this is
-   the detail only the owner should know; it is never shown to searchers).
+5. **Avanti** → check the prefilled private detail (for the umbrella it may
+   propose **custodia blu**; this is the detail only the owner should know and
+   is never shown to searchers).
 6. **Avanti** → show the five nearest drop points by walking time, choose
    **Bar X**, then the disclaimer and the rights checkbox.
 7. Submit. Show the receipt with the public code and the handover instructions.

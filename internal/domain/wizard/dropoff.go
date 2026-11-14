@@ -18,7 +18,7 @@ const (
 // Nearest returns the active drop-off points sorted by walking duration.
 // Mapbox supplies real walking legs; a provider failure falls back to the
 // documented haversine estimate, never to an error.
-func (s *service) Nearest(ctx context.Context, at mapbox.Point, limit int) ([]DropPoint, error) {
+func (s *service) Nearest(ctx context.Context, at *mapbox.Point, limit int) ([]DropPoint, error) {
 	if limit <= 0 {
 		limit = defaultNearestLimit
 	}
@@ -47,9 +47,22 @@ func (s *service) Nearest(ctx context.Context, at mapbox.Point, limit int) ([]Dr
 	if len(active) == 0 {
 		return []DropPoint{}, nil
 	}
+	if at == nil {
+		// The finder denied geolocation: return every active point in
+		// alphabetical order without a distance. The UI still lets them pick.
+		for i := range active {
+			active[i].Approximate = true
+			active[i].Source = "none"
+		}
+		sort.SliceStable(active, func(i, j int) bool { return active[i].Name < active[j].Name })
+		if len(active) > limit {
+			active = active[:limit]
+		}
+		return active, nil
+	}
 
 	if s.deps.Router != nil {
-		legs, walkErr := s.deps.Router.Walking(ctx, at, destinations)
+		legs, walkErr := s.deps.Router.Walking(ctx, *at, destinations)
 		if walkErr == nil && len(legs) == len(active) {
 			for i := range active {
 				active[i].DistanceMeters = legs[i].DistanceMeters
@@ -61,8 +74,9 @@ func (s *service) Nearest(ctx context.Context, at mapbox.Point, limit int) ([]Dr
 		}
 	}
 
+	const walkingFactor = 1.3
 	for i, destination := range destinations {
-		distance := haversineMeters(at, destination)
+		distance := haversineMeters(*at, destination) * walkingFactor
 		duration := distance / walkingMetersPerSec
 		active[i].DistanceMeters = distance
 		active[i].DurationSeconds = duration

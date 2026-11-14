@@ -7,7 +7,7 @@ sessions are preserved so an admin running POST /api/demo/reset keeps their
 session.
 
 Demo data:
-  - seven demo users (finder, two searchers, two intermediaries, institution, admin);
+  - twelve demo users (finder, two searchers, seven intermediaries, institution, admin);
   - seven civic points (two demo points and five partner points);
   - one active PA tariff (500 cents/day, 1000 cents fixed, EUR);
   - item-phone in custody at Bar X (searchable, claim approved);

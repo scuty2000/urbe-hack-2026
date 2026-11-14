@@ -122,7 +122,7 @@ type Deps struct {
 // Service is the finder wizard surface.
 type Service interface {
 	Analyze(ctx context.Context, input AnalyzeInput) (Analysis, error)
-	Nearest(ctx context.Context, at mapbox.Point, limit int) ([]DropPoint, error)
+	Nearest(ctx context.Context, at *mapbox.Point, limit int) ([]DropPoint, error)
 	Reverse(ctx context.Context, at mapbox.Point) (mapbox.Place, error)
 }
 

@@ -30,10 +30,43 @@ func TestRedactMessageUsesSeenItemsWithoutCandidates(t *testing.T) {
 	if message == "" {
 		t.Fatal("redaction returned an empty message")
 	}
-	for _, secret := range []string{"crepa", "gatto", "adesivo", "custodia"} {
+	for _, secret := range []string{"blu", "gatto"} {
 		if strings.Contains(message, secret) {
 			t.Fatalf("redaction did not use saw items: message %q still contains %q", message, secret)
 		}
+	}
+	// Free-text notes are never sent to the model, so their words must not
+	// mangle the reply: the attribute names stay, only the structured values
+	// are redacted.
+	for _, public := range []string{"custodia", "crepa", "adesivo"} {
+		if !strings.Contains(message, public) {
+			t.Fatalf("over-redaction removed the ordinary word %q: %q", public, message)
+		}
+	}
+}
+
+func TestRedactMessageKeepsPublicObjectWords(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+
+	svc, ok := New(db, Deps{DeepSeekKey: ""}).(*service)
+	if !ok {
+		t.Fatal("New() did not return the concrete service")
+	}
+	turn := &turnState{
+		allowed: map[string]bool{"item-phone": true},
+		seen:    map[string]bool{"item-phone": true},
+	}
+	// The screenshot scenario: the free-text note contains "orologio",
+	// "watch" and "cinturino"; those are public object/attribute words and
+	// must survive, while the structured case colour stays redacted.
+	message := svc.redactMessage(context.Background(),
+		"Ho trovato un orologio Apple Watch: che colore ha il cinturino? La custodia è blu.", turn)
+	if !strings.Contains(message, "orologio") || !strings.Contains(message, "Apple Watch") || !strings.Contains(message, "cinturino") {
+		t.Fatalf("over-redaction mangled the reply: %q", message)
+	}
+	if strings.Contains(message, "blu") {
+		t.Fatalf("structured private value was not redacted: %q", message)
 	}
 }
 

@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { authError, login, user, type ApiError } from "../api";
-import { roleLabels } from "../format";
+import DemoUserButton from "../components/DemoUserButton.vue";
 import { homeForRole } from "../router";
 import type { Role } from "../types";
 
@@ -37,6 +37,30 @@ const demoUsers: DemoUser[] = [
     initials: "PS",
   },
   {
+    id: "searcher-demo",
+    name: "Marco Bianchi",
+    role: "searcher",
+    description: "Cerca un oggetto perduto e richiede il pass di ritiro.",
+    initials: "MB",
+  },
+  {
+    id: "institution-demo",
+    name: "Comune di Roma",
+    role: "institution",
+    description: "Gestisce ritiri, intake ufficiale e verifica delle richieste.",
+    initials: "CR",
+  },
+  {
+    id: "admin-demo",
+    name: "Admin Demo",
+    role: "admin",
+    description: "Amministrazione della piattaforma (area in arrivo).",
+    initials: "AD",
+  },
+];
+
+const partnerUsers: DemoUser[] = [
+  {
     id: "tabaccheria-termini",
     name: "Tabaccheria Termini",
     role: "intermediary",
@@ -70,27 +94,6 @@ const demoUsers: DemoUser[] = [
     role: "intermediary",
     description: "Punto partner a Ostiense.",
     initials: "MO",
-  },
-  {
-    id: "searcher-demo",
-    name: "Marco Bianchi",
-    role: "searcher",
-    description: "Cerca un oggetto perduto e richiede il pass di ritiro.",
-    initials: "MB",
-  },
-  {
-    id: "institution-demo",
-    name: "Comune di Roma",
-    role: "institution",
-    description: "Gestisce ritiri, intake ufficiale e verifica delle richieste.",
-    initials: "CR",
-  },
-  {
-    id: "admin-demo",
-    name: "Admin Demo",
-    role: "admin",
-    description: "Amministrazione della piattaforma (area in arrivo).",
-    initials: "AD",
   },
 ];
 
@@ -232,56 +235,30 @@ async function signIn(demo: DemoUser) {
 
         <ul class="mt-6 space-y-2.5">
           <li v-for="demo in demoUsers" :key="demo.id">
-            <button
-              type="button"
-              class="group flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white p-3.5 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md disabled:cursor-wait disabled:opacity-70"
-              :disabled="busyId !== null"
-              @click="signIn(demo)"
-            >
-              <span
-                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-sm font-semibold text-stone-700 group-hover:bg-emerald-50 group-hover:text-emerald-800"
-                aria-hidden="true"
-              >
-                {{ demo.initials }}
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="flex flex-wrap items-center gap-1.5">
-                  <span class="truncate text-sm font-semibold text-stone-900">
-                    {{ demo.name }}
-                  </span>
-                  <span class="badge" :class="roleTone(demo.role)">
-                    {{ roleLabels[demo.role] }}
-                  </span>
-                </span>
-                <span class="mt-0.5 block text-xs leading-5 text-stone-500">
-                  {{ demo.description }}
-                </span>
-                <span class="mt-0.5 block font-mono text-[10px] text-stone-500">
-                  {{ demo.id }}
-                </span>
-              </span>
-              <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition group-hover:bg-emerald-700 group-hover:text-white"
-                aria-hidden="true"
-              >
-                <span
-                  v-if="busyId === demo.id"
-                  class="h-4 w-4 animate-spin rounded-full border-2 border-emerald-700 border-t-transparent"
-                ></span>
-                <svg
-                  v-else
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  class="h-4 w-4"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </span>
-            </button>
+            <DemoUserButton
+              :demo="demo"
+              :busy="busyId === demo.id"
+              :tone="roleTone(demo.role)"
+              @select="signIn"
+            />
           </li>
         </ul>
+
+        <details class="mt-3 rounded-2xl border border-stone-200 bg-white p-2">
+          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-stone-700">
+            Altri punti di raccolta ({{ partnerUsers.length }})
+          </summary>
+          <ul class="mt-2 space-y-2.5">
+            <li v-for="demo in partnerUsers" :key="demo.id">
+              <DemoUserButton
+                :demo="demo"
+                :busy="busyId === demo.id"
+                :tone="roleTone(demo.role)"
+                @select="signIn"
+              />
+            </li>
+          </ul>
+        </details>
 
         <p class="mt-6 text-center text-xs leading-5 text-stone-500">
           Sessione cookie <code class="font-mono">lf_session</code> · durata 12 ore.

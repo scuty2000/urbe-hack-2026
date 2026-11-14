@@ -56,7 +56,7 @@ func TestNearestUsesWalkingLegsAndSorts(t *testing.T) {
 	}}
 	svc := wizard.New(db, wizard.Deps{Router: router})
 
-	points, err := svc.Nearest(context.Background(), mapbox.Point{Lat: 41.9, Lng: 12.5}, 2)
+	points, err := svc.Nearest(context.Background(), &mapbox.Point{Lat: 41.9, Lng: 12.5}, 2)
 	if err != nil {
 		t.Fatalf("Nearest() error = %v", err)
 	}
@@ -77,12 +77,37 @@ func TestNearestUsesWalkingLegsAndSorts(t *testing.T) {
 	}
 }
 
+func TestNearestWithoutLocationSortsByName(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	svc := wizard.New(db, wizard.Deps{})
+
+	points, err := svc.Nearest(context.Background(), nil, 5)
+	if err != nil {
+		t.Fatalf("Nearest() error = %v", err)
+	}
+	if len(points) != 5 {
+		t.Fatalf("points = %d, want 5", len(points))
+	}
+	for i, point := range points {
+		if point.Source != "none" || !point.Approximate {
+			t.Fatalf("point = %+v, want the no-location mode", point)
+		}
+		if point.DistanceMeters != 0 || point.WalkingMinutes != 0 {
+			t.Fatalf("point = %+v, want no distance", point)
+		}
+		if i > 0 && points[i-1].Name > point.Name {
+			t.Fatalf("points are not sorted by name: %q > %q", points[i-1].Name, point.Name)
+		}
+	}
+}
+
 func TestNearestFallsBackToHaversine(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	seed.Demo(t, db)
 
 	svc := wizard.New(db, wizard.Deps{Router: &fakeRouter{err: errs.ErrUnavailable}})
-	points, err := svc.Nearest(context.Background(), mapbox.Point{Lat: 41.9010, Lng: 12.5140}, 5)
+	points, err := svc.Nearest(context.Background(), &mapbox.Point{Lat: 41.9010, Lng: 12.5140}, 5)
 	if err != nil {
 		t.Fatalf("Nearest() error = %v", err)
 	}
@@ -110,7 +135,7 @@ func TestNearestFiltersInactivePoints(t *testing.T) {
 	}
 
 	svc := wizard.New(db, wizard.Deps{Router: &fakeRouter{legs: make([]mapbox.Leg, 7)}})
-	points, err := svc.Nearest(context.Background(), mapbox.Point{Lat: 41.9, Lng: 12.5}, 10)
+	points, err := svc.Nearest(context.Background(), &mapbox.Point{Lat: 41.9, Lng: 12.5}, 10)
 	if err != nil {
 		t.Fatalf("Nearest() error = %v", err)
 	}
@@ -140,7 +165,7 @@ func TestNearestReorderKeepsNames(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	seed.Demo(t, db)
 	svc := wizard.New(db, wizard.Deps{})
-	points, err := svc.Nearest(context.Background(), mapbox.Point{Lat: 41.9, Lng: 12.5}, 5)
+	points, err := svc.Nearest(context.Background(), &mapbox.Point{Lat: 41.9, Lng: 12.5}, 5)
 	if err != nil {
 		t.Fatalf("Nearest() error = %v", err)
 	}

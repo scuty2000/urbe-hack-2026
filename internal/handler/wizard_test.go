@@ -43,7 +43,7 @@ func (f *fakeWizard) Analyze(_ context.Context, input wizard.AnalyzeInput) (wiza
 	return f.analysis, f.err
 }
 
-func (f *fakeWizard) Nearest(context.Context, mapbox.Point, int) ([]wizard.DropPoint, error) {
+func (f *fakeWizard) Nearest(context.Context, *mapbox.Point, int) ([]wizard.DropPoint, error) {
 	return f.points, f.err
 }
 
@@ -244,6 +244,11 @@ func TestWizardReverseAndDropPoints(t *testing.T) {
 	points, _ := response["points"].([]any)
 	if len(points) != 2 {
 		t.Fatalf("points = %+v", response["points"])
+	}
+
+	withoutLocation := doRequest(t, api, http.MethodPost, "/api/drop-points", `{"limit":5}`, finder)
+	if withoutLocation.Code != http.StatusOK {
+		t.Fatalf("drop points without location status = %d, want 200", withoutLocation.Code)
 	}
 
 	searcher := loginAs(t, api, "searcher-demo")
