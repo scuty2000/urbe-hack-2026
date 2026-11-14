@@ -9,6 +9,7 @@ import type {
   ClaimSummary,
   CreateItemPayload,
   CustodySummary,
+  DropPointsResponse,
   Fee,
   HealthStatus,
   InstitutionPickupList,
@@ -20,8 +21,10 @@ import type {
   PassResponse,
   PassValidation,
   Payment,
+  ReverseGeocode,
   RewardNotice,
   User,
+  WizardAnalysis,
 } from "./types";
 
 /** Error returned by the API as `{ "error": "..." }`, or a network failure. */
@@ -177,6 +180,39 @@ export function clearSession(): void {
   sessionLoaded = true;
   sessionError.value = null;
   clearAllPasses();
+}
+
+export async function analyzeWizardPhoto(
+  payload: { slot?: string; note?: string },
+  photos: File[],
+): Promise<WizardAnalysis> {
+  const form = new FormData();
+  form.append("payload", JSON.stringify(payload));
+  for (const photo of photos) {
+    form.append("photos", photo, photo.name);
+  }
+  return request<WizardAnalysis>("/api/finder/wizard/analyze", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export function reverseGeocode(lat: number, lng: number): Promise<ReverseGeocode> {
+  return request<ReverseGeocode>("/api/geo/reverse", {
+    method: "POST",
+    json: { lat, lng },
+  });
+}
+
+export function nearestDropPoints(
+  lat: number,
+  lng: number,
+  limit = 5,
+): Promise<DropPointsResponse> {
+  return request<DropPointsResponse>("/api/drop-points", {
+    method: "POST",
+    json: { lat, lng, limit },
+  });
 }
 
 export async function createItem(

@@ -62,19 +62,19 @@ Point at the four role cards: finder, intermediary, searcher, institution.
 
 1. Sign in as **Giulia Ferrari** (finder).
 2. Open **Segnala un oggetto** / `/finder`.
-3. Fill in just the fields needed for the story:
-   - category: **Ombrello**
-   - colour: **nero**
-   - zone: **San Lorenzo**
-   - private detail: **custodia blu** (this is the detail only the owner should
-     know; it is never shown to searchers)
-   - one photo
-   - collection point: **Bar X**
-   - accept the rights assignment checkbox
-4. Submit. Show the receipt with the public code and the handover instructions.
+3. Click **Fai una foto** and upload the umbrella photo. Show the analysis:
+   the photo plan and the prefilled object card. Correct only what is needed:
+   category **Ombrello**, colour **nero**.
+4. **Avanti** → use the position or type zone **San Lorenzo**.
+5. **Avanti** → the private detail is prefilled with **custodia blu** (this is
+   the detail only the owner should know; it is never shown to searchers).
+6. **Avanti** → show the five nearest drop points by walking time, choose
+   **Bar X**, then the disclaimer and the rights checkbox.
+7. Submit. Show the receipt with the public code and the handover instructions.
 
-Say: "Il finder non consegna i suoi dati a nessuno: cede la custodia legale al
-punto di raccolta e riceve una ricevuta."
+Say: "Il finder scatta una foto: l'AI propone il piano foto e precompila la
+scheda, il finder controlla e corregge. Poi sceglie il punto più vicino a piedi
+e cede la custodia legale al punto di raccolta."
 
 ### 0:50 — Intermediary accepts custody (20 s)
 

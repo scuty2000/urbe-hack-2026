@@ -2,9 +2,14 @@
 
 export const itemCategories = [
   { value: "smartphone", label: "Smartphone" },
+  { value: "laptop", label: "Laptop / computer" },
   { value: "portafoglio", label: "Portafoglio" },
   { value: "documenti", label: "Documenti / carta d'identità" },
   { value: "chiavi", label: "Chiavi" },
+  { value: "gioielli", label: "Gioielli" },
+  { value: "orologio", label: "Orologio" },
+  { value: "libro", label: "Libro / quaderno" },
+  { value: "bottiglia", label: "Bottiglia / borraccia" },
   { value: "ombrello", label: "Ombrello" },
   { value: "zaino", label: "Zaino / borsa" },
   { value: "occhiali", label: "Occhiali" },

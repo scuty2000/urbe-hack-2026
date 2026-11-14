@@ -365,3 +365,54 @@ export interface HealthStatus {
   /** "deepseek" when the conversational provider is active, "mock" otherwise. */
   agentMode?: "deepseek" | "mock" | string;
 }
+
+// ─── Finder wizard ──────────────────────────────────────────────────────────
+
+export interface WizardPhotoSlot {
+  key: string;
+  label: string;
+  instruction: string;
+  required: boolean;
+}
+
+export interface WizardPrefill {
+  category: string;
+  color: string;
+  condition: string;
+}
+
+export interface WizardAnalysis {
+  objectType: string;
+  confidence: number;
+  photoPlan: WizardPhotoSlot[];
+  prefill: WizardPrefill;
+  privatePrefill: string;
+  warnings: string[];
+  source: "d3+deepseek" | "d3+fallback" | "d3" | "manual" | string;
+  isDocument: boolean;
+  sensitive: boolean;
+}
+
+export interface ReverseGeocode {
+  zone: string;
+  placeName: string;
+  source: "mapbox" | "unavailable" | string;
+}
+
+export interface DropPoint {
+  id: string;
+  name: string;
+  address: string;
+  hours: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  walkingMinutes: number;
+  approximate: boolean;
+  source: "mapbox" | "haversine" | string;
+}
+
+export interface DropPointsResponse {
+  points: DropPoint[];
+  source: string;
+  approximate: boolean;
+}

@@ -39,6 +39,15 @@ This repository now runs the full lost-and-found MVP: a Vue UI embedded in the
 Go binary, a SQLite registry, finder/intermediary/searcher/institution roles,
 privacy-safe claim verification and a single-use pickup pass.
 
+The finder flow is a five-step photo-first wizard: D3 classifies the first
+photo (the only component that sees images), DeepSeek turns the sanitized
+result into a photo plan and prefills, Mapbox ranks the five nearest active
+drop points by walking time, and the finder reviews every value before the
+disclaimer and submit. Without D3/DeepSeek the wizard falls back to a manual
+compilation; without `MAPBOX_TOKEN` the drop points show a **stima** badge.
+Set `API_D3_ALLOW_IMAGES=true` if the final D3 enrollment pass must see the
+photos too (the wizard analysis always does).
+
 ```bash
 # first run only
 cp .env.example .env

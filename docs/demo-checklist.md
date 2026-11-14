@@ -29,6 +29,11 @@ file is the operational sequence.
   - Qdrant/embeddings empty/off → SQLite search.
   - Payment provider `mock` → no real payment.
 - [ ] Docker daemon is running (for the container path) and port 3000 is free.
+- [ ] `MAPBOX_TOKEN` is set for real walking distances. Without it the wizard
+      still works and shows a **stima** badge on the drop points.
+- [ ] `API_D3_ALLOW_IMAGES=true` if the final D3 pass must see the photos; the
+      wizard analysis sends them to D3 regardless. D3 is the official decision
+      engine; the finder is warned not to photograph document contents.
 - [ ] `.env`, `data/`, `db/*.db*`, `webui/dist/` and `webui/node_modules/` are
       ignored by git.
 
@@ -55,7 +60,10 @@ curl -sS -b /tmp/ritrova-cookies http://localhost:3000/api/claims/claim-phone | 
 
 - [ ] Reset exits 0 and prints either the HTTP reset or the local seed path.
 - [ ] The admin login still works (`admin-demo`).
-- [ ] The login screen lists finder, intermediary, searcher and institution.
+- [ ] The login screen lists finder, intermediary, searcher and institution,
+      plus the partner drop-off points used by the wizard ranking.
+- [ ] Finder wizard: first photo → AI prefill/plan; stop D3/DeepSeek → manual
+      analysis still lets you continue; stop Mapbox → drop points show **stima**.
 
 If reset fails with 403, `.env` and the running API use different
 `API_DEMO_RESET_SECRET` values. Do not print the secret while debugging.
@@ -112,7 +120,7 @@ screen. Reset first, then follow the arc in `docs/demo-script.md`.
 
 | # | Role | Flow | Expected visible result |
 |---|---|---|---|
-| 1 | Finder (`finder-demo`) | `/dashboard/finder` → enroll umbrella → choose Bar X → accept rights → submit | Receipt with public code, pending custody, finder cannot reopen the item |
+| 1 | Finder (`finder-demo`) | `/dashboard/finder` → **Fai una foto** → review AI prefill/photo plan → zone → private details → top-5 walking points → Bar X → disclaimer → submit | Receipt with public code, pending custody, finder cannot reopen the item |
 | 2 | Intermediary (`bar-x`) | Dashboard → **Accetta custodia** | Item in custody, 7-day deadline (24 h for sensitive items) |
 | 3 | Searcher (`searcher-demo`) | `/dashboard/searcher` → two chat turns → claim card | Public candidates only, no private profile/documents/exact coordinates, claim in review |
 | 4 | Institution (`institution-demo`) | Open the claim via the item URL → approve → confirm | Review recorded; searcher can reload the claim and generate the pass |
