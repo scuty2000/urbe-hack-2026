@@ -18,6 +18,7 @@ Example:
 		CustodyService: custodyService,
 		SearchService:  searchService,
 		ClaimService:   claimService,
+		PassService:    passService,
 		AgentService:   agentService,
 	})
 	if err != nil {
@@ -50,6 +51,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
 )
@@ -84,6 +86,9 @@ type Config struct {
 
 	// ClaimService is the verification and claim service.
 	ClaimService claimdomain.Service
+
+	// PassService is the signed pickup-pass service.
+	PassService passdomain.Service
 
 	// AgentService is the searcher conversational orchestrator.
 	AgentService agentdomain.Service
@@ -132,6 +137,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.ClaimService == nil {
 		return nil, errors.New("claim service is required")
 	}
+	if cfg.PassService == nil {
+		return nil, errors.New("pass service is required")
+	}
 	if cfg.AgentService == nil {
 		return nil, errors.New("agent service is required")
 	}
@@ -159,6 +167,7 @@ func New(cfg Config) (Router, error) {
 		custodyService:  cfg.CustodyService,
 		searchService:   cfg.SearchService,
 		claimService:    cfg.ClaimService,
+		passService:     cfg.PassService,
 		agentService:    cfg.AgentService,
 		demoReset:       cfg.DemoReset,
 		demoResetSecret: cfg.DemoResetSecret,
@@ -175,6 +184,7 @@ type _router struct {
 	custodyService  custodydomain.Service
 	searchService   search.Service
 	claimService    claimdomain.Service
+	passService     passdomain.Service
 	agentService    agentdomain.Service
 	demoReset       func(context.Context) error
 	demoResetSecret string

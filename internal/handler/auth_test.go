@@ -18,6 +18,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/dto"
@@ -77,6 +78,7 @@ func newAuthRouter(t *testing.T) http.Handler {
 		CustodyService: custodydomain.New(db),
 		SearchService:  search.New(db, search.Deps{}),
 		ClaimService:   claimdomain.New(db),
+		PassService:    passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
 		AgentService:   agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {

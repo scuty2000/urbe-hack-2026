@@ -32,6 +32,8 @@ tags:
     description: Item enrollment and custodian read endpoints
   - name: Claims
     description: Ownership claims, verification reports and custodian review
+  - name: Passes
+    description: Signed single-use pickup passes, QR validation and redemption
   - name: Chat
     description: Searcher conversational orchestrator (DeepSeek or mock fallback)
   - name: Custody
@@ -373,6 +375,151 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalServerError"
+
+# ─── /api/passes ─────────────────────────────────────────────────────────────
+
+  /api/passes:
+    post:
+      tags: [Passes]
+      operationId: createPass
+      summary: Issue a signed pickup pass
+      description: |
+        Issues a single-use pickup pass for an approved claim. The caller must
+        be the searcher who owns the claim; the item must currently be
+        `in_custody` (direct return) or `transferred` (PA return), and the claim
+        channel must match the item state.
+
+        The pass is signed with HMAC-SHA256 (`AUTH_PASS_SECRET`) and expires
+        after `AUTH_PASS_TTL`. Only the SHA-256 hash of the token is stored. The
+        raw token is returned exactly once, in this response, and must be
+        rendered as a QR code by the client.
+
+        A PA return with an unpaid fee yields a `pending_payment` pass: it is
+        issued but cannot be validated or redeemed until the fee is paid.
+        Direct returns before the transfer to the PA are free.
+
+        If the signing secret is not configured the endpoint fails closed with
+        `503`.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePassPayload"
+      responses:
+        "201":
+          description: Pass issued; the raw token is included only here
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PassIssueResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          description: Pickup passes are not configured (missing secret)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/passes/validate:
+    post:
+      tags: [Passes]
+      operationId: validatePass
+      summary: Validate a scanned pickup token
+      description: |
+        Checks a scanned QR token for the authenticated intermediary or
+        institution. The caller must be the current custodian of the item.
+
+        An unusable pass is a normal scanner outcome, not a server error: the
+        response is `200` with `valid: false` and one of the reasons
+        `expired`, `wrong_custodian`, `unpaid`, `revoked`, `already_redeemed`,
+        `item_not_in_custody`, `claim_not_approved` or `invalid_token`.
+        The item summary is returned only when the pass is valid and never
+        contains the private profile or exact coordinates.
+
+        The raw token is never logged or echoed by the server.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PassTokenPayload"
+      responses:
+        "200":
+          description: Validation outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PassValidation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: Pickup passes are not configured (missing secret)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/passes/redeem:
+    post:
+      tags: [Passes]
+      operationId: redeemPass
+      summary: Redeem a pickup token
+      description: |
+        Validates the token and performs the handover atomically: the pass
+        becomes `redeemed`, the item `returned` and the claim `handed_over`,
+        with a `handover` custody event and an audit entry. The caller must be
+        the current custodian.
+
+        A second scan of the same token is `409 Conflict`; a scan at the wrong
+        counter is `403 Forbidden`; an expired token is `400 Bad Request`; an
+        unpaid PA pass is `409 Conflict`.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PassTokenPayload"
+      responses:
+        "200":
+          description: Handover completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PassRedemption"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          description: Pickup passes are not configured (missing secret)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
 # ─── /api/chat ───────────────────────────────────────────────────────────────
 
@@ -1174,6 +1321,125 @@ components:
               maximum: 1
             report:
               $ref: "#/components/schemas/VerificationReport"
+
+    CreatePassPayload:
+      type: object
+      required: [claimId]
+      properties:
+        claimId:
+          type: string
+          format: uuid
+          description: Approved claim owned by the authenticated searcher.
+
+    PassTokenPayload:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: |
+            The raw signed token embedded in the QR code. It is sent by the
+            scanner and never logged by the server.
+
+    PassItem:
+      type: object
+      description: |
+        Safe item summary returned with a pass. It never contains the private
+        profile, evidence, photos or exact coordinates.
+      required: [id, publicCode, status, custodianId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        publicCode:
+          type: string
+          example: "LF-00000001"
+        category:
+          type: string
+          example: "smartphone"
+        brand:
+          type: string
+          example: "Apple"
+        model:
+          type: string
+          example: "iPhone 17"
+        color:
+          type: string
+          example: "nero"
+        status:
+          type: string
+          enum: [in_custody, transferred, returned]
+        custodianId:
+          type: string
+          example: "bar-x"
+
+    PassIssueResponse:
+      type: object
+      required: [passId, claimId, itemId, token, status, returnChannel, expiresAt]
+      properties:
+        passId:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: |
+            Raw signed token. Returned exactly once; render it as a QR code and
+            do not store it in logs or analytics.
+        status:
+          type: string
+          enum: [pending_payment, issued]
+        returnChannel:
+          type: string
+          enum: [intermediary_direct, pa]
+        expiresAt:
+          type: string
+          format: date-time
+        instructions:
+          type: array
+          items:
+            type: string
+        item:
+          $ref: "#/components/schemas/PassItem"
+
+    PassValidation:
+      type: object
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
+        reason:
+          type: string
+          enum:
+            - invalid_token
+            - expired
+            - wrong_custodian
+            - unpaid
+            - revoked
+            - already_redeemed
+            - item_not_in_custody
+            - claim_not_approved
+        expiresAt:
+          type: string
+          format: date-time
+          description: Present only when the pass is valid.
+        item:
+          $ref: "#/components/schemas/PassItem"
+
+    PassRedemption:
+      type: object
+      required: [item, returnedAt]
+      properties:
+        item:
+          $ref: "#/components/schemas/PassItem"
+        returnedAt:
+          type: string
+          format: date-time
 
     ChatMessage:
       type: object

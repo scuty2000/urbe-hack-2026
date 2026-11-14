@@ -15,6 +15,7 @@ import (
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
@@ -44,6 +45,7 @@ func newChatRouter(t *testing.T) (http.Handler, repository.Database) {
 		CustodyService: custodydomain.New(db),
 		SearchService:  search.New(db, search.Deps{}),
 		ClaimService:   claimdomain.New(db),
+		PassService:    passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
 		AgentService:   agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {

@@ -46,6 +46,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/d3"
@@ -220,6 +221,12 @@ func run() error {
 	claimService := claimdomain.New(db, claimdomain.Deps{
 		Engine: claimdomain.D3Engine(cataloger),
 	})
+	// Pickup passes are signed with the dedicated AUTH_PASS_SECRET. An empty
+	// secret is a deliberate fail-closed mode: passes cannot be issued.
+	passService := passdomain.New(db, passdomain.Deps{
+		PassSecret: cfg.Auth.PassSecret,
+		PassTTL:    cfg.Auth.PassTTL,
+	})
 
 	// Vector search is optional: without Qdrant or embeddings the search
 	// service falls back to SQLite, so the demo always works.
@@ -305,6 +312,7 @@ func run() error {
 			CustodyService:  custodyService,
 			SearchService:   searchService,
 			ClaimService:    claimService,
+			PassService:     passService,
 			AgentService:    agentService,
 			DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
 			DemoResetSecret: cfg.Demo.ResetSecret,

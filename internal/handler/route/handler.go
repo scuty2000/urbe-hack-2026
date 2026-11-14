@@ -10,6 +10,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 )
@@ -45,6 +46,9 @@ type WebAPIHandler struct {
 	// Claims is the verification and claim service.
 	Claims claimdomain.Service
 
+	// Passes is the signed pickup-pass service.
+	Passes passdomain.Service
+
 	// Agent is the searcher conversational orchestrator.
 	Agent agentdomain.Service
 
@@ -67,6 +71,7 @@ func New(
 	custodyService custodydomain.Service,
 	searchService search.Service,
 	claimService claimdomain.Service,
+	passService passdomain.Service,
 	agentService agentdomain.Service,
 	demoReset func(context.Context) error,
 	demoResetSecret string,
@@ -79,6 +84,7 @@ func New(
 		Custody:         custodyService,
 		Search:          searchService,
 		Claims:          claimService,
+		Passes:          passService,
 		Agent:           agentService,
 		DemoReset:       demoReset,
 		DemoResetSecret: demoResetSecret,

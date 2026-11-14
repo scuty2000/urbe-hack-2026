@@ -22,6 +22,7 @@ func (rt *_router) Handler() http.Handler {
 		rt.custodyService,
 		rt.searchService,
 		rt.claimService,
+		rt.passService,
 		rt.agentService,
 		rt.demoReset,
 		rt.demoResetSecret,
@@ -49,6 +50,16 @@ func (rt *_router) Handler() http.Handler {
 	api.GET("/claims/:id",
 		middleware.RequireAnyRole(rt.authService, auth.RoleSearcher, auth.RoleIntermediary, auth.RoleInstitution),
 		rt.wrap(h.GetClaim))
+
+	api.POST("/passes",
+		middleware.RequireRole(rt.authService, auth.RoleSearcher),
+		rt.wrap(h.PostPass))
+	api.POST("/passes/validate",
+		middleware.RequireAnyRole(rt.authService, auth.RoleIntermediary, auth.RoleInstitution),
+		rt.wrap(h.PostPassValidate))
+	api.POST("/passes/redeem",
+		middleware.RequireAnyRole(rt.authService, auth.RoleIntermediary, auth.RoleInstitution),
+		rt.wrap(h.PostPassRedeem))
 
 	api.POST("/items",
 		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary),
