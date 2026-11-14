@@ -1,0 +1,302 @@
+openapi: "3.1.0"
+
+info:
+  title: Fantastic Gin Dealcoholized API
+  description: |
+    RESTful API for managing a collection of names.
+
+    Built with **Go** and **Gin**. All error responses share a consistent
+    `{"error": "<message>"}` JSON shape.
+  version: "1.0.0"
+  contact:
+    url: https://github.com/tommaso-sgroi/fantastic-gin-dealcoholized
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: "http://localhost:3000"
+    description: Local development server
+
+# All endpoints are public — no authentication required.
+security: []
+
+tags:
+  - name: General
+    description: Utility and diagnostic endpoints
+  - name: Names
+    description: CRUD operations on the `/names` resource
+
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+  /healthz:
+    get:
+      tags: [General]
+      operationId: liveness
+      summary: Liveness probe
+      description: |
+        Returns `200` when the server is running and the database is reachable.
+        Returns `500` otherwise. Use this with container orchestrators (Docker,
+        Kubernetes) as a liveness check.
+      responses:
+        "200":
+          description: Server is healthy
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /names ───────────────────────────────────────────────────────────────────
+
+  /names:
+    post:
+      tags: [Names]
+      operationId: createName
+      summary: Create a name
+      description: |
+        Inserts a new name into the collection.
+        Returns the created resource and a `Location` header pointing to it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameInput"
+            example:
+              name: "Alice"
+      responses:
+        "201":
+          description: Name successfully created
+          headers:
+            Location:
+              description: URL of the newly created resource
+              schema:
+                type: string
+                example: "/names/11"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Name"
+              example:
+                id: 11
+                name: "Alice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /names/{id} ──────────────────────────────────────────────────────────────
+
+  /names/{id}:
+    parameters:
+      - $ref: "#/components/parameters/nameId"
+
+    get:
+      tags: [Names]
+      operationId: getNameById
+      summary: Get a name
+      description: Returns the name resource identified by `id`.
+      responses:
+        "200":
+          description: Name found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Name"
+              example:
+                id: 1
+                name: "Alice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      tags: [Names]
+      operationId: updateNameById
+      summary: Update a name
+      description: Replaces the `name` field of the resource identified by `id`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameInput"
+            example:
+              name: "UpdatedAlice"
+      responses:
+        "200":
+          description: Name successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Name"
+              example:
+                id: 1
+                name: "UpdatedAlice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags: [Names]
+      operationId: deleteNameById
+      summary: Delete a name
+      description: |
+        Permanently removes the resource identified by `id`.
+        Returns `204 No Content` on success with an empty body.
+      responses:
+        "204":
+          description: Name deleted — no content returned
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /names/{id}/replace ──────────────────────────────────────────────────────
+
+  /names/{id}/replace:
+    parameters:
+      - $ref: "#/components/parameters/nameId"
+
+    post:
+      tags: [Names]
+      operationId: replaceName
+      summary: Replace a name (transactional)
+      description: |
+        Atomically deletes the name identified by `id` and creates a new one
+        with the provided value — both operations run inside a single database
+        transaction. If any step fails the database is left unchanged.
+
+        The response contains the **newly created** resource (with a new `id`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NameInput"
+            example:
+              name: "NewAlice"
+      responses:
+        "201":
+          description: Name replaced — new resource returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Name"
+              example:
+                id: 42
+                name: "NewAlice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+
+  schemas:
+
+    Name:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Auto-generated unique identifier
+          example: 1
+        name:
+          type: string
+          minLength: 1
+          description: The stored name value
+          example: "Alice"
+
+    NameInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: The name to store. Must be non-empty.
+          example: "Alice"
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable description of the error
+          example: "not found"
+
+  parameters:
+
+    nameId:
+      name: id
+      in: path
+      required: true
+      description: Numeric identifier of the name resource
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        example: 1
+
+  responses:
+
+    BadRequest:
+      description: |
+        The request is malformed — e.g. `id` is not a number, or the JSON body
+        is missing / has an empty `name` field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            invalidId:
+              summary: Non-numeric ID in path
+              value:
+                error: "invalid id"
+            missingName:
+              summary: Missing or empty name in body
+              value:
+                error: "body must be JSON with a non-empty \"name\" field"
+
+    NotFound:
+      description: No resource exists with the given `id`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "not found"
+
+    InternalServerError:
+      description: An unexpected server-side error occurred. Check server logs for details.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            generic:
+              summary: Generic server error
+              value:
+                error: "internal server error"
+            dbUnreachable:
+              summary: Database unreachable (liveness probe)
+              value:
+                error: "database unreachable"

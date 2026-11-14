@@ -15,7 +15,11 @@ webui/node_modules/
 webui/dist/
 
 # tooling
+.superpowers/
 .omo/
 .codegraph
 .idea/
 .DS_Store
+
+# build artifacts
+/webapi

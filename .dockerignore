@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-shm
+*.db-wal
+.superpowers/
+.omo/
+.idea/
+.codegraph
+webui/node_modules/
+webui/dist/
+/webapi

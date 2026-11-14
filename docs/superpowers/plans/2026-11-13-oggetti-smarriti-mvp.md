@@ -93,6 +93,9 @@ services:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
+set -a
+. ./.env
+set +a
 docker compose up -d qdrant
 go run ./cmd/webapi/ -c demo/config.yml
 ```

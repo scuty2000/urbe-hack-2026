@@ -1,0 +1,31 @@
+config:
+  path: ""                      # override with -c <path> or API_CONFIG_PATH=<path>
+
+web:
+  apihost: 0.0.0.0:3000         # API server bind address
+  debughost: 0.0.0.0:4000       # pprof debug server
+  readtimeout: 5s               # max time to read a full request
+  writetimeout: 5s              # max time to write a full response
+  shutdowntimeout: 5s           # graceful shutdown deadline
+  trustedproxies: []            # e.g. [127.0.0.1, 10.0.0.0/8]
+
+logger:
+  level: info                   # debug | info | warn | error
+  file: stdout                  # stderr | stdout | /path/to/file
+
+db:
+  filename: db/lostfound.db     # SQLite file path
+
+cors:
+  allowallorigins: false        # true = allow any origin (don't use with credentials)
+  allowedorigins:
+    - http://localhost:3000
+  allowedmethods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - OPTIONS
+  allowedheaders: []            # e.g. [Authorization, Content-Type]
+  allowcredentials: false       # allow cookies / auth headers cross-origin
+  maxage: 86400                 # preflight cache duration in seconds

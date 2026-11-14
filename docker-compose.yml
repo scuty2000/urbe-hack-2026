@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    ports: ["3000:3000"]
+    env_file: .env
+    environment:
+      API_QDRANT_URL: http://qdrant:6333
+    volumes: ["./data:/data", "./db:/app/db"]
+    depends_on: [qdrant]
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports: ["6333:6333"]
+    volumes: ["./data/qdrant:/qdrant/storage"]
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://api:3000
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    profiles: ["tunnel"]
