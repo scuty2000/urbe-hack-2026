@@ -112,31 +112,82 @@ func normalizeFlag(flag string) string {
 	return normalized
 }
 
-// identityFields are the attribute names that must never be sent to an
-// external model in clear text.
-var identityFields = map[string]bool{
+// identityKeys are the exact attribute names that identify a person and must
+// never be sent to an external model in clear text.
+var identityKeys = map[string]bool{
 	"name":            true,
 	"full_name":       true,
 	"first_name":      true,
 	"last_name":       true,
 	"surname":         true,
 	"owner_name":      true,
+	"nome":            true,
+	"cognome":         true,
+	"holder":          true,
+	"cardholder":      true,
+	"intestatario":    true,
+	"titolare":        true,
+	"proprietario":    true,
 	"dob":             true,
 	"date_of_birth":   true,
 	"birth_date":      true,
 	"document":        true,
+	"document_type":   true,
 	"document_number": true,
 	"documentnumber":  true,
-	"document_type":   true,
+	"number":          true,
+	"numero":          true,
 	"id_number":       true,
 	"identity_number": true,
 	"fiscal_code":     true,
 	"codice_fiscale":  true,
 	"tax_code":        true,
 	"email":           true,
+	"mail":            true,
 	"phone":           true,
+	"telefono":        true,
+	"tel":             true,
 	"address":         true,
+	"indirizzo":       true,
 	"place_of_birth":  true,
+	"ssn":             true,
+	"cf":              true,
+}
+
+// identityFragments make the denylist fail closed for compound and localised
+// keys: "number" catches document_number and "numero_documento", "holder"
+// catches card_holder, "nome" catches owner_nome, and so on. Unknown keys that
+// contain one of these fragments are redacted rather than forwarded.
+var identityFragments = []string{
+	"name",
+	"nome",
+	"cognome",
+	"holder",
+	"intestatario",
+	"titolare",
+	"proprietar",
+	"document",
+	"documento",
+	"number",
+	"numero",
+	"email",
+	"mail",
+	"phone",
+	"telefon",
+	"telephon",
+	"mobile",
+	"cellulare",
+	"address",
+	"indirizzo",
+	"residenza",
+	"contact",
+	"contatt",
+	"birth",
+	"nascita",
+	"fiscal",
+	"fiscale",
+	"ssn",
+	"codice_fiscale",
 }
 
 // isIdentityField reports whether key describes a person rather than an item.
@@ -144,14 +195,15 @@ func isIdentityField(key string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(key))
 	normalized = strings.ReplaceAll(normalized, "-", "_")
 	normalized = strings.ReplaceAll(normalized, " ", "_")
-	if identityFields[normalized] {
+	if identityKeys[normalized] {
 		return true
 	}
-	// Be defensive about camelCase and compound names.
-	return strings.Contains(normalized, "document") ||
-		strings.Contains(normalized, "birth") ||
-		strings.Contains(normalized, "fiscal") ||
-		normalized == "ssn"
+	for _, fragment := range identityFragments {
+		if strings.Contains(normalized, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsIdentityField reports whether an attribute identifies a person and must be

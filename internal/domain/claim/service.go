@@ -69,11 +69,23 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 
 	evidence := mergeStrings(input.Evidence, input.Session.Evidence)
 	flags := mergeStrings(input.Flags, input.Session.Flags)
-	questions := questionsFor(item, input.Session.Questions)
+	questions, expected, privateKeys := questionSet(item, input.Session.Questions)
+
+	// Server-derived flags cannot be removed by the caller: identity and prompt
+	// injection checks run on the raw answers before any filtering.
+	identityMatch := identityMatches(item.PrivateProfile, input.Session.Answers)
+	if hasIdentityMismatch(identityMatch) {
+		flags = mergeStrings(flags, []string{verification.FlagIdentityMismatch})
+	}
+	if containsInjection(input.Session.Answers, evidence) {
+		flags = mergeStrings(flags, []string{verification.FlagPromptInjection})
+	}
+
+	answers := filterAnswers(input.Session.Answers, questions)
 	state := verification.State{
-		Item:          expectedAttributes(item),
-		Searcher:      stringAnswers(input.Session.Answers),
-		IdentityMatch: identityMatches(item.PrivateProfile, input.Session.Answers),
+		Item:          expected,
+		Searcher:      stringAnswers(answers),
+		IdentityMatch: identityMatch,
 		Evidence:      evidence,
 		RiskTier:      riskTierOf(item),
 	}
@@ -84,6 +96,12 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 	}
 	confidence := clampConfidence(result.Confidence)
 	policy := verification.Decision(state.RiskTier, confidence, evidence, flags)
+	// Public listing attributes alone are not ownership evidence: an automatic
+	// approval must include at least one matching private attribute.
+	if policy.Decision == verification.DecisionAutoApprove && !hasPrivateMatch(result.Answers, privateKeys) {
+		policy.Decision = verification.DecisionMoreInfo
+		policy.Reasons = append(policy.Reasons, "no private attribute matched; more information required")
+	}
 	status := statusForDecision(policy.Decision)
 
 	now := s.now()
@@ -133,7 +151,7 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 	if sessionRow.Questions, err = encodeJSON(questions, "{}"); err != nil {
 		return Claim{}, fmt.Errorf("create claim %q: %w", itemID, err)
 	}
-	if sessionRow.Answers, err = encodeJSON(nonNilAnswers(input.Session.Answers), "{}"); err != nil {
+	if sessionRow.Answers, err = encodeJSON(nonNilAnswers(answers), "{}"); err != nil {
 		return Claim{}, fmt.Errorf("create claim %q: %w", itemID, err)
 	}
 	if sessionRow.Probabilities, err = encodeJSON(nonNilAnswers(result.Answers), "{}"); err != nil {
@@ -439,16 +457,24 @@ func buildReport(row record.ClaimRecord, session record.VerificationSessionRecor
 }
 
 // expectedAttributes merges the public attributes with the discriminative
-// private-profile values. Identity fields are excluded: they are compared
-// separately and never become questions.
-func expectedAttributes(item itemdomain.Item) map[string]any {
+// private-profile values. It also returns the set of private keys so the
+// caller can require private evidence for an automatic approval.
+//
+// Identity fields are excluded entirely: they are compared separately and
+// never become questions or D3 attributes. Unsupported values (nested objects,
+// arrays of objects) are excluded too, so they cannot depress honest scores.
+func expectedAttributes(item itemdomain.Item) (map[string]any, map[string]bool) {
 	attributes := map[string]any{}
+	private := map[string]bool{}
 	public := map[string]string{
 		"category":  item.Category,
 		"brand":     item.Brand,
 		"model":     item.Model,
 		"color":     item.Color,
 		"condition": item.Condition,
+	}
+	publicKeys := map[string]bool{
+		"category": true, "brand": true, "model": true, "color": true, "condition": true,
 	}
 	for key, value := range public {
 		if strings.TrimSpace(value) != "" {
@@ -460,35 +486,155 @@ func expectedAttributes(item itemdomain.Item) map[string]any {
 		if key == "" || profileMetadataKeys[strings.ToLower(key)] || verification.IsIdentityField(key) {
 			continue
 		}
-		if !hasContent(value) {
+		if !supportedAttributeValue(value) {
 			continue
 		}
 		attributes[key] = value
+		// A profile key that merely repeats a public listing attribute is not
+		// private evidence.
+		if !publicKeys[strings.ToLower(key)] {
+			private[key] = true
+		}
 	}
-	return attributes
+	return attributes, private
 }
 
-// questionsFor uses the agent-supplied questions when present and otherwise
-// derives one noul question per discriminative attribute.
-func questionsFor(item itemdomain.Item, supplied verification.Questions) verification.Questions {
-	if len(supplied) > 0 {
-		return supplied
+// supportedAttributeValue reports whether a private value can be asked as a
+// verification question. Scalars are compared directly; lists of scalars are
+// membership questions; objects and nested structures are excluded.
+func supportedAttributeValue(value any) bool {
+	switch v := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(v) != ""
+	case bool:
+		return true
+	case float64, float32, int, int64, int32:
+		return true
+	case []string:
+		return len(v) > 0
+	case []any:
+		if len(v) == 0 {
+			return false
+		}
+		for _, item := range v {
+			if !isScalarValue(item) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
 	}
-	attributes := expectedAttributes(item)
+}
+
+// isScalarValue reports whether a list element is directly comparable.
+func isScalarValue(value any) bool {
+	switch value.(type) {
+	case string, bool, float64, float32, int, int64, int32:
+		return true
+	default:
+		return false
+	}
+}
+
+// questionSet uses the agent-supplied questions when present and otherwise
+// derives one question per supported attribute. Booleans stay yes/no (noul),
+// lists become choice questions, and scalar strings/numbers stay noul.
+func questionSet(
+	item itemdomain.Item,
+	supplied verification.Questions,
+) (verification.Questions, map[string]any, map[string]bool) {
+	attributes, private := expectedAttributes(item)
+	if len(supplied) > 0 {
+		return supplied, attributes, private
+	}
+
 	questions := make(verification.Questions, len(attributes)+1)
-	for key := range attributes {
-		questions[key] = itemdomain.Question{Type: "noul"}
+	for key, value := range attributes {
+		questions[key] = questionForValue(value)
 	}
 	if len(questions) == 0 {
 		// Nothing discriminative was recorded: ask the searcher for a free-text
 		// description so the policy still has a deterministic signal.
 		questions["description"] = itemdomain.Question{Type: "score"}
 	}
-	return questions
+	return questions, attributes, private
 }
 
-// identityMatches compares the identity fields the searcher supplied with the
-// stored profile. The result is a boolean map, never the raw values.
+// questionForValue maps a supported private value to its d3 question type.
+func questionForValue(value any) itemdomain.Question {
+	switch value.(type) {
+	case []any, []string:
+		return itemdomain.Question{Type: "choice", Criteria: choiceCriteria(value)}
+	default:
+		// noul covers both yes/no booleans and free-text attributes; the local
+		// scorer normalizes boolean synonyms and the D3 client receives the
+		// same question type used by the enrollment catalog.
+		return itemdomain.Question{Type: "noul"}
+	}
+}
+
+// choiceCriteria exposes list members as d3 choice options.
+func choiceCriteria(value any) map[string]string {
+	options := map[string]string{}
+	appendOption := func(item any) {
+		label := strings.TrimSpace(fmt.Sprint(item))
+		if label != "" {
+			options[label] = label
+		}
+	}
+	switch values := value.(type) {
+	case []any:
+		for _, item := range values {
+			appendOption(item)
+		}
+	case []string:
+		for _, item := range values {
+			appendOption(item)
+		}
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	return options
+}
+
+// filterAnswers drops every answer that is not part of the server-derived
+// question set. Untrusted caller keys never reach D3 or the stored session.
+func filterAnswers(answers map[string]string, questions verification.Questions) map[string]string {
+	filtered := make(map[string]string, len(questions))
+	for key, value := range answers {
+		canonical := canonicalQuestionKey(questions, key)
+		if canonical == "" {
+			continue
+		}
+		filtered[canonical] = value
+	}
+	return filtered
+}
+
+// canonicalQuestionKey resolves an answer key to the exact question key.
+func canonicalQuestionKey(questions verification.Questions, key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	if _, ok := questions[key]; ok {
+		return key
+	}
+	for questionKey := range questions {
+		if strings.EqualFold(questionKey, key) {
+			return questionKey
+		}
+	}
+	return ""
+}
+
+// identityMatches compares only the identity fields the searcher actually
+// answered. A missing identity answer is not a mismatch; a present but
+// different value is.
 func identityMatches(profile map[string]any, answers map[string]string) map[string]bool {
 	if len(profile) == 0 || len(answers) == 0 {
 		return nil
@@ -498,7 +644,6 @@ func identityMatches(profile map[string]any, answers map[string]string) map[stri
 		if !verification.IsIdentityField(key) || !hasContent(expected) {
 			continue
 		}
-		matches[key] = false
 		for answerKey, answerValue := range answers {
 			if strings.EqualFold(strings.TrimSpace(answerKey), strings.TrimSpace(key)) {
 				matches[key] = strings.EqualFold(strings.TrimSpace(fmt.Sprint(expected)), strings.TrimSpace(answerValue))
@@ -510,6 +655,78 @@ func identityMatches(profile map[string]any, answers map[string]string) map[stri
 		return nil
 	}
 	return matches
+}
+
+// hasIdentityMismatch reports whether any comparable identity field differed.
+func hasIdentityMismatch(matches map[string]bool) bool {
+	for _, match := range matches {
+		if !match {
+			return true
+		}
+	}
+	return false
+}
+
+// hasPrivateMatch reports whether at least one private attribute was answered
+// with ownership-grade confidence.
+func hasPrivateMatch(answers map[string]itemdomain.Answer, privateKeys map[string]bool) bool {
+	for key := range privateKeys {
+		answer, ok := answers[key]
+		if ok && verification.AnswerProbability(answer) >= 0.75 {
+			return true
+		}
+	}
+	return false
+}
+
+// injectionPatterns are server-side prompt-injection signatures. They are
+// deliberately conservative: legitimate item descriptions do not contain
+// instruction overrides, role changes or approval commands.
+var injectionPatterns = []string{
+	"ignore previous",
+	"ignore all previous",
+	"ignore the previous",
+	"disregard previous",
+	"forget your instructions",
+	"system prompt",
+	"you are now",
+	"act as a",
+	"act as an",
+	"jailbreak",
+	"developer mode",
+	"prompt injection",
+	"override the policy",
+	"approve this claim",
+	"approve the claim",
+	"```",
+	"<script",
+	"assistant:",
+	"system:",
+}
+
+// containsInjection scans answers and evidence for obvious injection attempts.
+func containsInjection(answers map[string]string, evidence []string) bool {
+	for _, value := range answers {
+		if looksLikeInjection(value) {
+			return true
+		}
+	}
+	for _, value := range evidence {
+		if looksLikeInjection(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeInjection(value string) bool {
+	normalized := strings.ToLower(strings.Join(strings.Fields(value), " "))
+	for _, pattern := range injectionPatterns {
+		if strings.Contains(normalized, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // riskTierOf normalises the item tier. A missing tier defaults to medium; a

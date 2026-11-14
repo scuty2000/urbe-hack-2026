@@ -95,15 +95,83 @@ func LocalScore(state State, questions Questions) D3Result {
 	return result
 }
 
-// matchValue returns 0.95 for normalized equality and 0.1 otherwise.
+// matchValue returns 0.95 for a normalized match and 0.1 otherwise. Booleans
+// accept yes/no synonyms and arrays accept membership, so seeded boolean and
+// list attributes are answerable instead of capping every honest score.
 func matchValue(expected, actual any, bothPresent bool) float64 {
 	if !bothPresent {
 		return mismatchProbability
+	}
+	if expectedBool, ok := expected.(bool); ok {
+		actualBool, parsed := parseBool(actual)
+		if parsed && expectedBool == actualBool {
+			return matchProbability
+		}
+		return mismatchProbability
+	}
+	if sliceContains(expected, actual) {
+		return matchProbability
 	}
 	if normalizeValue(expected) == normalizeValue(actual) {
 		return matchProbability
 	}
 	return mismatchProbability
+}
+
+// sliceContains reports whether actual matches any element of a string/number
+// list. It supports the []any decoded from a JSON private profile and the
+// []string used by hand-written fixtures.
+func sliceContains(expected, actual any) bool {
+	normalizedActual := normalizeValue(actual)
+	if normalizedActual == "" {
+		return false
+	}
+	switch values := expected.(type) {
+	case []any:
+		for _, value := range values {
+			if normalizeValue(value) == normalizedActual {
+				return true
+			}
+		}
+	case []string:
+		for _, value := range values {
+			if normalizeValue(value) == normalizedActual {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// parseBool accepts the boolean spellings a searcher may type for a yes/no
+// question, including Italian variants.
+func parseBool(value any) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case float64:
+		switch v {
+		case 1:
+			return true, true
+		case 0:
+			return false, true
+		}
+	case int:
+		switch v {
+		case 1:
+			return true, true
+		case 0:
+			return false, true
+		}
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "yes", "y", "si", "sì", "1", "vero", "present", "presente", "has":
+			return true, true
+		case "false", "no", "n", "0", "falso", "absent", "assente":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 // scoreValue implements the free-text score question: exact match 0.9,

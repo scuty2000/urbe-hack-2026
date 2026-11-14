@@ -55,6 +55,56 @@ func TestLocalScoreMismatchingAnswers(t *testing.T) {
 	}
 }
 
+func TestLocalScoreBooleanAndListAttributes(t *testing.T) {
+	t.Parallel()
+
+	state := verification.State{
+		Item: map[string]any{
+			"has_crack": true,
+			"contents":  []any{"carta di identità", "bancomat"},
+		},
+		Searcher: map[string]any{
+			"has_crack": "yes",
+			"contents":  "bancomat",
+		},
+	}
+	questions := verification.Questions{
+		"has_crack": {Type: "noul"},
+		"contents":  {Type: "choice"},
+	}
+
+	result := verification.LocalScore(state, questions)
+	if got := result.Answers["has_crack"].Noul; got < 0.8 {
+		t.Fatalf("has_crack noul = %v, want a yes/no match", got)
+	}
+	if got := result.Answers["contents"].Confidence; got < 0.8 {
+		t.Fatalf("contents confidence = %v, want a list membership match", got)
+	}
+	if result.Confidence < 0.8 {
+		t.Fatalf("confidence = %v, want >= 0.8", result.Confidence)
+	}
+}
+
+func TestIsIdentityFieldFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	identity := []string{
+		"number", "holder", "numero_documento", "nome", "intestatario",
+		"telefono", "contact_email", "documentNumber", "date_of_birth",
+		"codice_fiscale", "residenza", "serial_number",
+	}
+	for _, key := range identity {
+		if !verification.IsIdentityField(key) {
+			t.Fatalf("IsIdentityField(%q) = false, want redacted", key)
+		}
+	}
+	for _, key := range []string{"serial", "case_color", "has_crack", "sticker", "notes", "contents", "detail"} {
+		if verification.IsIdentityField(key) {
+			t.Fatalf("IsIdentityField(%q) = true, want a discriminative item attribute", key)
+		}
+	}
+}
+
 func TestLocalScoreScorePartialAndExact(t *testing.T) {
 	t.Parallel()
 
