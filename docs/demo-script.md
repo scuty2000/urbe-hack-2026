@@ -19,12 +19,16 @@ screen.
 2. Start the application:
 
    ```bash
-   # Docker
+   # first run only
+   cp .env.example .env
+
+   # Docker: the embedded UI is served at /dashboard/
    docker compose up -d qdrant
    docker compose up --build -d api
 
-   # or local
+   # or local backend, then the Vite UI in a second terminal
    scripts/dev-up.sh
+   npm --prefix webui run dev
    ```
 
 3. Open the demo UI at `http://localhost:3000/dashboard/` (embedded build) or
@@ -84,17 +88,24 @@ nella coda della pubblica amministrazione."
 
 ### 1:10 — Searcher chat and human review (55 s)
 
+The chat uses the already-seeded iPhone in Bar X custody (`item-phone`) so the
+search and verification steps are deterministic and independent from the
+umbrella just created. Say: "Ora cambio ruolo: Marco cerca il suo telefono, già
+consegnato al Bar X."
+
 1. Switch to **Marco Bianchi** (searcher) and open **Ritrova il tuo oggetto**.
-2. First message: *"Ho perso un ombrello nero in zona San Lorenzo"*.
+2. First message: *"Ho perso un telefono nero in zona San Lorenzo"*.
    The assistant asks one open question and shows the compatible candidate.
-3. Second message: *"Ha una custodia blu"*.
+3. Second message: *"È un iPhone 17 nero con custodia blu, una crepa e un
+   adesivo a forma di gatto"*.
 
-Show that the reply does not echo the private detail, that only public fields
-appear in the candidate card, and that a claim was created with a **medium**
-confidence band. Say: "L'assistente non vede il profilo privato e non approva da
-solo: la richiesta va in verifica. La decisione spetta al custode o alla PA."
+Show that the reply does not echo the private details, that only public fields
+appear in the candidate card, and that the claim status is **Servono altre
+informazioni** with a **Media** confidence band. Say: "L'assistente non vede il
+profilo privato e non approva da solo: servono altre informazioni e decide una
+persona."
 
-4. Switch to **Comune di Roma**, open the umbrella item, paste the claim code in
+4. Switch to **Comune di Roma**, open the phone item, paste the claim code in
    **Verifica della richiesta** (the code is on the searcher's claim card), and
    click **Approva**.
 
@@ -106,10 +117,13 @@ dipendere da un provider esterno: la demo funziona anche offline."
 
 ### 2:10 — Pass and QR (25 s)
 
-1. Click **Genera pass di ritiro**. Show the QR and the one-time token.
-2. Switch to **Bar X**, open **Scansiona pass** (`/intermediary/scan`).
-3. Scan the QR, or paste the token in the manual field.
-4. Click **Verifica**, then **Conferma ritiro**.
+1. Return to the searcher window and **reload the page** (F5), or reopen
+   `/searcher?claim=<claim code>`. The page keeps the old `more_info` claim
+   until it is reloaded, so the pass button would otherwise stay hidden.
+2. Click **Genera pass di ritiro**. Show the QR and the one-time token.
+3. Switch to **Bar X**, open **Scansiona pass** (`/intermediary/scan`).
+4. Scan the QR, or paste the token in the manual field.
+5. Click **Verifica**, then **Conferma ritiro**.
 
 Show the item status **Restituito** and the timeline. Say: "Il pass è firmato,
 monouso e legato a quell'oggetto e a quel custode. Un secondo tentativo viene

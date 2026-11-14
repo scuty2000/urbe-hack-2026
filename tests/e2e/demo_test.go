@@ -178,6 +178,74 @@ func TestDemoFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("seeded phone chat and institution approval", func(t *testing.T) {
+		testserver.ResetDemo(t, server)
+
+		searcher := login(t, server, "searcher-demo")
+		institution := login(t, server, "institution-demo")
+		barX := login(t, server, "bar-x")
+
+		first := searcher.json(http.MethodPost, "/api/chat", map[string]any{
+			"messages": []map[string]string{
+				{"role": "user", "content": "Ho perso un telefono nero in zona San Lorenzo"},
+			},
+		}, http.StatusOK)
+		if first["claimId"] != "" || first["done"] == true {
+			t.Fatalf("first chat turn created a claim: %+v", first)
+		}
+		if !candidateIncludes(first["candidates"], "item-phone") {
+			t.Fatalf("first chat turn does not list item-phone: %+v", first["candidates"])
+		}
+
+		// Second turn: the mock extracts the public colour and the private case
+		// colour separately, then creates a reviewable claim.
+		second := searcher.json(http.MethodPost, "/api/chat", map[string]any{
+			"messages": []map[string]string{
+				{"role": "user", "content": "Ho perso un telefono nero in zona San Lorenzo"},
+				{"role": "user", "content": "È un iPhone 17 nero con custodia blu, una crepa e un adesivo a forma di gatto"},
+			},
+		}, http.StatusOK)
+		claimID, _ := second["claimId"].(string)
+		if claimID == "" || second["done"] != true {
+			t.Fatalf("second chat turn did not create a claim: %+v", second)
+		}
+
+		claim := searcher.json(http.MethodGet, "/api/claims/"+claimID, nil, http.StatusOK)
+		if claim["itemId"] != "item-phone" {
+			t.Fatalf("chat claim item = %v, want item-phone", claim["itemId"])
+		}
+		if claim["status"] != "more_info" {
+			t.Fatalf("chat claim status = %v, want more_info", claim["status"])
+		}
+		if claim["confidenceBand"] != "medium" {
+			t.Fatalf("chat claim confidenceBand = %v, want medium", claim["confidenceBand"])
+		}
+
+		// The institution reviews the same claim and approves it.
+		institution.json(http.MethodGet, "/api/institution/claims/"+claimID, nil, http.StatusOK)
+		reviewed := institution.json(http.MethodPost, "/api/institution/claims/"+claimID+"/review",
+			map[string]any{"decision": "approved"}, http.StatusOK)
+		if reviewed["status"] != "approved" {
+			t.Fatalf("chat claim review status = %v, want approved", reviewed["status"])
+		}
+
+		// The searcher reopens the claim (the UI reload/reopen step) and can now
+		// generate the pass.
+		reopened := searcher.json(http.MethodGet, "/api/claims/"+claimID, nil, http.StatusOK)
+		if reopened["status"] != "approved" {
+			t.Fatalf("reopened claim status = %v, want approved", reopened["status"])
+		}
+		pass := searcher.json(http.MethodPost, "/api/passes", map[string]any{"claimId": claimID}, http.StatusCreated)
+		token, _ := pass["token"].(string)
+		if pass["status"] != "issued" || token == "" {
+			t.Fatalf("chat claim pass = %+v, want issued with token", pass)
+		}
+
+		if got := barX.json(http.MethodPost, "/api/passes/redeem", map[string]any{"token": token}, http.StatusOK); got["item"].(map[string]any)["status"] != "returned" {
+			t.Fatalf("chat claim redemption = %+v, want returned", got)
+		}
+	})
+
 	t.Run("institution wallet report fee and PA return", func(t *testing.T) {
 		testserver.ResetDemo(t, server)
 

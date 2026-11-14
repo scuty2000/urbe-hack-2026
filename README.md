@@ -40,10 +40,15 @@ Go binary, a SQLite registry, finder/intermediary/searcher/institution roles,
 privacy-safe claim verification and a single-use pickup pass.
 
 ```bash
+# first run only
+cp .env.example .env
+
 # local development with the demo dataset
 scripts/dev-up.sh
+# UI dev server in a second terminal
+npm --prefix webui run dev
 
-# or the container stack
+# or the container stack (embedded UI at /dashboard/)
 docker compose up --build -d api qdrant
 open http://localhost:3000/dashboard/
 ```

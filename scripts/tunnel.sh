@@ -66,12 +66,21 @@ fi
 
 docker compose --profile tunnel up -d tunnel
 
-public_url="${DEMO_PUBLIC_URL:-${API_APP_PUBLIC_URL:-}}"
+public_url="${DEMO_PUBLIC_URL:-}"
 if [[ -n "$public_url" ]]; then
+  public_url="${public_url%/}"
   echo "Tunnel started. Public demo URL: $public_url"
+  if command -v curl >/dev/null 2>&1; then
+    health_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$public_url/healthz" 2>/dev/null)" || health_status="unreachable"
+    echo "Health check: $public_url/healthz -> $health_status"
+    if [[ "$health_status" != "200" ]]; then
+      echo "warning: the public health check did not return 200; verify the Cloudflare hostname routes to http://api:3000." >&2
+    fi
+  fi
 else
   echo "Tunnel started. The public URL is the hostname configured in the Cloudflare" \
     "dashboard for this tunnel (route it to http://api:3000)."
+  echo "Set DEMO_PUBLIC_URL=https://... in .env to have this script print and check it."
 fi
 echo "Tunnel logs: docker compose logs -f tunnel"
 echo "Stop it with: docker compose --profile tunnel stop tunnel"

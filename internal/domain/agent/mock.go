@@ -125,6 +125,10 @@ func mockAnswers(text string) map[string]string {
 		}
 	}
 
+	// A sentence may mention both the object colour and the case colour
+	// ("iPhone nero con custodia blu"). Classify each colour mention by its own
+	// context instead of letting the first colour token claim the whole sentence.
+	var colorValue, caseColorValue string
 	for _, color := range []struct {
 		tokens []string
 		value  string
@@ -138,14 +142,24 @@ func mockAnswers(text string) map[string]string {
 		{[]string{"grigio", "gray", "grey"}, "grigio"},
 		{[]string{"rosa", "pink"}, "rosa"},
 	} {
-		if containsAny(lower, color.tokens...) {
-			if strings.Contains(lower, "custodia") || strings.Contains(lower, "cover") {
-				answers["case_color"] = color.value
-			} else {
-				answers["color"] = color.value
-			}
-			break
+		if !containsAny(lower, color.tokens...) {
+			continue
 		}
+		if mentionsCase(lower, color.tokens...) {
+			if caseColorValue == "" {
+				caseColorValue = color.value
+			}
+			continue
+		}
+		if colorValue == "" {
+			colorValue = color.value
+		}
+	}
+	if caseColorValue != "" {
+		answers["case_color"] = caseColorValue
+	}
+	if colorValue != "" {
+		answers["color"] = colorValue
 	}
 
 	if containsAny(lower, "senza crepe", "non ha crepe", "non è rotto", "no crack") {
@@ -175,6 +189,32 @@ func containsAny(haystack string, needles ...string) bool {
 	for _, needle := range needles {
 		if strings.Contains(haystack, needle) {
 			return true
+		}
+	}
+	return false
+}
+
+// mentionsCase reports whether any occurrence of the colour token is introduced
+// by a case/cover word. It looks only backwards: "custodia blu" and "cover
+// blu" are case colours, while "iPhone nero con custodia blu" keeps "nero" as
+// the object colour and "blu" as the case colour.
+func mentionsCase(text string, tokens ...string) bool {
+	for _, token := range tokens {
+		for offset := 0; offset <= len(text); {
+			index := strings.Index(text[offset:], token)
+			if index < 0 {
+				break
+			}
+			position := offset + index
+			start := position - 24
+			if start < 0 {
+				start = 0
+			}
+			context := text[start:position]
+			if containsAny(context, "custodia", "cover", "case ") {
+				return true
+			}
+			offset = position + len(token)
 		}
 	}
 	return false
