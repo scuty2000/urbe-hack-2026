@@ -324,6 +324,17 @@ func TestCreateItemWithCustodyIsAtomic(t *testing.T) {
 	if _, err := db.GetCustodyByItemID(ctx, "item-umbrella"); err != nil {
 		t.Fatalf("custody missing after atomic create: %v", err)
 	}
+	openCustodies, err := db.ListOpenCustodyByItemIDs(ctx, []string{"item-umbrella", "item-unknown"})
+	if err != nil {
+		t.Fatalf("ListOpenCustodyByItemIDs: %v", err)
+	}
+	open, ok := openCustodies["item-umbrella"]
+	if !ok || open.DueAt == nil || !open.DueAt.Equal(dueAt) {
+		t.Fatalf("open custody = %+v, want item-umbrella due at %v", open, dueAt)
+	}
+	if _, ok := openCustodies["item-unknown"]; ok {
+		t.Fatal("ListOpenCustodyByItemIDs returned an item without custody")
+	}
 	events, err := db.ListCustodyEvents(ctx, "item-umbrella")
 	if err != nil {
 		t.Fatal(err)

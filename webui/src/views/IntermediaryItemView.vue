@@ -8,6 +8,7 @@ import {
   conditionLabels,
   displayItemName,
   formatDateTime,
+  riskLabels,
 } from "../format";
 import type { Item, TimelineEvent } from "../types";
 
@@ -152,8 +153,22 @@ async function load() {
               <dd class="data-value">{{ item.legalFinderId || "—" }}</dd>
             </div>
             <div>
+              <dt class="data-label">Termine custodia</dt>
+              <dd class="data-value">
+                <template v-if="item.dueAt">
+                  {{ formatDateTime(item.dueAt) }}
+                  <span v-if="item.daysLeft !== undefined" class="text-stone-500">
+                    · {{ item.daysLeft }} {{ item.daysLeft === 1 ? "giorno" : "giorni" }}
+                  </span>
+                </template>
+                <span v-else>Termine non disponibile</span>
+              </dd>
+            </div>
+            <div>
               <dt class="data-label">Rischio</dt>
-              <dd class="data-value capitalize">{{ item.riskTier || "—" }}</dd>
+              <dd class="data-value">
+                {{ riskLabels[item.riskTier ?? ""] ?? item.riskTier ?? "—" }}
+              </dd>
             </div>
           </dl>
         </section>

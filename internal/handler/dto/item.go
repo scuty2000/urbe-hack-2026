@@ -57,7 +57,11 @@ type ItemResponse struct {
 	LegalTermStart    *time.Time `json:"legalTermStart,omitempty"`
 	OfferedToFinderAt *time.Time `json:"offeredToFinderAt,omitempty"`
 	DisposedAt        *time.Time `json:"disposedAt,omitempty"`
-	CreatedAt         time.Time  `json:"createdAt"`
+	// DueAt and DaysLeft describe the open custody deadline. They are absent
+	// while the item is still pending custody or has no accepted handover.
+	DueAt     *time.Time `json:"dueAt,omitempty"`
+	DaysLeft  *int       `json:"daysLeft,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
 }
 
 // ItemListResponse is the intermediary dashboard payload.
@@ -100,6 +104,7 @@ func ToItemResponse(it itemdomain.Item) ItemResponse {
 		LegalTermStart:    it.LegalTermStart,
 		OfferedToFinderAt: it.OfferedToFinderAt,
 		DisposedAt:        it.DisposedAt,
+		DueAt:             it.DueAt,
 		CreatedAt:         it.CreatedAt,
 	}
 }

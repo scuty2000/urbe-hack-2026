@@ -12,16 +12,18 @@ import { user } from "../api";
       <p class="page-subtitle">
         Registra ciò che hai ricevuto al banco come
         <span class="font-medium text-stone-800">{{ user?.name ?? "il tuo punto di raccolta" }}</span>.
-        L'oggetto entra subito in custodia e avvia il termine di legge.
+        L'oggetto viene registrato in attesa di conferma: accetta la custodia
+        dalla dashboard per avviare il termine di legge.
       </p>
     </div>
 
     <div class="banner-info mb-5">
       <p class="font-medium">Percorso mediato</p>
       <p class="mt-1 leading-6">
-        In questo flusso il punto di raccolta è finder, intermediario e custode
-        legale allo stesso tempo. Compila la scheda insieme alla persona che ha
-        consegnato l'oggetto.
+        In questo flusso il punto di raccolta registra l'oggetto come finder e
+        intermediario. La custodia legale si conferma con l'accettazione dalla
+        dashboard, che avvia anche il termine di conservazione. Compila la
+        scheda insieme alla persona che ha consegnato l'oggetto.
       </p>
     </div>
 

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/dto"
@@ -209,7 +211,26 @@ func (h *WebAPIHandler) GetItem(ctx *reqcontext.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dto.ToItemResponse(item))
+	ctx.JSON(http.StatusOK, itemResponseWithDeadline(item, time.Now().UTC()))
+}
+
+// itemResponseWithDeadline maps an item and computes daysLeft from the deadline
+// stored on its custody row. The policy itself is never duplicated here.
+func itemResponseWithDeadline(it itemdomain.Item, now time.Time) dto.ItemResponse {
+	response := dto.ToItemResponse(it)
+	if it.DueAt != nil {
+		daysLeft := custodydomain.DaysLeft(it.DueAt, now)
+		response.DaysLeft = &daysLeft
+	}
+	return response
+}
+
+func itemListResponseWithDeadlines(items []itemdomain.Item, now time.Time) dto.ItemListResponse {
+	response := dto.ItemListResponse{Items: make([]dto.ItemResponse, 0, len(items))}
+	for _, item := range items {
+		response.Items = append(response.Items, itemResponseWithDeadline(item, now))
+	}
+	return response
 }
 
 // ListItems returns the items held by the authenticated intermediary.
@@ -231,7 +252,7 @@ func (h *WebAPIHandler) ListItems(ctx *reqcontext.RequestContext) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dto.ToItemListResponse(items))
+	ctx.JSON(http.StatusOK, itemListResponseWithDeadlines(items, time.Now().UTC()))
 }
 
 // GetUpload serves a stored photo to authenticated finders, intermediaries and

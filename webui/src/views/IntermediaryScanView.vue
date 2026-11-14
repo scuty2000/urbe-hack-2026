@@ -136,7 +136,7 @@ async function runValidate() {
 }
 
 async function redeem() {
-  if (!validation.value?.valid) {
+  if (!validation.value?.valid || redeeming.value) {
     return;
   }
   redeeming.value = true;
@@ -414,7 +414,7 @@ onBeforeUnmount(() => {
 
           <template v-else>
             <p class="mt-1 text-sm text-amber-900">
-              {{ validation.reason ? passReasonLabels[validation.reason] : "Il pass non può essere utilizzato." }}
+              {{ validation.reason ? (passReasonLabels[validation.reason] ?? "Il pass non può essere utilizzato.") : "Il pass non può essere utilizzato." }}
             </p>
             <button type="button" class="btn btn-secondary mt-4" @click="newScan">
               Prova un altro pass

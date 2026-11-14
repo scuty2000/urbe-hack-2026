@@ -46,6 +46,10 @@ export interface Item {
   legalTermStart?: string;
   offeredToFinderAt?: string;
   disposedAt?: string;
+  /** Deadline of the open custody row; absent while custody is pending. */
+  dueAt?: string;
+  /** Server-computed days remaining, present only with dueAt. */
+  daysLeft?: number;
   createdAt: string;
 }
 

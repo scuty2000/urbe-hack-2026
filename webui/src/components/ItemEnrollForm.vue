@@ -238,20 +238,22 @@ function resetForm() {
 
 <template>
   <div>
-    <!-- Intermediary success panel: the item is already in custody. -->
+    <!-- Intermediary success panel: the item stays pending until the dashboard
+         performs the explicit custody acceptance. -->
     <section v-if="created" class="space-y-5">
       <div class="banner-success">
         <p class="font-semibold">Oggetto registrato correttamente.</p>
         <p class="mt-1">
           Il codice pubblico è <span class="font-mono font-semibold">{{ created.publicCode }}</span>.
-          Custodia accettata da {{ intermediaryName }}.
+          La scheda è in attesa di conferma: accetta la custodia dalla dashboard
+          per avviare il termine di conservazione.
         </p>
       </div>
 
       <div class="card">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p class="eyebrow">Ricevuta di presa in carico</p>
+            <p class="eyebrow">Ricevuta di registrazione</p>
             <h2 class="mt-1 text-xl font-semibold text-stone-900">
               {{ displayItemName(created) }}
             </h2>
@@ -287,13 +289,13 @@ function resetForm() {
           v-if="created.sensitive"
           class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
         >
-          Oggetto sensibile: il termine di custodia è di 24 ore. Conservalo in
-          un luogo sicuro e non condividerne i dettagli.
+          Oggetto sensibile: dopo l'accettazione della custodia il termine è di
+          24 ore. Conservalo in un luogo sicuro e non condividerne i dettagli.
         </div>
 
         <div class="mt-5 flex flex-col gap-2 sm:flex-row">
           <button type="button" class="btn btn-primary" @click="router.push('/intermediary')">
-            Vai alla dashboard
+            Vai alla dashboard e accetta
           </button>
           <button type="button" class="btn btn-secondary" @click="resetForm">
             Registra un altro oggetto
@@ -542,8 +544,8 @@ function resetForm() {
           </span>
           <span v-else>
             L'oggetto risulta già materialmente presso {{ intermediaryName }}.
-            La registrazione conferma la presa in carico e avvia il termine di
-            custodia.
+            La registrazione crea la scheda in attesa di conferma: accetta la
+            custodia dalla dashboard per avviare il termine di conservazione.
           </span>
         </div>
 

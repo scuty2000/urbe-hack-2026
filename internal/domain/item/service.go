@@ -267,7 +267,26 @@ func (s *service) GetItem(ctx context.Context, id string, actor Actor) (Item, er
 	if err != nil {
 		return Item{}, fmt.Errorf("get item %q: %w", id, err)
 	}
+	if err := s.attachDueAt(ctx, &item); err != nil {
+		return Item{}, fmt.Errorf("get item %q: %w", id, err)
+	}
 	return item, nil
+}
+
+// attachDueAt fills the read-only custody deadline when the item has an open
+// custody row. Items without a custody row keep a nil deadline.
+func (s *service) attachDueAt(ctx context.Context, item *Item) error {
+	custody, err := s.db.GetCustodyByItemID(ctx, item.ID)
+	if errors.Is(err, errs.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if custody.ClosedAt == nil {
+		item.DueAt = custody.DueAt
+	}
+	return nil
 }
 
 // ListItemsByCustodian returns the items currently held by custodianID. Items
@@ -284,6 +303,7 @@ func (s *service) ListItemsByCustodian(ctx context.Context, custodianID string) 
 	}
 
 	items := make([]Item, 0, len(rows))
+	itemIDs := make([]string, 0, len(rows))
 	for _, row := range rows {
 		switch row.Status {
 		case StatusPendingCustody, StatusInCustody, StatusPickupDue, StatusSensitivePickup:
@@ -295,6 +315,17 @@ func (s *service) ListItemsByCustodian(ctx context.Context, custodianID string) 
 			return nil, fmt.Errorf("list items for custodian %q: %w", custodianID, err)
 		}
 		items = append(items, item)
+		itemIDs = append(itemIDs, item.ID)
+	}
+
+	custodies, err := s.db.ListOpenCustodyByItemIDs(ctx, itemIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list items for custodian %q: %w", custodianID, err)
+	}
+	for i := range items {
+		if custody, ok := custodies[items[i].ID]; ok {
+			items[i].DueAt = custody.DueAt
+		}
 	}
 	return items, nil
 }

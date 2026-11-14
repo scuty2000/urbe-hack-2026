@@ -241,6 +241,12 @@ func TestItemEnrollmentHttpFlow(t *testing.T) {
 		t.Fatalf("searcher POST item status = %d, want 403", got)
 	}
 
+	// Accept the handover so the list exposes the stored custody deadline.
+	accepted := doRequest(t, api, http.MethodPost, "/api/items/"+itemPath+"/custody/accept", "", intermediary)
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("accept status = %d (body %s)", accepted.Code, accepted.Body.String())
+	}
+
 	// Intermediary dashboard only lists its own open items.
 	list := doRequest(t, api, http.MethodGet, "/api/items?custodian=me", "", intermediary)
 	if list.Code != http.StatusOK {
@@ -254,6 +260,12 @@ func TestItemEnrollmentHttpFlow(t *testing.T) {
 	}
 	if len(listed.Items) != 1 || listed.Items[0]["id"] != itemPath {
 		t.Fatalf("item list = %+v", listed.Items)
+	}
+	if _, ok := listed.Items[0]["dueAt"].(string); !ok {
+		t.Fatalf("item list dueAt missing: %+v", listed.Items[0])
+	}
+	if listed.Items[0]["daysLeft"] != float64(7) {
+		t.Fatalf("item list daysLeft = %v, want 7", listed.Items[0]["daysLeft"])
 	}
 }
 

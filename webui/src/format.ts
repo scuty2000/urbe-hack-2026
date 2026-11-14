@@ -36,6 +36,13 @@ export const statusTones: Record<ItemStatus, string> = {
   disposed: "bg-stone-100 text-stone-600 ring-stone-200",
 };
 
+export const riskLabels: Record<string, string> = {
+  low: "Basso",
+  medium: "Medio",
+  high: "Alto",
+  sensitive: "Sensibile",
+};
+
 export const conditionLabels: Record<string, string> = {
   like_new: "Come nuovo",
   good: "Buono",

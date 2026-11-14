@@ -29,8 +29,10 @@ async function signOut() {
   busy.value = true;
   try {
     await logout();
-    await router.push({ name: "login" });
   } finally {
+    // logout clears the local session even when the network call fails, so
+    // always leave the authenticated shell.
+    await router.push({ name: "login" });
     busy.value = false;
   }
 }

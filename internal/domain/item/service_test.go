@@ -223,6 +223,14 @@ func TestListItemsByCustodianOnlyReturnsOpenStatuses(t *testing.T) {
 	if err := db.UpdateItemFields(ctx, second.ID, map[string]any{"status": item.StatusReturned}); err != nil {
 		t.Fatalf("UpdateItemFields() error = %v", err)
 	}
+	custody, err := db.GetCustodyByItemID(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("GetCustodyByItemID() error = %v", err)
+	}
+	dueAt := time.Now().UTC().Add(48 * time.Hour)
+	if err := db.UpdateCustodyFields(ctx, custody.ID, map[string]any{"due_at": dueAt}); err != nil {
+		t.Fatalf("UpdateCustodyFields() error = %v", err)
+	}
 
 	items, err := svc.ListItemsByCustodian(ctx, "bar-x")
 	if err != nil {
@@ -230,6 +238,9 @@ func TestListItemsByCustodianOnlyReturnsOpenStatuses(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != first.ID {
 		t.Fatalf("items = %+v, want only %s", items, first.ID)
+	}
+	if items[0].DueAt == nil || !items[0].DueAt.Equal(dueAt) {
+		t.Fatalf("first.DueAt = %v, want %v", items[0].DueAt, dueAt)
 	}
 }
 

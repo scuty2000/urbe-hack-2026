@@ -98,6 +98,10 @@ type CustodyRepository interface {
 	// GetCustodyByItemID returns the current custody: the latest open row, or
 	// the most recently inserted row when every custody is closed.
 	GetCustodyByItemID(ctx context.Context, itemID string) (record.CustodyRecord, error)
+	// ListOpenCustodyByItemIDs returns the open custody rows for the given
+	// items in one query, keyed by item id. Items without an open custody row
+	// are absent from the map.
+	ListOpenCustodyByItemIDs(ctx context.Context, itemIDs []string) (map[string]record.CustodyRecord, error)
 	UpdateCustody(ctx context.Context, custody record.CustodyRecord) error
 	// UpdateCustodyFields writes zero values (accepted_at=nil, closed_at=nil,
 	// custodian_id=""). Allowlist: custodian_type, custodian_id,

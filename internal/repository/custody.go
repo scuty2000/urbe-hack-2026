@@ -45,6 +45,29 @@ func (r *repo) GetCustodyByItemID(ctx context.Context, itemID string) (record.Cu
 	return custody, nil
 }
 
+// ListOpenCustodyByItemIDs returns the open custody row of every requested
+// item in a single query. The dashboard needs the deadline for its whole
+// in-custody list, so this avoids one custody lookup per item.
+func (r *repo) ListOpenCustodyByItemIDs(ctx context.Context, itemIDs []string) (map[string]record.CustodyRecord, error) {
+	result := make(map[string]record.CustodyRecord, len(itemIDs))
+	if len(itemIDs) == 0 {
+		return result, nil
+	}
+
+	var rows []record.CustodyRecord
+	if err := r.gormdb.WithContext(ctx).
+		Where("item_id IN ? AND closed_at IS NULL", itemIDs).
+		Order("rowid ASC").
+		Find(&rows).Error; err != nil {
+		return nil, wrapErr("ListOpenCustodyByItemIDs", err)
+	}
+	for _, row := range rows {
+		// A later row wins if legacy data contains more than one open custody.
+		result[row.ItemID] = row
+	}
+	return result, nil
+}
+
 // UpdateCustody performs a partial update; pointer timestamps can be set but
 // cannot be cleared with this method.
 func (r *repo) UpdateCustody(ctx context.Context, custody record.CustodyRecord) error {

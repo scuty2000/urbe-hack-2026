@@ -112,8 +112,12 @@ type Item struct {
 	LegalTermStart    *time.Time
 	OfferedToFinderAt *time.Time
 	DisposedAt        *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// DueAt is the deadline of the item's open custody row. It is a read-only
+	// projection populated by the read methods; enrollment and transitions do
+	// not persist it on the item row.
+	DueAt     *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // FromRecord maps a persisted row to the domain entity. JSON columns are

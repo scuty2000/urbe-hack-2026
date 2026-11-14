@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
-import {
-  acceptCustody,
-  ApiError,
-  getTimeline,
-  listMyItems,
-  refuseCustody,
-} from "../api";
+import { acceptCustody, ApiError, listMyItems, refuseCustody } from "../api";
 import StatusBadge from "../components/StatusBadge.vue";
 import { displayItemName, formatDateTime } from "../format";
 import type { Item } from "../types";
@@ -20,8 +14,6 @@ const actionError = ref("");
 const busyId = ref<string | null>(null);
 const refusingId = ref<string | null>(null);
 const refuseReason = ref("");
-const dueAtById = ref<Record<string, string>>({});
-const deadlineLoading = ref(false);
 const now = ref(Date.now());
 
 let clock: number | undefined;
@@ -39,6 +31,9 @@ const inCustody = computed(() =>
 );
 const sensitiveCount = computed(
   () => items.value.filter((item) => item.sensitive).length,
+);
+const missingDeadlines = computed(() =>
+  inCustody.value.some((item) => !item.dueAt),
 );
 
 onMounted(() => {
@@ -61,7 +56,6 @@ async function loadItems(showSpinner = true) {
   error.value = "";
   try {
     items.value = await listMyItems();
-    void loadDeadlines(items.value);
   } catch (cause) {
     error.value =
       cause instanceof ApiError
@@ -72,56 +66,20 @@ async function loadItems(showSpinner = true) {
   }
 }
 
-async function loadDeadlines(list: Item[]) {
-  const missing = list.filter(
-    (item) =>
-      (item.status === "in_custody" ||
-        item.status === "pickup_due" ||
-        item.status === "sensitive_pickup") &&
-      !dueAtById.value[item.id],
-  );
-  if (missing.length === 0) {
-    return;
-  }
-
-  deadlineLoading.value = true;
-  await Promise.all(
-    missing.map(async (item) => {
-      try {
-        const timeline = await getTimeline(item.id);
-        const accepted = [...timeline.events]
-          .reverse()
-          .find((event) => event.type === "accepted");
-        if (!accepted) {
-          return;
-        }
-        const hours = item.sensitive ? 24 : 7 * 24;
-        const dueAt = new Date(
-          new Date(accepted.timestamp).getTime() + hours * 3_600_000,
-        ).toISOString();
-        dueAtById.value = { ...dueAtById.value, [item.id]: dueAt };
-      } catch {
-        // The deadline is a convenience: the dashboard still works without it.
-      }
-    }),
-  );
-  deadlineLoading.value = false;
-}
-
 function daysLeft(item: Item): number | null {
-  const dueAt = dueAtById.value[item.id];
-  if (!dueAt) {
-    return null;
+  if (!item.dueAt) {
+    return item.daysLeft ?? null;
   }
-  return Math.max(0, Math.ceil((new Date(dueAt).getTime() - now.value) / 86_400_000));
+  // The deadline comes from the server; the clock only keeps the display fresh
+  // between dashboard refreshes. The custody policy is never duplicated here.
+  return Math.max(
+    0,
+    Math.ceil((new Date(item.dueAt).getTime() - now.value) / 86_400_000),
+  );
 }
 
 function deadlineLabel(item: Item): string {
-  const dueAt = dueAtById.value[item.id];
-  if (!dueAt) {
-    return deadlineLoading.value ? "Calcolo…" : "—";
-  }
-  return formatDateTime(dueAt);
+  return item.dueAt ? formatDateTime(item.dueAt) : "Termine non disponibile";
 }
 
 function remainingLabel(item: Item): string {
@@ -142,7 +100,9 @@ async function accept(item: Item) {
   try {
     const summary = await acceptCustody(item.id);
     now.value = Date.now();
-    dueAtById.value = { ...dueAtById.value, [item.id]: summary.dueAt };
+    item.status = summary.status;
+    item.dueAt = summary.dueAt;
+    item.daysLeft = summary.daysLeft;
     notice.value = `Custodia accettata per ${item.publicCode}. Termine: ${formatDateTime(
       summary.dueAt,
     )}.`;
@@ -527,8 +487,10 @@ async function confirmRefuse(item: Item) {
         </table>
       </div>
 
-      <p v-if="deadlineLoading" class="mt-2 text-xs text-stone-400">
-        Calcolo dei termini di custodia…
+      <p v-if="missingDeadlines" class="mt-2 text-xs text-amber-700">
+        Per alcuni oggetti il server non ha restituito il termine di custodia:
+        il valore è mostrato come “Termine non disponibile”. Aggiorna la
+        dashboard dopo aver accettato la custodia.
       </p>
     </section>
   </div>

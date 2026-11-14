@@ -1822,6 +1822,19 @@ components:
         disposedAt:
           type: string
           format: date-time
+        dueAt:
+          type: string
+          format: date-time
+          description: |
+            Deadline of the item's open custody row. Present only after the
+            intermediary accepts the handover; omitted while the item is
+            pending custody or otherwise out of custody.
+        daysLeft:
+          type: integer
+          description: |
+            Whole days remaining before `dueAt`, rounded up. Present only when
+            `dueAt` is present. The value is computed from the stored deadline,
+            never from a client-side policy assumption.
         createdAt:
           type: string
           format: date-time
