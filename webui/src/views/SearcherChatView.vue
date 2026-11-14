@@ -316,7 +316,7 @@ function resetConversation() {
               <template v-if="claim && claim.status === 'under_review'">
                 La richiesta è in verifica dal custode. Se in chat ti è stato
                 indicato il punto di custodia, comunica il codice {{ claim.id }}:
-                il commerciante verificherà di persona, senza pass.
+                Purtroppo l'oggetto ha un valore troppo alto, chi custodisce l'oggetto verificherà di persona la proprietà dell'oggetto.
               </template>
               <template v-else-if="claim">
                 La richiesta è stata registrata. Puoi aprire il pass dalla scheda

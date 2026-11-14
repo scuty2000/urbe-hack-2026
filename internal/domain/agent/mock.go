@@ -127,32 +127,54 @@ func mockQuestion(results []search.SearchResult) string {
 // total uncertainty the pickup point is never revealed: the claim waits for
 // the custodian's remote review.
 func (s *service) claimMessage(ctx context.Context, itemID string, created claim.Claim, evaluation ownershipEvaluation) string {
-	if created.Status != claim.StatusUnderReview || created.ReturnChannel != claim.ReturnChannelIntermediaryDirect ||
-		s.deps.Places == nil || !evaluation.partialEvidence() {
+	if created.Status != claim.StatusUnderReview || !evaluation.inPersonAllowed() {
 		return mockClaimMessage(created)
 	}
-	item, err := s.deps.Items.ItemForAgent(ctx, itemID)
-	if err != nil || strings.TrimSpace(item.CustodianID) == "" {
+	where, who, ok := s.pickupPoint(ctx, itemID, created)
+	if !ok {
 		return mockClaimMessage(created)
-	}
-	place, err := s.deps.Places.GetIntermediaryByID(ctx, item.CustodianID)
-	if err != nil || strings.TrimSpace(place.Name) == "" {
-		return mockClaimMessage(created)
-	}
-	where := place.Name
-	if address := strings.TrimSpace(place.Address); address != "" {
-		where += ", " + address
-	}
-	if hours := strings.TrimSpace(place.Hours); hours != "" {
-		where += " (orari: " + hours + ")"
 	}
 	return fmt.Sprintf(
 		"Ho registrato la richiesta. Da qui non posso confermare che l'oggetto sia tuo, ma puoi verificarlo di persona: "+
 			"è custodito presso %s. Presentati con un documento e comunica il codice della richiesta (%s): "+
-			"sarà il commerciante a verificare i dettagli e, se tutto torna, a consegnarti l'oggetto. "+
+			"%s verificherà i dettagli e, se tutto torna, ti consegnerà l'oggetto. "+
 			"Per questa strada non serve il pass di ritiro.",
-		where, created.ID,
+		where, created.ID, who,
 	)
+}
+
+// paOffice is the public lost-property office of Roma Capitale, which holds
+// the items whose custodian is an institution or whose return channel is the
+// PA (sensitive or transferred items). Source:
+// assets/come_recuperare_un_oggetto_smarrito_a_roma.md (F2).
+const paOffice = "Reparto Oggetti Rinvenuti del Comune di Roma, Circonvallazione Ostiense 191, 00154 Roma " +
+	"(orari: lun, mar, mer, ven 8:30-13:00; gio 8:30-17:00; tel. 06 6769 3220)"
+
+// pickupPoint returns where the item is kept and who verifies it there. An
+// intermediary custodian is read from the registry; an institution custodian
+// or the PA channel points to the public lost-property office.
+func (s *service) pickupPoint(ctx context.Context, itemID string, created claim.Claim) (string, string, bool) {
+	if created.ReturnChannel == claim.ReturnChannelPA {
+		return paOffice, "un operatore dell'ufficio", true
+	}
+	item, err := s.deps.Items.ItemForAgent(ctx, itemID)
+	if err != nil || strings.TrimSpace(item.CustodianID) == "" {
+		return "", "", false
+	}
+	if s.deps.Places != nil {
+		if place, err := s.deps.Places.GetIntermediaryByID(ctx, item.CustodianID); err == nil && strings.TrimSpace(place.Name) != "" {
+			where := place.Name
+			if address := strings.TrimSpace(place.Address); address != "" {
+				where += ", " + address
+			}
+			if hours := strings.TrimSpace(place.Hours); hours != "" {
+				where += " (orari: " + hours + ")"
+			}
+			return where, "il commerciante", true
+		}
+	}
+	// Not an intermediary: the custodian is an institution.
+	return paOffice, "un operatore dell'ufficio", true
 }
 
 // mockClaimMessage maps the claim status to a safe searcher-facing sentence.

@@ -560,6 +560,13 @@ const inPersonMinConfidence = 0.40
 // matched, or the private confidence is not negligible. It separates "low
 // confidence" (verify in person) from "total uncertainty" (never reveal where
 // the item is).
+// inPersonAllowed reports when the pickup point may be revealed: some
+// ownership evidence, or an item with nothing recorded to compare against,
+// where checking in person is the only way to verify it.
+func (e ownershipEvaluation) inPersonAllowed() bool {
+	return e.unverifiable() || e.partialEvidence()
+}
+
 func (e ownershipEvaluation) partialEvidence() bool {
 	if e.unverifiable() {
 		return false
