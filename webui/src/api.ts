@@ -1,12 +1,24 @@
 import { readonly, ref } from "vue";
 import type {
+  AppNotification,
+  ChatMessage,
+  ChatReply,
+  ClaimOwner,
+  ClaimReport,
   CreateItemPayload,
   CustodySummary,
+  Fee,
+  HealthStatus,
+  InstitutionPickupList,
   Item,
   ItemListResponse,
   ItemTimeline,
+  OfficialItemPayload,
   PassRedemption,
+  PassResponse,
   PassValidation,
+  Payment,
+  RewardNotice,
   User,
 } from "./types";
 
@@ -209,4 +221,132 @@ export function redeemPass(token: string): Promise<PassRedemption> {
     method: "POST",
     json: { token },
   });
+}
+
+// ─── Searcher chat, claims and passes ───────────────────────────────────────
+
+/** Sends the conversation so far; the server builds the verification session. */
+export function chat(messages: ChatMessage[]): Promise<ChatReply> {
+  return request<ChatReply>("/api/chat", {
+    method: "POST",
+    json: { messages },
+  });
+}
+
+/** Searcher-safe claim view (status, confidence band, pickup channel). */
+export function getClaim(id: string): Promise<ClaimOwner> {
+  return request<ClaimOwner>(`/api/claims/${encodeURIComponent(id)}`);
+}
+
+/** Issues the single-use pickup pass for an approved claim. */
+export function createPass(claimId: string): Promise<PassResponse> {
+  return request<PassResponse>("/api/passes", {
+    method: "POST",
+    json: { claimId },
+  });
+}
+
+// ─── Fees and rewards ───────────────────────────────────────────────────────
+
+export function getItemFee(itemId: string): Promise<Fee> {
+  return request<Fee>(`/api/items/${encodeURIComponent(itemId)}/fee`);
+}
+
+/** Settles the fee through the mock provider; no real payment is involved. */
+export function payFee(feeId: string): Promise<Payment> {
+  return request<Payment>(`/api/fees/${encodeURIComponent(feeId)}/pay`, {
+    method: "POST",
+  });
+}
+
+export function getRewardNotice(itemId: string): Promise<RewardNotice> {
+  return request<RewardNotice>(
+    `/api/items/${encodeURIComponent(itemId)}/reward-notice`,
+  );
+}
+
+// ─── Institution ────────────────────────────────────────────────────────────
+
+export function listInstitutionPickups(): Promise<InstitutionPickupList> {
+  return request<InstitutionPickupList>("/api/institution/pickups");
+}
+
+export function transferToInstitution(id: string): Promise<Item> {
+  return request<Item>(
+    `/api/institution/items/${encodeURIComponent(id)}/transfer`,
+    { method: "POST" },
+  );
+}
+
+export async function createInstitutionItem(
+  payload: OfficialItemPayload,
+  photos: File[],
+): Promise<Item> {
+  const form = new FormData();
+  form.append("payload", JSON.stringify(payload));
+  for (const photo of photos) {
+    form.append("photos", photo, photo.name);
+  }
+  return request<Item>("/api/institution/items", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export function getInstitutionClaim(id: string): Promise<ClaimReport> {
+  return request<ClaimReport>(
+    `/api/institution/claims/${encodeURIComponent(id)}`,
+  );
+}
+
+export function reviewInstitutionClaim(
+  id: string,
+  decision: "approved" | "rejected",
+): Promise<ClaimReport> {
+  return request<ClaimReport>(
+    `/api/institution/claims/${encodeURIComponent(id)}/review`,
+    { method: "POST", json: { decision } },
+  );
+}
+
+export function offerToFinder(id: string): Promise<Item> {
+  return request<Item>(`/api/institution/items/${encodeURIComponent(id)}/offer`, {
+    method: "POST",
+  });
+}
+
+export function collectFromFinder(id: string): Promise<Item> {
+  return request<Item>(
+    `/api/institution/items/${encodeURIComponent(id)}/collect`,
+    { method: "POST" },
+  );
+}
+
+export function disposeItem(id: string): Promise<Item> {
+  return request<Item>(
+    `/api/institution/items/${encodeURIComponent(id)}/dispose`,
+    { method: "POST" },
+  );
+}
+
+// ─── Notifications and health ───────────────────────────────────────────────
+
+export async function listNotifications(): Promise<AppNotification[]> {
+  const response = await request<{ notifications: AppNotification[] }>(
+    "/api/notifications",
+  );
+  return response.notifications;
+}
+
+export function markNotificationRead(
+  id: string,
+): Promise<{ id: string; read: boolean }> {
+  return request<{ id: string; read: boolean }>(
+    `/api/notifications/${encodeURIComponent(id)}/read`,
+    { method: "POST" },
+  );
+}
+
+export function getHealth(): Promise<HealthStatus> {
+  return request<HealthStatus>("/api/health");
 }

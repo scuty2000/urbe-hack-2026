@@ -139,3 +139,215 @@ export interface GeoPosition {
   lng: number | null;
   zone: string;
 }
+
+// ─── Searcher chat ──────────────────────────────────────────────────────────
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMessage {
+  role: ChatRole;
+  content: string;
+}
+
+/** Public, role-safe candidate summary returned by the agent. */
+export interface ChatCandidate {
+  itemId: string;
+  score: number;
+  category: string;
+  foundZone: string;
+  foundAt: string;
+  custodianType: "intermediary" | "institution";
+}
+
+export interface ChatReply {
+  message: string;
+  candidates: ChatCandidate[];
+  /** Empty string when this turn did not create a claim. */
+  claimId: string;
+  done: boolean;
+}
+
+// ─── Claims ─────────────────────────────────────────────────────────────────
+
+export type ClaimStatus =
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "rejected"
+  | "more_info";
+
+export type ClaimReturnChannel = "intermediary_direct" | "pa";
+
+/** Searcher-safe claim view: no raw confidence or verification report. */
+export interface ClaimOwner {
+  id: string;
+  itemId: string;
+  status: ClaimStatus;
+  confidenceBand: "low" | "medium" | "high";
+  returnChannel: ClaimReturnChannel;
+  createdAt: string;
+}
+
+export interface VerificationQuestion {
+  type: string;
+  criteria?: Record<string, string> | null;
+}
+
+export interface VerificationAnswer {
+  type?: string;
+  choice?: string;
+  noul?: number;
+  score?: number;
+  probabilities?: Record<string, number>;
+  confidence?: number;
+}
+
+/** Full verification report for the custodian/institution. */
+export interface VerificationReportData {
+  questions: Record<string, VerificationQuestion>;
+  answers: Record<string, string>;
+  probabilities: Record<string, VerificationAnswer>;
+  confidence: number;
+  rationale: string;
+  modelVersion: string;
+  evidence: string[];
+  flags: string[];
+  decision: string;
+  reasons: string[];
+}
+
+export interface ClaimReport extends ClaimOwner {
+  confidence: number;
+  report?: VerificationReportData;
+}
+
+// ─── Passes, fees, rewards ──────────────────────────────────────────────────
+
+export type PassStatus =
+  | "pending_payment"
+  | "issued"
+  | "validated"
+  | "redeemed"
+  | "expired"
+  | "revoked";
+
+export interface PassItemSummary {
+  id: string;
+  publicCode: string;
+  category: string;
+  brand?: string;
+  model?: string;
+  color?: string;
+  status: "in_custody" | "transferred" | "returned";
+  custodianId: string;
+}
+
+export interface PassResponse {
+  passId: string;
+  claimId: string;
+  itemId: string;
+  token: string;
+  status: PassStatus;
+  returnChannel: ClaimReturnChannel;
+  expiresAt: string;
+  instructions: string[];
+  item: PassItemSummary;
+}
+
+export type FeeApplies = "none_direct_return" | "pa_tariff";
+export type FeeStatus = "estimated" | "final" | "paid" | "waived";
+
+export interface Payment {
+  id: string;
+  feeId: string;
+  provider: string;
+  providerRef: string;
+  status: string;
+  paidAt?: string;
+  receiptUrl: string;
+}
+
+export interface Fee {
+  id: string;
+  itemId: string;
+  applies: FeeApplies;
+  custodyDays: number;
+  amountCents: number;
+  currency: string;
+  status: FeeStatus;
+  paid: boolean;
+  payment?: Payment;
+}
+
+export interface RewardNotice {
+  id: string;
+  itemId: string;
+  legalFinderId: string;
+  requested: boolean;
+  amountCents: number;
+  shownToSearcherAt?: string;
+  paymentStatus: string;
+}
+
+// ─── Institution ────────────────────────────────────────────────────────────
+
+export interface InstitutionPickupItem {
+  id: string;
+  publicCode: string;
+  category: string;
+  brand?: string;
+  model?: string;
+  color?: string;
+  status: string;
+  foundZone: string;
+  intermediaryId: string;
+  sensitive: boolean;
+  dueAt?: string;
+  daysOverdue: number;
+}
+
+export interface InstitutionPickupGroup {
+  intermediaryId: string;
+  zone: string;
+  sensitive: boolean;
+  count: number;
+  items: InstitutionPickupItem[];
+}
+
+export interface InstitutionPickupList {
+  groups: InstitutionPickupGroup[];
+  total: number;
+}
+
+/** JSON payload of the institution official-intake multipart request. */
+export interface OfficialItemPayload {
+  category: string;
+  brand?: string;
+  model?: string;
+  color?: string;
+  condition?: string;
+  privateProfile?: Record<string, unknown>;
+  foundAt?: string;
+  foundLat?: number;
+  foundLng?: number;
+  foundZone?: string;
+  foundNotes?: string;
+}
+
+// ─── Notifications and health ───────────────────────────────────────────────
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  read: boolean;
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface HealthStatus {
+  ok: boolean;
+  db: boolean;
+  qdrant: boolean;
+  embeddings: boolean;
+}

@@ -3,7 +3,9 @@ import { computed, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { logout, user } from "../api";
 import { roleLabels } from "../format";
+import { clearAllPasses } from "../passStore";
 import { homeForRole } from "../router";
+import NotificationBell from "./NotificationBell.vue";
 
 const router = useRouter();
 const busy = ref(false);
@@ -12,16 +14,27 @@ const links = computed(() => {
   switch (user.value?.role) {
     case "finder":
       return [{ to: "/finder", label: "Segnala un oggetto" }];
+    case "searcher":
+      return [{ to: "/searcher", label: "Cerca un oggetto" }];
     case "intermediary":
       return [
         { to: "/intermediary", label: "Dashboard" },
         { to: "/intermediary/enroll", label: "Registra" },
         { to: "/intermediary/scan", label: "Scansiona" },
       ];
+    case "institution":
+      return [
+        { to: "/institution", label: "Ritiri" },
+        { to: "/institution/intake", label: "Intake" },
+      ];
     default:
       return [];
   }
 });
+
+const showNotifications = computed(
+  () => user.value?.role === "searcher" || user.value?.role === "institution",
+);
 
 const home = computed(() => homeForRole(user.value?.role));
 
@@ -31,7 +44,9 @@ async function signOut() {
     await logout();
   } finally {
     // logout clears the local session even when the network call fails, so
-    // always leave the authenticated shell.
+    // always leave the authenticated shell. Cached pass tokens belong to the
+    // signed-out session and must not survive it.
+    clearAllPasses();
     await router.push({ name: "login" });
     busy.value = false;
   }
@@ -85,6 +100,7 @@ async function signOut() {
       </nav>
 
       <div class="ml-auto flex items-center gap-2">
+        <NotificationBell v-if="showNotifications" />
         <div v-if="user" class="hidden text-right sm:block">
           <p class="max-w-40 truncate text-sm font-medium text-stone-900">
             {{ user.name }}

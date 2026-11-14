@@ -39,9 +39,10 @@ async function signOut() {
         La tua area è in arrivo
       </h1>
       <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-600">
-        In questa demo il percorso è completo per finder e intermediari. Le
-        funzioni per <span class="font-medium">{{ roleLabel.toLowerCase() }}</span>
-        saranno presentate nella prossima versione dell'app.
+        In questa demo il percorso è completo per finder, intermediari, chi cerca
+        e pubblica amministrazione. Le funzioni per
+        <span class="font-medium">{{ roleLabel.toLowerCase() }}</span>
+        saranno presentate in una prossima versione dell'app.
       </p>
 
       <div class="mt-6 flex flex-col justify-center gap-2 sm:flex-row">

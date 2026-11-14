@@ -1,0 +1,367 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import { RouterLink, useRoute } from "vue-router";
+import {
+  ApiError,
+  getItemFee,
+  getRewardNotice,
+  payFee,
+} from "../api";
+import FeeSummary from "../components/FeeSummary.vue";
+import QRCode from "../components/QRCode.vue";
+import RewardNoticePanel from "../components/RewardNotice.vue";
+import {
+  displayItemName,
+  formatCents,
+  formatDateTime,
+  organisationLabel,
+  passStatusLabels,
+  returnChannelLabels,
+} from "../format";
+import { loadPass } from "../passStore";
+import type { Fee, PassResponse, RewardNotice } from "../types";
+
+const route = useRoute();
+
+const pass = ref<PassResponse | null>(null);
+const fee = ref<Fee | null>(null);
+const reward = ref<RewardNotice | null>(null);
+const feeLoading = ref(false);
+const rewardLoading = ref(false);
+const feeError = ref("");
+const rewardError = ref("");
+const paying = ref(false);
+const actionError = ref("");
+const notice = ref("");
+const showCode = ref(true);
+const now = ref(Date.now());
+
+const passId = computed(() => String(route.params.id ?? ""));
+
+const expired = computed(() =>
+  pass.value ? new Date(pass.value.expiresAt).getTime() <= now.value : false,
+);
+
+const paid = computed(() => Boolean(fee.value?.paid));
+
+const awaitingPayment = computed(
+  () =>
+    Boolean(pass.value) &&
+    (pass.value?.status === "pending_payment" || fee.value?.applies === "pa_tariff") &&
+    !paid.value,
+);
+
+const displayStatus = computed(() => {
+  if (!pass.value) {
+    return "";
+  }
+  if (expired.value) {
+    return "expired";
+  }
+  if (pass.value.status === "pending_payment" && paid.value) {
+    return "issued";
+  }
+  return pass.value.status;
+});
+
+const statusTone = computed(() => {
+  switch (displayStatus.value) {
+    case "issued":
+    case "validated":
+      return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+    case "pending_payment":
+      return "bg-amber-50 text-amber-800 ring-amber-200";
+    case "redeemed":
+      return "bg-stone-100 text-stone-700 ring-stone-200";
+    case "expired":
+    case "revoked":
+      return "bg-rose-50 text-rose-800 ring-rose-200";
+    default:
+      return "bg-sky-50 text-sky-800 ring-sky-200";
+  }
+});
+
+const muted = computed(() => expired.value || awaitingPayment.value);
+
+const identityRequired = computed(
+  () =>
+    pass.value?.instructions.some((line) =>
+      line.toLowerCase().includes("identity document"),
+    ) ?? false,
+);
+
+const instructions = computed(() => {
+  if (!pass.value) {
+    return [] as string[];
+  }
+  const passValue = pass.value;
+  return passValue.instructions.map((line) => {
+    const lower = line.toLowerCase();
+    if (lower.includes("show this qr code")) {
+      return `Mostra questo codice QR al punto di ritiro: ${organisationLabel(
+        passValue.item.custodianId,
+      )}.`;
+    }
+    if (lower.includes("single-use and expires")) {
+      return `Il pass è monouso e scade il ${formatDateTime(passValue.expiresAt)}.`;
+    }
+    if (lower.includes("do not share")) {
+      return "Non condividere il codice: chi lo possiede può ritirare l'oggetto.";
+    }
+    if (lower.includes("public administration fee")) {
+      return "La tariffa della pubblica amministrazione deve essere pagata prima della consegna.";
+    }
+    if (lower.includes("identity document")) {
+      return "Porta un documento d'identità valido per il controllo del custode.";
+    }
+    return line;
+  });
+});
+
+onMounted(() => {
+  const stored = loadPass(passId.value);
+  pass.value = stored;
+  if (stored) {
+    void loadSummary(stored);
+  }
+});
+
+async function loadSummary(current: PassResponse) {
+  await Promise.all([loadFee(current), loadReward(current)]);
+  now.value = Date.now();
+}
+
+async function loadFee(current: PassResponse) {
+  feeLoading.value = true;
+  feeError.value = "";
+  try {
+    fee.value = await getItemFee(current.itemId);
+  } catch (cause) {
+    fee.value = null;
+    feeError.value =
+      cause instanceof ApiError
+        ? cause.message
+        : "Non riesco a leggere la tariffa.";
+  } finally {
+    feeLoading.value = false;
+  }
+}
+
+async function loadReward(current: PassResponse) {
+  rewardLoading.value = true;
+  rewardError.value = "";
+  try {
+    reward.value = await getRewardNotice(current.itemId);
+  } catch (cause) {
+    reward.value = null;
+    if (cause instanceof ApiError && cause.status === 404) {
+      rewardError.value = "";
+    } else {
+      rewardError.value =
+        cause instanceof ApiError
+          ? cause.message
+          : "Non riesco a leggere la richiesta di ricompensa.";
+    }
+  } finally {
+    rewardLoading.value = false;
+  }
+}
+
+async function pay() {
+  if (!pass.value || !fee.value || paying.value) {
+    return;
+  }
+  paying.value = true;
+  actionError.value = "";
+  notice.value = "";
+  try {
+    await payFee(fee.value.id);
+    const current = pass.value;
+    await loadFee(current);
+    await loadReward(current);
+    notice.value = paid.value
+      ? "Tariffa pagata: il pass è ora valido per il ritiro."
+      : "Pagamento registrato. Aggiorna tra poco se lo stato non è ancora aggiornato.";
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 409) {
+      actionError.value =
+        "La tariffa non può essere pagata in questo momento. Aggiorna la pagina o contatta la PA.";
+    } else {
+      actionError.value =
+        cause instanceof ApiError
+          ? cause.message
+          : "Non riesco a completare il pagamento simulato. Riprova.";
+    }
+  } finally {
+    paying.value = false;
+  }
+}
+</script>
+
+<template>
+  <div class="mx-auto w-full max-w-4xl">
+    <RouterLink :to="{ name: 'searcher' }" class="link text-sm">
+      ← Torna alla ricerca
+    </RouterLink>
+
+    <div v-if="!pass" class="empty-state mt-4">
+      <p class="text-sm font-medium text-stone-700">Pass non disponibile</p>
+      <p class="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">
+        Il codice QR viene mostrato una sola volta e resta solo nella sessione
+        del browser in cui è stato generato. Torna alla ricerca e genera un nuovo
+        pass dalla richiesta approvata.
+      </p>
+      <RouterLink :to="{ name: 'searcher' }" class="btn btn-primary mt-4">
+        Torna alla ricerca
+      </RouterLink>
+    </div>
+
+    <template v-else>
+      <header class="mt-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p class="eyebrow">Pass di ritiro</p>
+          <h1 class="page-title mt-1">{{ displayItemName(pass.item) }}</h1>
+          <p class="mt-1 font-mono text-sm text-stone-600">{{ pass.item.publicCode }}</p>
+        </div>
+        <span class="badge" :class="statusTone">
+          {{ passStatusLabels[displayStatus] ?? displayStatus }}
+        </span>
+      </header>
+
+      <div class="mt-4 space-y-2">
+        <p v-if="notice" class="banner-success" role="status">{{ notice }}</p>
+        <p v-if="actionError" class="banner-error" role="alert">{{ actionError }}</p>
+        <p
+          v-if="expired"
+          class="banner-error"
+          role="alert"
+        >
+          Questo pass è scaduto il {{ formatDateTime(pass.expiresAt) }}. Torna
+          alla ricerca e genera un nuovo pass.
+        </p>
+        <p v-else-if="awaitingPayment" class="banner-info" role="status">
+          Il pass è in attesa del pagamento della tariffa PA: il codice QR non è
+          ancora valido al banco.
+        </p>
+      </div>
+
+      <div class="mt-5 grid gap-4 lg:grid-cols-[auto_1fr]">
+        <section class="card flex flex-col items-center justify-center">
+          <QRCode
+            v-if="showCode"
+            :value="pass.token"
+            :size="230"
+            :muted="muted"
+            label="Codice QR del pass di ritiro"
+          />
+          <div v-else class="flex h-60 w-60 flex-col items-center justify-center rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-6 text-center">
+            <p class="text-sm font-medium text-stone-700">Codice nascosto</p>
+            <p class="mt-1 text-xs text-stone-500">
+              Mostralo solo al momento del ritiro.
+            </p>
+          </div>
+
+          <div class="mt-3 flex flex-wrap justify-center gap-2">
+            <button type="button" class="btn btn-secondary px-3 py-2 text-xs" @click="showCode = !showCode">
+              {{ showCode ? "Nascondi codice" : "Mostra codice" }}
+            </button>
+          </div>
+
+          <dl class="mt-4 grid w-full grid-cols-1 gap-2 text-center text-xs">
+            <div>
+              <dt class="data-label">Scade il</dt>
+              <dd class="mt-0.5 font-medium text-stone-800">{{ formatDateTime(pass.expiresAt) }}</dd>
+            </div>
+            <div>
+              <dt class="data-label">Richiesta</dt>
+              <dd class="mt-0.5 font-mono text-[11px] text-stone-600">{{ pass.claimId }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <div class="space-y-4">
+          <section class="card">
+            <h2 class="section-title">Dove e come ritirare</h2>
+            <dl class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt class="data-label">Canale di riconsegna</dt>
+                <dd class="data-value text-xs">
+                  {{ returnChannelLabels[pass.returnChannel] ?? pass.returnChannel }}
+                </dd>
+              </div>
+              <div>
+                <dt class="data-label">Custode</dt>
+                <dd class="data-value">{{ organisationLabel(pass.item.custodianId) }}</dd>
+              </div>
+              <div>
+                <dt class="data-label">Oggetto</dt>
+                <dd class="data-value">{{ displayItemName(pass.item) }}</dd>
+              </div>
+              <div>
+                <dt class="data-label">Codice pubblico</dt>
+                <dd class="data-value font-mono text-xs">{{ pass.item.publicCode }}</dd>
+              </div>
+            </dl>
+
+            <div v-if="instructions.length > 0" class="mt-4">
+              <h3 class="text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                Istruzioni
+              </h3>
+              <ul class="mt-1.5 space-y-1 text-xs leading-5 text-stone-700">
+                <li v-for="instruction in instructions" :key="instruction" class="flex gap-2">
+                  <span class="text-emerald-700" aria-hidden="true">✓</span>
+                  <span>{{ instruction }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="mt-4 rounded-xl bg-stone-50 px-3 py-2.5">
+              <h3 class="text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                Cosa portare
+              </h3>
+              <ul class="mt-1.5 space-y-1 text-xs leading-5 text-stone-700">
+                <li class="flex gap-2">
+                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span>Il codice QR di questo pass (monouso).</span>
+                </li>
+                <li v-if="identityRequired" class="flex gap-2">
+                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span>Un documento d'identità valido.</span>
+                </li>
+                <li v-if="pass.returnChannel === 'pa'" class="flex gap-2">
+                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span>
+                    Il pagamento della tariffa PA<template v-if="paid"> (già registrato)</template>.
+                  </span>
+                </li>
+                <li v-if="reward?.requested" class="flex gap-2">
+                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span>
+                    L'eventuale ricompensa concordata con il finder
+                    ({{ reward.amountCents > 0 ? formatCents(reward.amountCents) : "importo da concordare" }}),
+                    fuori dalla piattaforma.
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <FeeSummary
+            :fee="fee"
+            :loading="feeLoading"
+            :error="feeError"
+            :payable="pass.returnChannel === 'pa'"
+            :busy="paying"
+            @pay="pay"
+          />
+
+          <RewardNoticePanel
+            :notice="reward"
+            :loading="rewardLoading"
+            :error="rewardError"
+          />
+        </div>
+      </div>
+    </template>
+  </div>
+</template>

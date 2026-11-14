@@ -19,8 +19,12 @@ export function homeForRole(role?: Role): string {
   switch (role) {
     case "finder":
       return "/finder";
+    case "searcher":
+      return "/searcher";
     case "intermediary":
       return "/intermediary";
+    case "institution":
+      return "/institution";
     default:
       return "/welcome";
   }
@@ -82,6 +86,36 @@ const routes: RouteRecordRaw[] = [
     name: "intermediary-scan",
     component: () => import("./views/IntermediaryScanView.vue"),
     meta: { roles: ["intermediary"], title: "Scansiona un pass" },
+  },
+  {
+    path: "/searcher",
+    name: "searcher",
+    component: () => import("./views/SearcherChatView.vue"),
+    meta: { roles: ["searcher"], title: "Cerca il tuo oggetto" },
+  },
+  {
+    path: "/searcher/pass/:id",
+    name: "searcher-pass",
+    component: () => import("./views/SearcherPassView.vue"),
+    meta: { roles: ["searcher"], title: "Pass di ritiro" },
+  },
+  {
+    path: "/institution",
+    name: "institution-dashboard",
+    component: () => import("./views/InstitutionDashboardView.vue"),
+    meta: { roles: ["institution"], title: "Ritiri" },
+  },
+  {
+    path: "/institution/intake",
+    name: "institution-intake",
+    component: () => import("./views/InstitutionIntakeView.vue"),
+    meta: { roles: ["institution"], title: "Intake ufficiale" },
+  },
+  {
+    path: "/institution/items/:id",
+    name: "institution-item",
+    component: () => import("./views/InstitutionItemView.vue"),
+    meta: { roles: ["institution"], title: "Dettaglio oggetto" },
   },
   {
     path: "/:pathMatch(.*)*",

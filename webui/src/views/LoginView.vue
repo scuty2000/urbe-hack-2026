@@ -40,14 +40,14 @@ const demoUsers: DemoUser[] = [
     id: "searcher-demo",
     name: "Marco Bianchi",
     role: "searcher",
-    description: "Cerca un oggetto perduto (area in arrivo).",
+    description: "Cerca un oggetto perduto e richiede il pass di ritiro.",
     initials: "MB",
   },
   {
     id: "institution-demo",
     name: "Comune di Roma",
     role: "institution",
-    description: "Reparto oggetti rinvenuti (area in arrivo).",
+    description: "Gestisce ritiri, intake ufficiale e verifica delle richieste.",
     initials: "CR",
   },
   {
@@ -72,8 +72,12 @@ function roleTone(role: Role): string {
   switch (role) {
     case "finder":
       return "bg-sky-50 text-sky-800 ring-sky-200";
+    case "searcher":
+      return "bg-amber-50 text-amber-800 ring-amber-200";
     case "intermediary":
       return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+    case "institution":
+      return "bg-indigo-50 text-indigo-800 ring-indigo-200";
     default:
       return "bg-stone-100 text-stone-600 ring-stone-200";
   }

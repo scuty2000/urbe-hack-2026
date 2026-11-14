@@ -2,6 +2,12 @@
 import { computed, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { ApiError, createItem, user } from "../api";
+import {
+  itemCategories as categories,
+  itemColors as colors,
+  itemConditions as conditions,
+  localDateTimeValue as nowForInput,
+} from "../catalog";
 import { displayItemName, formatDateTime } from "../format";
 import { saveReceipt } from "../receipt";
 import type { CreateItemPayload, Item } from "../types";
@@ -36,47 +42,6 @@ const dropPoints = [
     hours: "08:00–20:00",
   },
 ] as const;
-
-const categories = [
-  { value: "smartphone", label: "Smartphone" },
-  { value: "portafoglio", label: "Portafoglio" },
-  { value: "documenti", label: "Documenti / carta d'identità" },
-  { value: "chiavi", label: "Chiavi" },
-  { value: "ombrello", label: "Ombrello" },
-  { value: "zaino", label: "Zaino / borsa" },
-  { value: "occhiali", label: "Occhiali" },
-  { value: "cuffie", label: "Cuffie / auricolari" },
-  { value: "abbigliamento", label: "Abbigliamento" },
-  { value: "bicicletta", label: "Bicicletta" },
-  { value: "altro", label: "Altro" },
-];
-
-const colors = [
-  "nero",
-  "bianco",
-  "grigio",
-  "blu",
-  "rosso",
-  "verde",
-  "giallo",
-  "marrone",
-  "rosa",
-  "multicolore",
-];
-
-const conditions = [
-  { value: "like_new", label: "Come nuovo" },
-  { value: "good", label: "Buono" },
-  { value: "fair", label: "Discreto" },
-  { value: "poor", label: "Da riparare" },
-];
-
-function nowForInput(): string {
-  const now = new Date();
-  const offset = now.getTimezoneOffset();
-  const local = new Date(now.getTime() - offset * 60_000);
-  return local.toISOString().slice(0, 16);
-}
 
 const photos = ref<File[]>([]);
 const category = ref("");

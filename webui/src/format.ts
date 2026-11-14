@@ -51,17 +51,22 @@ export const conditionLabels: Record<string, string> = {
 };
 
 export const eventLabels: Record<string, string> = {
+  enrolled: "Registrato",
   rights_assigned: "Diritti assegnati",
   accepted: "Custodia accettata",
   custody_rejected: "Custodia rifiutata",
   transferred: "Trasferito alla PA",
   handover: "Riconsegna",
   pickup_due: "Ritiro dovuto",
+  pickup_scheduled: "Ritiro programmato",
   sensitive: "Percorso sensibile",
   offered_to_finder: "Offerto al finder",
   finder_collected: "Ritirato dal finder",
   disposed: "Smaltimento",
+  claim_created: "Richiesta di verifica creata",
+  pass_issued: "Pass di ritiro emesso",
   fee_paid: "Tariffa pagata",
+  reward_requested: "Ricompensa richiesta",
 };
 
 export const passReasonLabels: Record<PassReason, string> = {
@@ -169,3 +174,160 @@ export function displayItemName(item: {
     [item.brand, item.model, item.category].filter(Boolean).join(" · ") || "Oggetto";
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
+
+// ─── Searcher / institution labels ──────────────────────────────────────────
+
+export const claimStatusLabels: Record<string, string> = {
+  submitted: "Inviata",
+  under_review: "In verifica",
+  approved: "Approvata",
+  rejected: "Rifiutata",
+  more_info: "Servono altre informazioni",
+};
+
+export const confidenceBandLabels: Record<string, string> = {
+  low: "Bassa",
+  medium: "Media",
+  high: "Alta",
+};
+
+export const returnChannelLabels: Record<string, string> = {
+  intermediary_direct: "Ritiro diretto al punto di raccolta",
+  pa: "Ritiro presso la pubblica amministrazione",
+};
+
+export const feeAppliesLabels: Record<string, string> = {
+  none_direct_return: "Nessuna tariffa: riconsegna diretta",
+  pa_tariff: "Tariffa di custodia della PA",
+};
+
+export const feeStatusLabels: Record<string, string> = {
+  estimated: "Stima",
+  final: "Da pagare",
+  paid: "Pagato",
+  waived: "Esonerato",
+};
+
+export const passStatusLabels: Record<string, string> = {
+  pending_payment: "In attesa di pagamento",
+  issued: "Pronto per il ritiro",
+  validated: "Convalidato",
+  redeemed: "Utilizzato",
+  expired: "Scaduto",
+  revoked: "Revocato",
+};
+
+export const verificationDecisionLabels: Record<string, string> = {
+  auto_approve: "Approvazione automatica",
+  review: "Revisione manuale",
+  reject: "Rifiuto",
+  more_info: "Servono altre informazioni",
+};
+
+export const verificationFlagLabels: Record<string, string> = {
+  prompt_injection: "Tentativo di manipolazione",
+  inconsistent_answers: "Risposte incoerenti",
+  missing_evidence: "Prove mancanti",
+  identity_mismatch: "Identità non corrispondente",
+};
+
+/** Italian copy for the deterministic verification reasons. */
+export const verificationReasonLabels: Record<string, string> = {
+  "confidence below the high-risk threshold":
+    "Confidenza sotto la soglia prevista per gli oggetti ad alto rischio",
+  "high risk tier requires human review":
+    "Oggetto ad alto rischio: è richiesta una revisione manuale",
+  "sensitive item requires human review":
+    "Oggetto sensibile: è richiesta una revisione manuale",
+  "confidence above the automatic threshold":
+    "Confidenza sopra la soglia di approvazione automatica",
+  "confidence below the automatic threshold":
+    "Confidenza sotto la soglia di approvazione automatica",
+  "no evidence provided": "Nessuna prova fornita",
+  "no private attribute matched; more information required":
+    "Nessun attributo privato corrisponde: servono altre informazioni",
+  "prompt injection detected": "Rilevato un tentativo di manipolazione",
+  "identity document does not match": "Il documento d'identità non corrisponde",
+  "answers are inconsistent": "Le risposte sono incoerenti",
+  "required evidence is missing": "Mancano le prove richieste",
+  "unrecognised verification flag": "Segnale di verifica non riconosciuto",
+};
+
+export function verificationReasonLabel(reason: string): string {
+  return verificationReasonLabels[reason] ?? reason;
+}
+
+export const notificationTypeLabels: Record<string, string> = {
+  match: "Possibile corrispondenza",
+  custody_accepted: "Custodia accettata",
+  pickup_due: "Termine di custodia scaduto",
+  pass_issued: "Pass emesso",
+  handover: "Riconsegna registrata",
+  transfer: "Trasferimento alla PA",
+  sensitive: "Percorso sensibile",
+  fee_paid: "Tariffa pagata",
+};
+
+/** Human-friendly names for the demo organisations; falls back to the raw id. */
+export const organisationLabels: Record<string, string> = {
+  "bar-x": "Bar X",
+  "portineria-sapienza": "Portineria Sapienza",
+  "institution-demo": "Comune di Roma",
+  "searcher-demo": "Marco Bianchi",
+  "finder-demo": "Giulia Ferrari",
+};
+
+export const itemCategoryLabels: Record<string, string> = {
+  smartphone: "Smartphone",
+  portafoglio: "Portafoglio",
+  wallet: "Portafoglio",
+  documenti: "Documenti / carta d'identità",
+  document: "Documenti",
+  chiavi: "Chiavi",
+  ombrello: "Ombrello",
+  umbrella: "Ombrello",
+  zaino: "Zaino / borsa",
+  backpack: "Zaino",
+  occhiali: "Occhiali",
+  cuffie: "Cuffie / auricolari",
+  headphones: "Cuffie / auricolari",
+  abbigliamento: "Abbigliamento",
+  bicicletta: "Bicicletta",
+  altro: "Altro",
+};
+
+export function organisationLabel(id?: string | null): string {
+  if (!id) {
+    return "—";
+  }
+  return organisationLabels[id] ?? id;
+}
+
+export function categoryLabel(value?: string | null): string {
+  if (!value) {
+    return "Oggetto";
+  }
+  return (
+    itemCategoryLabels[value.toLowerCase()] ??
+    value.charAt(0).toUpperCase() + value.slice(1)
+  );
+}
+
+/** Formats an integer amount in cents as Italian euros. */
+export function formatCents(amountCents: number, currency = "EUR"): string {
+  return new Intl.NumberFormat("it-IT", {
+    style: "currency",
+    currency: currency || "EUR",
+  }).format(amountCents / 100);
+}
+
+export function percent(value?: number | null): string {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return "—";
+  }
+  return new Intl.NumberFormat("it-IT", {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
