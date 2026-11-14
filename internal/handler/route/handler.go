@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
@@ -21,12 +22,16 @@ type WebAPIHandler struct {
 
 	// Health is the domain service for liveness / readiness checks.
 	Health health.HealthService
+
+	// Auth is the domain service for session authentication.
+	Auth auth.Service
 }
 
 // New creates a WebAPIHandler with the given domain services.
-func New(names nameservice.ServiceName, health health.HealthService) *WebAPIHandler {
+func New(names nameservice.ServiceName, health health.HealthService, authService auth.Service) *WebAPIHandler {
 	return &WebAPIHandler{
 		Names:  names,
 		Health: health,
+		Auth:   authService,
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gofrs/uuid"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 )
 
 // RequestContext carries per-request metadata that middleware populates and
@@ -27,6 +28,10 @@ type RequestContext struct {
 	// contextual fields (like request-id). Handlers should use this instead of
 	// creating new loggers.
 	Logger *slog.Logger
+
+	// User is the authenticated actor, set by the RequireAuth / RequireRole
+	// middleware. It is nil on unauthenticated requests.
+	User *auth.User
 }
 
 // contextKey is an unexported type to avoid collisions in context.Value.

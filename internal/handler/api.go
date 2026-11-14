@@ -13,6 +13,7 @@ Example:
 		Logger:        logger,
 		NameService:   nameService,
 		HealthService: healthService,
+		AuthService:   authService,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating the API server instance: %w", err)
@@ -36,6 +37,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
@@ -56,6 +58,9 @@ type Config struct {
 
 	// HealthService is the domain service for health checks.
 	HealthService health.HealthService
+
+	// AuthService is the domain service for session authentication.
+	AuthService auth.Service
 }
 
 // Router is the public interface for the HTTP handler layer.
@@ -79,6 +84,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.HealthService == nil {
 		return nil, errors.New("health service is required")
 	}
+	if cfg.AuthService == nil {
+		return nil, errors.New("auth service is required")
+	}
 
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -98,6 +106,7 @@ func New(cfg Config) (Router, error) {
 		baseLogger:    cfg.Logger,
 		nameService:   cfg.NameService,
 		healthService: cfg.HealthService,
+		authService:   cfg.AuthService,
 	}, nil
 }
 
@@ -106,4 +115,5 @@ type _router struct {
 	baseLogger    *slog.Logger
 	nameService   nameservice.ServiceName
 	healthService health.HealthService
+	authService   auth.Service
 }

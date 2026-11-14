@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/route"
 )
@@ -12,7 +13,7 @@ import (
 // Handler registers all route and returns the http.Handler for the API.
 // Call this method exactly once after New().
 func (rt *_router) Handler() http.Handler {
-	h := routes.New(rt.nameService, rt.healthService)
+	h := routes.New(rt.nameService, rt.healthService, rt.authService)
 
 	rt.engine.GET("/names/:id", rt.wrap(h.GetNameByID))
 	rt.engine.POST("/names", rt.wrap(h.PostNewName))
@@ -21,6 +22,11 @@ func (rt *_router) Handler() http.Handler {
 	rt.engine.POST("/names/:id/replace", rt.wrap(h.PostReplaceNameByID))
 	rt.engine.GET("/healthz", rt.wrap(h.Liveness))
 	rt.engine.GET("/api/health", rt.wrap(h.Readiness))
+
+	api := rt.engine.Group("/api")
+	api.POST("/auth/login", rt.wrap(h.PostLogin))
+	api.POST("/auth/logout", rt.wrap(h.PostLogout))
+	api.GET("/auth/me", middleware.RequireAuth(rt.authService), rt.wrap(h.GetMe))
 
 	return rt.engine
 }

@@ -18,7 +18,7 @@ servers:
   - url: "http://localhost:3000"
     description: Local development server
 
-# All endpoints are public — no authentication required.
+# Endpoints are public unless they declare a security requirement.
 security: []
 
 tags:
@@ -26,6 +26,8 @@ tags:
     description: Utility and diagnostic endpoints
   - name: Names
     description: CRUD operations on the `/names` resource
+  - name: Auth
+    description: Demo login, logout and current-session endpoints
 
 # ─────────────────────────────────────────────────────────────────────────────
 paths:
@@ -199,6 +201,76 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+# ─── /api/auth ────────────────────────────────────────────────────────────────
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Log in as a demo user
+      description: |
+        Creates a server-side session for the given demo user id and sets the
+        `lf_session` cookie (HttpOnly, SameSite=Lax, 12-hour lifetime). Login is
+        by user id only in the demo MVP: there is no password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              userId: "finder-demo"
+      responses:
+        "200":
+          description: Session created
+          headers:
+            Set-Cookie:
+              description: Session cookie `lf_session`
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Log out
+      description: |
+        Deletes the current session, if any, and expires the `lf_session`
+        cookie. Idempotent: logging out without a session still returns `204`.
+      responses:
+        "204":
+          description: Session deleted
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentUser
+      summary: Get the current user
+      description: Returns the user owning the `lf_session` cookie.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: The authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 # ─────────────────────────────────────────────────────────────────────────────
 components:
 
@@ -232,6 +304,43 @@ components:
           minLength: 1
           description: The name to store. Must be non-empty.
           example: "Alice"
+
+    LoginRequest:
+      type: object
+      required:
+        - userId
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          description: Identifier of the demo user to log in as
+          example: "finder-demo"
+
+    User:
+      type: object
+      required:
+        - id
+        - role
+        - name
+        - email
+      properties:
+        id:
+          type: string
+          example: "finder-demo"
+        role:
+          type: string
+          enum: [finder, searcher, intermediary, institution, admin]
+          example: "finder"
+        name:
+          type: string
+          example: "Giulia Ferrari"
+        email:
+          type: string
+          format: email
+          example: "finder-demo@example.test"
+        createdAt:
+          type: string
+          format: date-time
 
     Error:
       type: object
@@ -285,6 +394,17 @@ components:
           example:
             error: "not found"
 
+    Unauthorized:
+      description: |
+        Authentication is missing or invalid — for login, the user id is unknown;
+        for `/api/auth/me`, the session cookie is missing, expired or revoked.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "unknown user"
+
     InternalServerError:
       description: An unexpected server-side error occurred. Check server logs for details.
       content:
@@ -300,3 +420,13 @@ components:
               summary: Database unreachable (liveness probe)
               value:
                 error: "database unreachable"
+
+  securitySchemes:
+
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: lf_session
+      description: |
+        Server-side session cookie set by `POST /api/auth/login`. Stores a random
+        token; only its SHA-256 hash is persisted in the database.

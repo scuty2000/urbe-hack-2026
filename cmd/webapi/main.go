@@ -39,6 +39,7 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/gin-contrib/cors"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
@@ -168,11 +169,18 @@ func run() error {
 		return fmt.Errorf("migrating database: %w", err)
 	}
 
+	// 4. Seed the demo accounts. Idempotent, so restarts are safe.
+	if err := auth.SeedDemoUsers(context.Background(), db); err != nil {
+		logger.Error("error seeding demo users", slog.Any("err", err))
+		return fmt.Errorf("seeding demo users: %w", err)
+	}
+
 	// Start (main) API server
 	logger.Info("initializing API server")
 
 	// Wire domain services
 	nameService := nameservice.New(db)
+	authService := auth.New(db)
 	healthService := health.NewHealthService(dbconn, health.Checks{
 		QdrantURL:         cfg.Qdrant.URL,
 		QdrantAPIKey:      cfg.Qdrant.APIKey,
@@ -215,6 +223,7 @@ func run() error {
 			CORS:           corsConfig,
 			NameService:    nameService,
 			HealthService:  healthService,
+			AuthService:    authService,
 			TrustedProxies: cfg.Web.TrustedProxies,
 		},
 	)
