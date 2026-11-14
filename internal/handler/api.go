@@ -58,6 +58,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
+	wizarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/wizard"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
 )
 
@@ -109,6 +110,10 @@ type Config struct {
 
 	// AgentService is the searcher conversational orchestrator.
 	AgentService agentdomain.Service
+
+	// WizardService is the finder photo-first enrollment service. It is
+	// optional; without it the wizard routes are not registered.
+	WizardService wizarddomain.Service
 
 	// DemoReset replaces the demo dataset. It is optional; without it
 	// POST /api/demo/reset returns 503.
@@ -202,6 +207,7 @@ func New(cfg Config) (Router, error) {
 		rewardService:      cfg.RewardService,
 		platformService:    cfg.PlatformService,
 		agentService:       cfg.AgentService,
+		wizardService:      cfg.WizardService,
 		demoReset:          cfg.DemoReset,
 		demoResetSecret:    cfg.DemoResetSecret,
 	}, nil
@@ -223,6 +229,7 @@ type _router struct {
 	rewardService      rewarddomain.Service
 	platformService    platform.Service
 	agentService       agentdomain.Service
+	wizardService      wizarddomain.Service
 	demoReset          func(context.Context) error
 	demoResetSecret    string
 }

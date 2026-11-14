@@ -35,6 +35,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
+	wizarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/wizard"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
@@ -101,6 +102,9 @@ func NewServer(t *testing.T) *Server {
 		Claim:       claimService,
 		DeepSeekKey: "",
 	})
+	// The E2E wizard uses the deterministic fallbacks: D3 nil, planner nil,
+	// Mapbox nil (haversine + manual zone).
+	wizardService := wizarddomain.New(db, wizarddomain.Deps{Items: itemService})
 
 	router, err := handler.New(handler.Config{
 		Logger: logger,
@@ -123,6 +127,7 @@ func NewServer(t *testing.T) *Server {
 		RewardService:      rewarddomain.New(db),
 		PlatformService:    platformService,
 		AgentService:       agentService,
+		WizardService:      wizardService,
 		DemoReset:          func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
 		DemoResetSecret:    DemoResetSecret,
 	})

@@ -53,9 +53,12 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
+	wizarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/wizard"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/d3"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/embeddings"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/mapbox"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/qdrant"
 	platformsqlite "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/sqlite"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
@@ -325,6 +328,24 @@ func run() error {
 		MaxToolRounds:   cfg.DeepSeek.MaxToolRounds,
 	})
 
+	// Finder wizard: D3 classifies the photos, DeepSeek writes the photo plan
+	// and prefill from the structured result, Mapbox supplies the zone and the
+	// walking matrix. The Mapbox client fails closed without a token, so the
+	// service falls back to haversine and manual zone entry.
+	var wizardPlanner wizarddomain.Planner
+	if cfg.Features.DeepSeek && cfg.DeepSeek.Key != "" {
+		wizardPlanner = wizarddomain.NewDeepSeekPlanner(
+			deepseek.New(cfg.DeepSeek.URL, cfg.DeepSeek.Key, cfg.DeepSeek.Model, cfg.DeepSeek.Timeout),
+		)
+	}
+	mapboxClient := mapbox.New("", cfg.Mapbox.Token, 5*time.Second)
+	wizardService := wizarddomain.New(db, wizarddomain.Deps{
+		Items:    itemService,
+		Planner:  wizardPlanner,
+		Router:   mapboxClient,
+		Geocoder: mapboxClient,
+	})
+
 	// The institution service owns the PA pickup queue, the transfer into PA
 	// custody, official operator intake, claim review and the unclaimed flow.
 	institutionService := institutiondomain.New(db, institutiondomain.Deps{
@@ -380,6 +401,7 @@ func run() error {
 			RewardService:      rewardService,
 			PlatformService:    platformService,
 			AgentService:       agentService,
+			WizardService:      wizardService,
 			DemoReset:          func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
 			DemoResetSecret:    cfg.Demo.ResetSecret,
 			TrustedProxies:     cfg.Web.TrustedProxies,

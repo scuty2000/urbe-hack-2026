@@ -52,6 +52,8 @@ tags:
     description: Deterministic demo dataset reset
   - name: Uploads
     description: Authenticated access to item photos
+  - name: Wizard
+    description: Finder photo-first wizard (classification, zone and walking drop points)
 
 # ─────────────────────────────────────────────────────────────────────────────
 paths:
@@ -1603,6 +1605,149 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+# ─── /api/finder/wizard/analyze ─────────────────────────────────────────────
+
+  /api/finder/wizard/analyze:
+    post:
+      tags: [Wizard]
+      operationId: analyzeFinderPhoto
+      summary: Classify a finder photo and return the photo plan and prefill
+      description: |
+        D3 classifies the uploaded photo(s); DeepSeek writes the additional-photo
+        plan and the editable card-1/private prefill from the sanitized D3
+        result. Nothing is persisted. A document result stops additional photos
+        and the private prefill. D3/DeepSeek failures return a deterministic
+        manual/fallback analysis, never a 500.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photos]
+              properties:
+                payload:
+                  type: string
+                  description: Optional JSON object with `slot` and `note`.
+                photos:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          description: The analysis (manual/fallback included)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WizardAnalysis"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          description: A photo exceeds the 8 MB limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many analyses in the last minute.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: The wizard routes are not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+# ─── /api/geo/reverse ───────────────────────────────────────────────────────
+
+  /api/geo/reverse:
+    post:
+      tags: [Wizard]
+      operationId: reverseGeocode
+      summary: Resolve a coordinate to a found zone
+      description: |
+        Server-side Mapbox reverse geocoding. POST keeps the exact coordinates
+        out of the request URL/log. A provider failure is a 200 with an empty
+        zone and `source: unavailable`; the finder types the zone.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReverseGeocodeRequest"
+      responses:
+        "200":
+          description: The resolved zone (possibly empty)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReverseGeocodeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          description: Too many zone lookups in the last minute.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+# ─── /api/drop-points ────────────────────────────────────────────────────────
+
+  /api/drop-points:
+    post:
+      tags: [Wizard]
+      operationId: nearestDropPoints
+      summary: Rank active drop-off points by walking distance
+      description: |
+        Returns up to five active partners sorted by walking duration, then
+        distance, then name. Mapbox Matrix supplies real walking legs; a
+        provider failure returns the haversine estimate with
+        `approximate: true`.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DropPointsRequest"
+      responses:
+        "200":
+          description: The ranked active points
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DropPointsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          description: Too many distance lookups in the last minute.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 # ─────────────────────────────────────────────────────────────────────────────
 components:
 
@@ -2717,6 +2862,161 @@ components:
               summary: Database unreachable (liveness probe)
               value:
                 error: "database unreachable"
+
+    WizardPhotoSlot:
+      type: object
+      required: [key, label, instruction, required]
+      properties:
+        key:
+          type: string
+          example: back
+        label:
+          type: string
+          example: Retro
+        instruction:
+          type: string
+          example: Fotografa il retro del telefono, senza sbloccarlo.
+        required:
+          type: boolean
+          example: true
+
+    WizardPrefill:
+      type: object
+      properties:
+        category:
+          type: string
+          example: smartphone
+        color:
+          type: string
+          example: nero
+        condition:
+          type: string
+          example: good
+
+    WizardAnalysis:
+      type: object
+      required: [objectType, confidence, photoPlan, prefill, privatePrefill, warnings, source, isDocument, sensitive]
+      properties:
+        objectType:
+          type: string
+          example: smartphone
+        confidence:
+          type: number
+          format: double
+          example: 0
+        photoPlan:
+          type: array
+          items:
+            $ref: "#/components/schemas/WizardPhotoSlot"
+        prefill:
+          $ref: "#/components/schemas/WizardPrefill"
+        privatePrefill:
+          type: string
+          example: Custodia blu, crepa visibile.
+        warnings:
+          type: array
+          items:
+            type: string
+        source:
+          type: string
+          enum: [d3+deepseek, d3+fallback, d3, manual]
+        isDocument:
+          type: boolean
+        sensitive:
+          type: boolean
+
+    ReverseGeocodeRequest:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    ReverseGeocodeResponse:
+      type: object
+      required: [zone, placeName, source]
+      properties:
+        zone:
+          type: string
+          example: San Lorenzo
+        placeName:
+          type: string
+          example: San Lorenzo, Roma, Lazio, Italia
+        source:
+          type: string
+          enum: [mapbox, unavailable]
+
+    DropPointsRequest:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+
+    DropPoint:
+      type: object
+      required: [id, name, address, hours, distanceMeters, durationSeconds, walkingMinutes, approximate, source]
+      properties:
+        id:
+          type: string
+          example: bar-x
+        name:
+          type: string
+          example: Bar X
+        address:
+          type: string
+          example: Via dei Volsci 12, Roma
+        hours:
+          type: string
+          example: 07:00-21:00
+        distanceMeters:
+          type: number
+          format: double
+        durationSeconds:
+          type: number
+          format: double
+        walkingMinutes:
+          type: integer
+        approximate:
+          type: boolean
+        source:
+          type: string
+          enum: [mapbox, haversine]
+
+    DropPointsResponse:
+      type: object
+      required: [points, source, approximate]
+      properties:
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/DropPoint"
+        source:
+          type: string
+          enum: [mapbox, haversine, none]
+        approximate:
+          type: boolean
 
   securitySchemes:
 

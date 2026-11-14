@@ -16,6 +16,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
+	wizarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/wizard"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 )
 
@@ -68,6 +69,10 @@ type WebAPIHandler struct {
 	// Agent is the searcher conversational orchestrator.
 	Agent agentdomain.Service
 
+	// Wizard is the finder photo-first enrollment service. Nil disables the
+	// analyze/reverse/drop-points routes.
+	Wizard wizarddomain.Service
+
 	// DemoReset replaces the demo dataset. Nil disables the reset route.
 	DemoReset func(context.Context) error
 
@@ -79,6 +84,11 @@ type WebAPIHandler struct {
 
 	// claimLimiter enforces the per-searcher claim creation rate.
 	claimLimiter *chatLimiter
+
+	// wizardLimiter bounds the expensive D3+DeepSeek analyze calls.
+	wizardLimiter *chatLimiter
+	// geoLimiter bounds reverse geocoding and drop-point lookups.
+	geoLimiter *chatLimiter
 }
 
 // New creates a WebAPIHandler with the given domain services.
@@ -93,6 +103,7 @@ func New(
 	claimService claimdomain.Service,
 	passService passdomain.Service,
 	agentService agentdomain.Service,
+	wizardService wizarddomain.Service,
 	demoReset func(context.Context) error,
 	demoResetSecret string,
 	feeService feedomain.Service,
@@ -110,6 +121,7 @@ func New(
 		Claims:          claimService,
 		Passes:          passService,
 		Agent:           agentService,
+		Wizard:          wizardService,
 		Fees:            feeService,
 		Rewards:         rewardService,
 		Platform:        platformService,
@@ -117,5 +129,7 @@ func New(
 		DemoResetSecret: demoResetSecret,
 		chatLimiter:     newChatLimiter(chatRateLimit, chatRateWindow),
 		claimLimiter:    newChatLimiter(claimRateLimit, claimRateWindow),
+		wizardLimiter:   newChatLimiter(wizardRateLimit, wizardRateWindow),
+		geoLimiter:      newChatLimiter(geoRateLimit, wizardRateWindow),
 	}
 }

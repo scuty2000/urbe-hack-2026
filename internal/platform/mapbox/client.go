@@ -110,6 +110,11 @@ func (c *Client) Reverse(ctx context.Context, at Point) (Place, error) {
 	return place, nil
 }
 
+// Walking is the wizard Router port: one leg per destination, in order.
+func (c *Client) Walking(ctx context.Context, origin Point, destinations []Point) ([]Leg, error) {
+	return c.WalkingMatrix(ctx, origin, destinations)
+}
+
 // WalkingMatrix returns one leg per destination, in the same order. Up to 24
 // destinations are supported by one Mapbox call; the wizard pre-filters above
 // that limit.

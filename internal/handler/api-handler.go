@@ -25,6 +25,7 @@ func (rt *_router) Handler() http.Handler {
 		rt.claimService,
 		rt.passService,
 		rt.agentService,
+		rt.wizardService,
 		rt.demoReset,
 		rt.demoResetSecret,
 		rt.feeService,
@@ -58,6 +59,17 @@ func (rt *_router) Handler() http.Handler {
 	api.POST("/chat",
 		middleware.RequireRole(rt.authService, auth.RoleSearcher),
 		rt.wrap(h.PostChat))
+	if rt.wizardService != nil {
+		api.POST("/finder/wizard/analyze",
+			middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary),
+			rt.wrap(h.PostWizardAnalyze))
+		api.POST("/geo/reverse",
+			middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary),
+			rt.wrap(h.PostGeoReverse))
+		api.POST("/drop-points",
+			middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary),
+			rt.wrap(h.PostDropPoints))
+	}
 	api.GET("/claims/:id",
 		middleware.RequireAnyRole(rt.authService, auth.RoleSearcher, auth.RoleIntermediary, auth.RoleInstitution, auth.RoleAdmin),
 		rt.wrap(h.GetClaim))
