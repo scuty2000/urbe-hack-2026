@@ -64,6 +64,12 @@ type WebAPIConfiguration struct {
 		AllowImages bool `conf:"env:D3_ALLOW_IMAGES,default:false,help:send item photos to D3"`
 	}
 
+	// Mapbox supplies reverse geocoding and walking distances for the finder
+	// wizard. The token stays server-side.
+	Mapbox struct {
+		Token string `conf:"env:MAPBOX_TOKEN,help:Mapbox access token"`
+	}
+
 	// Embeddings points at the vLLM embedding endpoint (4096-d Nemotron).
 	Embeddings struct {
 		URL       string        `conf:"default:http://www.lucascutigliani.it:8000/v1/embeddings,help:embeddings endpoint URL"`
