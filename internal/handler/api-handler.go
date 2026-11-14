@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/route"
@@ -13,7 +14,7 @@ import (
 // Handler registers all route and returns the http.Handler for the API.
 // Call this method exactly once after New().
 func (rt *_router) Handler() http.Handler {
-	h := routes.New(rt.nameService, rt.healthService, rt.authService)
+	h := routes.New(rt.nameService, rt.healthService, rt.authService, rt.itemService)
 
 	rt.engine.GET("/names/:id", rt.wrap(h.GetNameByID))
 	rt.engine.POST("/names", rt.wrap(h.PostNewName))
@@ -27,6 +28,19 @@ func (rt *_router) Handler() http.Handler {
 	api.POST("/auth/login", rt.wrap(h.PostLogin))
 	api.POST("/auth/logout", rt.wrap(h.PostLogout))
 	api.GET("/auth/me", middleware.RequireAuth(rt.authService), rt.wrap(h.GetMe))
+
+	api.POST("/items",
+		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary, auth.RoleInstitution),
+		rt.wrap(h.PostItem))
+	api.GET("/items",
+		middleware.RequireRole(rt.authService, auth.RoleIntermediary),
+		rt.wrap(h.ListItems))
+	api.GET("/items/:id",
+		middleware.RequireAnyRole(rt.authService, auth.RoleIntermediary, auth.RoleInstitution),
+		rt.wrap(h.GetItem))
+	api.GET("/uploads/:filename",
+		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary, auth.RoleInstitution),
+		rt.wrap(h.GetUpload))
 
 	return rt.engine
 }

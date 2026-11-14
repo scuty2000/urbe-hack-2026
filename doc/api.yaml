@@ -3,7 +3,7 @@ openapi: "3.1.0"
 info:
   title: Fantastic Gin Dealcoholized API
   description: |
-    RESTful API for managing a collection of names.
+    RESTful API for the lost-and-found registry.
 
     Built with **Go** and **Gin**. All error responses share a consistent
     `{"error": "<message>"}` JSON shape.
@@ -28,6 +28,10 @@ tags:
     description: CRUD operations on the `/names` resource
   - name: Auth
     description: Demo login, logout and current-session endpoints
+  - name: Items
+    description: Item enrollment and custodian read endpoints
+  - name: Uploads
+    description: Authenticated access to item photos
 
 # ─────────────────────────────────────────────────────────────────────────────
 paths:
@@ -271,6 +275,182 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+# ─── /api/items ───────────────────────────────────────────────────────────────
+
+  /api/items:
+    post:
+      tags: [Items]
+      operationId: createItem
+      summary: Enroll a found item
+      description: |
+        Enrolls a found item and records the explicit transfer of the finder's
+        legal status to the intermediary (`rightsAssigned` must be `true`).
+        The item, its custody row, the `rights_assigned` event and the audit
+        entry are written in one transaction.
+
+        The request is `multipart/form-data` with a JSON `payload` field and
+        repeated `photos` file parts (JPEG, PNG or WebP).
+
+        Source rules by role:
+        * **finder** — `source=finder_self`; `intermediaryId` is required and
+          becomes the legal finder.
+        * **intermediary** — `source=finder_mediated`; the caller is finder,
+          intermediary and legal finder.
+        * **institution** — `source=operator` (official intake); the caller is
+          the legal finder.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [payload]
+              properties:
+                payload:
+                  $ref: "#/components/schemas/ItemPayload"
+                photos:
+                  type: array
+                  maxItems: 8
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "201":
+          description: Item enrolled
+          headers:
+            Location:
+              description: URL of the newly created item
+              schema:
+                type: string
+                example: "/api/items/6a0f7f9e-0b9c-4d5a-9d6e-2f1a0c9b8e7d"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          description: |
+            Invalid multipart body, payload, photo, or a violated domain
+            invariant (missing rights assignment, legal finder mismatch).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    get:
+      tags: [Items]
+      operationId: listMyItems
+      summary: List the authenticated intermediary's items
+      description: |
+        Returns the items currently held by the caller, limited to the open
+        statuses `pending_custody` and `in_custody`. Only `custodian=me` is
+        supported: an intermediary cannot browse the registry.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: custodian
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [me]
+      responses:
+        "200":
+          description: The caller's open items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /api/items/{id} ──────────────────────────────────────────────────────────
+
+  /api/items/{id}:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    get:
+      tags: [Items]
+      operationId: getItem
+      summary: Get an item
+      description: |
+        Returns an item to its current custodian, its legal finder or an
+        institution operator. Finders receive the `POST /api/items` response
+        instead; searchers never see items. The DTO omits the private profile
+        and the exact coordinates.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Item found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /api/uploads/{filename} ─────────────────────────────────────────────────
+
+  /api/uploads/{filename}:
+    parameters:
+      - $ref: "#/components/parameters/uploadFilename"
+
+    get:
+      tags: [Uploads]
+      operationId: getUpload
+      summary: Download an item photo
+      description: |
+        Serves a stored photo to authenticated finders, intermediaries and
+        institutions. Searchers are forbidden. Filenames are generated UUIDs;
+        path traversal is rejected by the storage adapter.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: The image bytes
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 # ─────────────────────────────────────────────────────────────────────────────
 components:
 
@@ -342,6 +522,137 @@ components:
           type: string
           format: date-time
 
+    ItemPayload:
+      type: object
+      required:
+        - category
+        - rightsAssigned
+      properties:
+        intermediaryId:
+          type: string
+          description: |
+            Intermediary chosen by a finder. Required for the finder role and
+            ignored for intermediaries and institutions.
+          example: "bar-x"
+        category:
+          type: string
+          description: Category suggested by the AI and confirmed by the user
+          example: "smartphone"
+        brand:
+          type: string
+          example: "Apple"
+        model:
+          type: string
+          example: "iPhone 17"
+        color:
+          type: string
+          example: "black"
+        condition:
+          type: string
+          example: "good"
+        privateProfile:
+          type: object
+          additionalProperties: true
+          description: |
+            Unique identifying details. Stored privately and never returned by
+            any endpoint.
+        foundAt:
+          type: string
+          format: date-time
+        foundLat:
+          type: number
+          format: double
+          description: Exact latitude. Stored privately, never returned.
+        foundLng:
+          type: number
+          format: double
+          description: Exact longitude. Stored privately, never returned.
+        foundZone:
+          type: string
+          example: "San Lorenzo"
+        foundNotes:
+          type: string
+        rightsAssigned:
+          type: boolean
+          description: |
+            Explicit transfer of the finder's legal status to the intermediary.
+            Enrollment is rejected unless this is `true`.
+          example: true
+
+    Item:
+      type: object
+      required:
+        - id
+        - publicCode
+        - status
+        - rightsAssigned
+      properties:
+        id:
+          type: string
+          format: uuid
+        publicCode:
+          type: string
+          pattern: "^LF-[0-9A-F]{8}$"
+          example: "LF-1A2B3C4D"
+        source:
+          type: string
+          enum: [finder_self, finder_mediated, operator]
+        custodyMode:
+          type: string
+          enum: [intermediary, institution]
+        status:
+          type: string
+          enum: [enrolled, pending_custody, custody_rejected, in_custody]
+        legalFinderId:
+          type: string
+        custodianId:
+          type: string
+        category:
+          type: string
+        brand:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        condition:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+            description: Authenticated URL under `/api/uploads/`
+        foundAt:
+          type: string
+          format: date-time
+        foundZone:
+          type: string
+        foundNotes:
+          type: string
+        riskTier:
+          type: string
+          enum: [low, medium, high, sensitive]
+        sensitive:
+          type: boolean
+        rightsAssigned:
+          type: boolean
+        rightsAssignedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ItemList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+
     Error:
       type: object
       required:
@@ -364,6 +675,24 @@ components:
         format: int64
         minimum: 1
         example: 1
+
+    itemId:
+      name: id
+      in: path
+      required: true
+      description: UUID of the item
+      schema:
+        type: string
+        format: uuid
+
+    uploadFilename:
+      name: filename
+      in: path
+      required: true
+      description: Generated UUID filename of a stored photo
+      schema:
+        type: string
+        pattern: "^[0-9a-fA-F-]+\\.(jpg|png|webp)$"
 
   responses:
 
@@ -404,6 +733,17 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: "unknown user"
+
+    Forbidden:
+      description: |
+        The caller is authenticated but not allowed to perform this operation,
+        for example a searcher reading an item or an upload.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "forbidden"
 
     InternalServerError:
       description: An unexpected server-side error occurred. Check server logs for details.

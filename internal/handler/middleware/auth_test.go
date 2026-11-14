@@ -50,6 +50,9 @@ func newTestRouter(svc auth.Service) *gin.Engine {
 	router.GET("/admin", RequireRole(svc, auth.RoleAdmin), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
+	router.GET("/shared", RequireAnyRole(svc, auth.RoleFinder, auth.RoleIntermediary), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
 	router.GET("/me", RequireAuth(svc), func(c *gin.Context) {
 		rc := reqcontext.GetRequestContext(c)
 		if rc.User == nil || rc.User.ID != "finder-demo" {
@@ -110,6 +113,36 @@ func TestRequireRoleWithoutSessionReturnsUnauthorized(t *testing.T) {
 
 	if got := performRequest(router, "/finder", "").Code; got != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", got, http.StatusUnauthorized)
+	}
+}
+
+func TestRequireAnyRoleAcceptsListedRolesAndRejectsOthers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		role string
+		want int
+	}{
+		{auth.RoleFinder, http.StatusOK},
+		{auth.RoleIntermediary, http.StatusOK},
+		{auth.RoleInstitution, http.StatusForbidden},
+		{auth.RoleSearcher, http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.role, func(t *testing.T) {
+			t.Parallel()
+			svc := fakeAuthService{user: auth.User{ID: "actor", Role: tt.role}}
+			router := newTestRouter(svc)
+			if got := performRequest(router, "/shared", "session-token").Code; got != tt.want {
+				t.Fatalf("status = %d, want %d", got, tt.want)
+			}
+		})
+	}
+
+	svc := fakeAuthService{user: auth.User{ID: "actor", Role: auth.RoleFinder}}
+	if got := performRequest(newTestRouter(svc), "/shared", "").Code; got != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want 401", got)
 	}
 }
 

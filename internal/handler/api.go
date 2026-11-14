@@ -14,6 +14,7 @@ Example:
 		NameService:   nameService,
 		HealthService: healthService,
 		AuthService:   authService,
+		ItemService:   itemService,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating the API server instance: %w", err)
@@ -39,6 +40,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
+	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
 )
@@ -61,6 +63,9 @@ type Config struct {
 
 	// AuthService is the domain service for session authentication.
 	AuthService auth.Service
+
+	// ItemService is the domain service for item enrollment and reads.
+	ItemService itemdomain.Service
 }
 
 // Router is the public interface for the HTTP handler layer.
@@ -87,6 +92,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.AuthService == nil {
 		return nil, errors.New("auth service is required")
 	}
+	if cfg.ItemService == nil {
+		return nil, errors.New("item service is required")
+	}
 
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -107,6 +115,7 @@ func New(cfg Config) (Router, error) {
 		nameService:   cfg.NameService,
 		healthService: cfg.HealthService,
 		authService:   cfg.AuthService,
+		itemService:   cfg.ItemService,
 	}, nil
 }
 
@@ -116,4 +125,5 @@ type _router struct {
 	nameService   nameservice.ServiceName
 	healthService health.HealthService
 	authService   auth.Service
+	itemService   itemdomain.Service
 }

@@ -44,6 +44,27 @@ func RequireRole(authService auth.Service, role string) gin.HandlerFunc {
 	}
 }
 
+// RequireAnyRole is RequireRole for endpoints shared by more than one role
+// (for example, uploads readable by finder, intermediary and institution).
+// It aborts with 401 when unauthenticated and 403 when the role is not listed.
+func RequireAnyRole(authService auth.Service, roles ...string) gin.HandlerFunc {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		allowed[role] = struct{}{}
+	}
+	return func(c *gin.Context) {
+		user, ok := authenticateRequest(c, authService)
+		if !ok {
+			return
+		}
+		if _, ok := allowed[user.Role]; !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, dto.ErrorResponse{Error: "forbidden"})
+			return
+		}
+		c.Next()
+	}
+}
+
 // authenticateRequest resolves the session cookie to a user, reusing a user
 // already attached by an earlier middleware. It writes the error response and
 // returns false when the request must not continue.

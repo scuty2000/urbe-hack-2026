@@ -41,8 +41,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
+	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/d3"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -191,6 +194,16 @@ func run() error {
 		EmbeddingsEnabled: cfg.Embeddings.URL != "",
 	})
 
+	// D3 is optional: without a URL the catalog falls back to the form values.
+	var cataloger itemdomain.Cataloger
+	if cfg.Features.D3 && cfg.D3.URL != "" {
+		cataloger = d3.New(cfg.D3.URL, cfg.D3.Key, cfg.D3.Model, cfg.D3.Timeout)
+	}
+	itemService := itemdomain.New(db, itemdomain.Deps{
+		Storage: storage.NewLocal(cfg.Storage.DataDir, cfg.Storage.MaxUploadMB),
+		D3:      cataloger,
+	})
+
 	// Make a channel to listen for an interrupt or terminate signal from the OS.
 	// Use a buffered channel because the signal package requires it.
 	shutdown := make(chan os.Signal, 1)
@@ -224,6 +237,7 @@ func run() error {
 			NameService:    nameService,
 			HealthService:  healthService,
 			AuthService:    authService,
+			ItemService:    itemService,
 			TrustedProxies: cfg.Web.TrustedProxies,
 		},
 	)
