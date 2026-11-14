@@ -14,8 +14,9 @@ import (
 // Question is a d3 question. Type is one of "choice", "noul" or "score"; the
 // criteria payload depends on it (map for choice, list for score).
 type Question struct {
-	Type     string `json:"type"`
-	Criteria any    `json:"criteria,omitempty"`
+	Type         string `json:"type"`
+	Instructions string `json:"instructions,omitempty"`
+	Criteria     any    `json:"criteria,omitempty"`
 }
 
 // Answer is a d3 answer for one question.
@@ -126,10 +127,18 @@ func catalogQuestions() map[string]Question {
 				"worn": "worn or used", "damaged": "damaged",
 			},
 		},
-		"has_crack":   {Type: "noul"},
-		"has_sticker": {Type: "noul"},
-		"has_case":    {Type: "noul"},
-		"is_document": {Type: "noul"},
+		"has_crack": {
+			Type: "noul", Instructions: "Does the item show visible cracks?",
+		},
+		"has_sticker": {
+			Type: "noul", Instructions: "Does the item have a visible sticker?",
+		},
+		"has_case": {
+			Type: "noul", Instructions: "Does the item have a case or cover?",
+		},
+		"is_document": {
+			Type: "noul", Instructions: "Is the item an identity, payment or other document?",
+		},
 	}
 }
 

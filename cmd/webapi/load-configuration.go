@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
@@ -186,5 +187,16 @@ func loadConfiguration() (WebAPIConfiguration, error) {
 		}
 	}
 
+	applyMapboxToken(&cfg)
+
 	return cfg, nil
+}
+
+// applyMapboxToken accepts the provider-native MAPBOX_TOKEN in addition to the
+// API_MAPBOX_TOKEN form parsed by the conf namespace. The explicit assignment
+// wins when both are set.
+func applyMapboxToken(cfg *WebAPIConfiguration) {
+	if cfg.Mapbox.Token == "" {
+		cfg.Mapbox.Token = strings.TrimSpace(os.Getenv("MAPBOX_TOKEN"))
+	}
 }

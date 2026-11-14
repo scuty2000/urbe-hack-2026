@@ -369,6 +369,11 @@ func TestCatalogUsesD3Answers(t *testing.T) {
 	if cataloger.calls != 2 {
 		t.Fatalf("catalog calls = %d, want 2 (base + document type)", cataloger.calls)
 	}
+	for _, key := range []string{"has_crack", "has_sticker", "has_case", "is_document"} {
+		if cataloger.questions[0][key].Instructions == "" {
+			t.Fatalf("noul question %q has no instructions; D3 rejects it", key)
+		}
+	}
 }
 
 func TestCatalogSkipsImagesByDefault(t *testing.T) {

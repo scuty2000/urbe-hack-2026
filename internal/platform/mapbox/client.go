@@ -135,6 +135,14 @@ func (c *Client) WalkingMatrix(ctx context.Context, origin Point, destinations [
 	query := url.Values{}
 	query.Set("access_token", c.token)
 	query.Set("sources", "0")
+	// Without an explicit destinations list Mapbox returns a square matrix
+	// that includes the source itself as column 0. Ask only for the real
+	// destinations so row 0 aligns one-to-one with the input slice.
+	destinationIndexes := make([]string, len(destinations))
+	for i := range destinations {
+		destinationIndexes[i] = strconv.Itoa(i + 1)
+	}
+	query.Set("destinations", strings.Join(destinationIndexes, ";"))
 	query.Set("annotations", "distance,duration")
 
 	var decoded struct {

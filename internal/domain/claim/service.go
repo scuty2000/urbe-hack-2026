@@ -679,7 +679,7 @@ func questionForValue(value any) itemdomain.Question {
 		// noul covers both yes/no booleans and free-text attributes; the local
 		// scorer normalizes boolean synonyms and the D3 client receives the
 		// same question type used by the enrollment catalog.
-		return itemdomain.Question{Type: "noul"}
+		return itemdomain.Question{Type: "noul", Instructions: "Does the searcher's answer match the item attribute?"}
 	}
 }
 

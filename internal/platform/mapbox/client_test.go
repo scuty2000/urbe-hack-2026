@@ -85,7 +85,7 @@ func TestWalkingMatrixParsesFirstRow(t *testing.T) {
 	if !strings.Contains(gotPath, "/directions-matrix/v1/mapbox/walking/12.500000,41.900000;12.510000,41.910000;12.520000,41.920000") {
 		t.Fatalf("path = %q", gotPath)
 	}
-	for _, want := range []string{"access_token=test-token", "sources=0", "annotations=distance%2Cduration"} {
+	for _, want := range []string{"access_token=test-token", "sources=0", "destinations=1%3B2", "annotations=distance%2Cduration"} {
 		if !strings.Contains(gotQuery, want) {
 			t.Fatalf("query %q missing %q", gotQuery, want)
 		}

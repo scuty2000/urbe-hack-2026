@@ -659,7 +659,7 @@ func questionsFor(attributes map[string]any) verification.Questions {
 		case []string:
 			questions[key] = itemdomain.Question{Type: "choice", Criteria: choiceCriteria(typed)}
 		default:
-			questions[key] = itemdomain.Question{Type: "noul"}
+			questions[key] = itemdomain.Question{Type: "noul", Instructions: "Does the searcher's answer match the item attribute?"}
 		}
 	}
 	if len(questions) == 0 {
