@@ -221,12 +221,12 @@ async function signIn(demo: DemoUser) {
                 <span class="mt-0.5 block text-xs leading-5 text-stone-500">
                   {{ demo.description }}
                 </span>
-                <span class="mt-0.5 block font-mono text-[10px] text-stone-400">
+                <span class="mt-0.5 block font-mono text-[10px] text-stone-500">
                   {{ demo.id }}
                 </span>
               </span>
               <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-400 transition group-hover:bg-emerald-700 group-hover:text-white"
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition group-hover:bg-emerald-700 group-hover:text-white"
                 aria-hidden="true"
               >
                 <span
@@ -248,7 +248,7 @@ async function signIn(demo: DemoUser) {
           </li>
         </ul>
 
-        <p class="mt-6 text-center text-xs leading-5 text-stone-400">
+        <p class="mt-6 text-center text-xs leading-5 text-stone-500">
           Sessione cookie <code class="font-mono">lf_session</code> · durata 12 ore.
           I profili “area in arrivo” mostrano solo il guscio dell'app.
         </p>

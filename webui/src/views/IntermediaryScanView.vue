@@ -263,7 +263,7 @@ onBeforeUnmount(() => {
               fill="none"
               stroke="currentColor"
               stroke-width="1.5"
-              class="h-9 w-9 text-stone-400"
+              class="h-9 w-9 text-stone-500"
               aria-hidden="true"
             >
               <path
@@ -433,7 +433,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <p class="mt-6 text-center text-xs leading-5 text-stone-400">
+    <p class="mt-6 text-center text-xs leading-5 text-stone-500">
       La fotocamera richiede HTTPS o localhost. In demo il token può essere
       incollato manualmente.
     </p>

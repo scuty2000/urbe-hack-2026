@@ -29,14 +29,14 @@ defineProps<{
         {{ event.actorRole ? roleLabels[event.actorRole] : "Sistema" }}
         <span
           v-if="event.actor && event.actor !== event.actorRole"
-          class="text-stone-400"
+          class="text-stone-500"
           >· {{ event.actor }}</span
         >
       </p>
       <p v-if="event.notes" class="mt-1 text-xs leading-5 text-stone-600">
         {{ event.notes }}
       </p>
-      <p v-if="event.evidenceRef" class="mt-1 text-[11px] text-stone-400">
+      <p v-if="event.evidenceRef" class="mt-1 text-[11px] text-stone-500">
         Riferimento: {{ event.evidenceRef }}
       </p>
     </li>

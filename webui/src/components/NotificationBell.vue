@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
                   <span class="text-sm font-medium text-stone-900">
                     {{ notificationTypeLabels[notification.type] ?? notification.type }}
                   </span>
-                  <span class="shrink-0 text-[10px] text-stone-400">
+                  <span class="shrink-0 text-[10px] text-stone-500">
                     {{ formatDateTime(notification.createdAt) }}
                   </span>
                 </span>

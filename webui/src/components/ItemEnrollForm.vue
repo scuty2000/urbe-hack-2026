@@ -321,7 +321,7 @@ function resetForm() {
             />
           </div>
           <div>
-            <label class="label" for="brand">Marca <span class="font-normal text-stone-400">(facoltativo)</span></label>
+            <label class="label" for="brand">Marca <span class="font-normal text-stone-500">(facoltativo)</span></label>
             <input
               id="brand"
               v-model="brand"
@@ -334,7 +334,7 @@ function resetForm() {
             />
           </div>
           <div>
-            <label class="label" for="model">Modello <span class="font-normal text-stone-400">(facoltativo)</span></label>
+            <label class="label" for="model">Modello <span class="font-normal text-stone-500">(facoltativo)</span></label>
             <input
               id="model"
               v-model="model"
@@ -402,7 +402,7 @@ function resetForm() {
         </p>
 
         <div>
-          <label class="label" for="notes">Note contestuali <span class="font-normal text-stone-400">(facoltative)</span></label>
+          <label class="label" for="notes">Note contestuali <span class="font-normal text-stone-500">(facoltative)</span></label>
           <textarea
             id="notes"
             v-model="notes"
@@ -428,7 +428,7 @@ function resetForm() {
         <div>
           <label class="label" for="private-details">
             Segni particolari o contenuto
-            <span class="font-normal text-stone-400">(facoltativo)</span>
+            <span class="font-normal text-stone-500">(facoltativo)</span>
           </label>
           <textarea
             id="private-details"

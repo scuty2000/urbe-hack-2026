@@ -51,7 +51,11 @@ const mode = computed(() => {
   return "fallback";
 });
 
-const modeLabel = computed(() => (mode.value === "d3" ? "d3 attivo" : "modalità fallback"));
+// The badge reflects configuration, not a live D3/DeepSeek probe: the backend
+// reports both as configured, and falls back to the local scorer/mock on error.
+const modeLabel = computed(() =>
+  mode.value === "d3" ? "D3 + agente configurati" : "modalità fallback",
+);
 
 const claimTone = computed(() => {
   switch (claim.value?.status) {
@@ -250,6 +254,7 @@ function resetConversation() {
       <div class="flex flex-wrap items-center gap-2">
         <span
           class="badge"
+          role="status"
           :class="
             mode === 'd3'
               ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
@@ -259,7 +264,7 @@ function resetConversation() {
             healthError
               ? 'Stato del backend non disponibile: uso il percorso locale di fallback'
               : mode === 'd3'
-                ? 'D3 e agente conversazionale risultano attivi'
+                ? 'D3 e agente conversazionale configurati; se un provider non risponde la demo usa il percorso locale'
                 : 'Il backend usa il percorso locale di fallback'
           "
         >
@@ -384,7 +389,7 @@ function resetConversation() {
               <span class="sr-only">Invia il messaggio</span>
             </button>
           </form>
-          <p class="mt-1.5 text-[11px] text-stone-400">
+          <p class="mt-1.5 text-[11px] text-stone-500">
             Non inserire dati sensibili non richiesti: la verifica usa solo
             dettagli dell'oggetto.
           </p>

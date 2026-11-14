@@ -21,7 +21,7 @@ const chromeless = computed(() => route.meta.chromeless === true);
     </main>
     <footer
       v-if="!chromeless"
-      class="mx-auto w-full max-w-6xl px-4 pb-8 text-center text-xs leading-5 text-stone-400 sm:px-6 lg:px-8"
+      class="mx-auto w-full max-w-6xl px-4 pb-8 text-center text-xs leading-5 text-stone-500 sm:px-6 lg:px-8"
     >
       Ritrova · Demo Oggetti Smarriti. I dati mostrati sono di esempio.
     </footer>

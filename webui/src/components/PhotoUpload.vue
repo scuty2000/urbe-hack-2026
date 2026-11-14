@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
           fill="none"
           stroke="currentColor"
           stroke-width="1.8"
-          class="h-6 w-6 text-stone-400"
+          class="h-6 w-6 text-stone-500"
           aria-hidden="true"
         >
           <path
@@ -223,7 +223,7 @@ onBeforeUnmount(() => {
         <span class="text-xs font-medium text-stone-600">
           {{ processing ? "Elaboro…" : "Aggiungi foto" }}
         </span>
-        <span v-if="remaining > 1" class="text-[10px] text-stone-400"
+        <span v-if="remaining > 1" class="text-[10px] text-stone-500"
           >ancora {{ remaining }}</span
         >
       </button>

@@ -385,21 +385,21 @@ async function pay() {
               </h3>
               <ul class="mt-1.5 space-y-1 text-xs leading-5 text-stone-700">
                 <li class="flex gap-2">
-                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span class="text-stone-500" aria-hidden="true">•</span>
                   <span>Il codice QR di questo pass (monouso).</span>
                 </li>
                 <li v-if="identityRequired" class="flex gap-2">
-                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span class="text-stone-500" aria-hidden="true">•</span>
                   <span>Un documento d'identità valido.</span>
                 </li>
                 <li v-if="pass.returnChannel === 'pa'" class="flex gap-2">
-                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span class="text-stone-500" aria-hidden="true">•</span>
                   <span>
                     Il pagamento della tariffa PA<template v-if="paid"> (già registrato)</template>.
                   </span>
                 </li>
                 <li v-if="reward?.requested" class="flex gap-2">
-                  <span class="text-stone-400" aria-hidden="true">•</span>
+                  <span class="text-stone-500" aria-hidden="true">•</span>
                   <span>
                     L'eventuale ricompensa concordata con il finder
                     ({{ reward.amountCents > 0 ? formatCents(reward.amountCents) : "importo da concordare" }}),

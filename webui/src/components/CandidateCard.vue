@@ -12,7 +12,7 @@ defineProps<{
   <article class="card-tight">
     <div class="flex items-start justify-between gap-2">
       <div class="min-w-0">
-        <p class="text-[11px] font-semibold tracking-wide text-stone-400 uppercase">
+        <p class="text-[11px] font-semibold tracking-wide text-stone-500 uppercase">
           Candidato {{ index + 1 }}
         </p>
         <p class="mt-0.5 truncate text-sm font-semibold text-stone-900">

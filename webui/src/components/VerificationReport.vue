@@ -118,7 +118,7 @@ const questions = computed(() =>
           <tr v-for="question in questions" :key="question.key">
             <td class="px-3 py-2">
               <p class="font-medium text-stone-800">{{ question.label }}</p>
-              <p class="font-mono text-[10px] text-stone-400">{{ question.type }}</p>
+              <p class="font-mono text-[10px] text-stone-500">{{ question.type }}</p>
             </td>
             <td class="px-3 py-2 text-stone-700">{{ question.answer }}</td>
             <td class="px-3 py-2 text-right text-xs text-stone-600">
@@ -133,7 +133,7 @@ const questions = computed(() =>
       <h3 class="text-xs font-semibold tracking-wide text-stone-500 uppercase">Motivazioni</h3>
       <ul class="mt-1.5 space-y-1 text-xs leading-5 text-stone-700">
         <li v-for="reason in report.reasons" :key="reason" class="flex gap-2">
-          <span class="text-stone-400" aria-hidden="true">•</span>
+          <span class="text-stone-500" aria-hidden="true">•</span>
           <span>{{ verificationReasonLabel(reason) }}</span>
         </li>
       </ul>

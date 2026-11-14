@@ -365,7 +365,7 @@ function resetForm() {
           <div>
             <label class="label" for="intake-private">
               Segni particolari o contenuto
-              <span class="font-normal text-stone-400">(facoltativo)</span>
+              <span class="font-normal text-stone-500">(facoltativo)</span>
             </label>
             <textarea
               id="intake-private"

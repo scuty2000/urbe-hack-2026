@@ -16,6 +16,8 @@ presenter's machine/account.
       local seed fallback).
 - [x] `scripts/tunnel.sh` (requires `CLOUDFLARE_TUNNEL_TOKEN`; never prints it).
 - [x] `docs/demo-script.md` with the 3-minute arc and backup plan.
+- [x] `docs/demo-checklist.md` with reset, four-flow rehearsal, fallback and
+      backup steps; recording and tunnel remain human/account steps.
 - [x] `tests/e2e/demo_test.go`: full API flow against real SQLite.
 
 ## What a human must do before submitting

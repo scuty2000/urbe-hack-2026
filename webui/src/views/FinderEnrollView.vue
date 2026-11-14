@@ -49,7 +49,7 @@ import ItemEnrollForm from "../components/ItemEnrollForm.vue";
 
     <ItemEnrollForm mode="finder" />
 
-    <p class="mt-6 text-center text-xs text-stone-400">
+    <p class="mt-6 text-center text-xs text-stone-500">
       Hai già consegnato l'oggetto?
       <RouterLink to="/" class="link">Torna alla home</RouterLink>
     </p>

@@ -196,7 +196,7 @@ async function transfer(item: InstitutionPickupItem) {
               {{ group.count === 1 ? "oggetto" : "oggetti" }}
             </p>
           </div>
-          <p class="font-mono text-[11px] text-stone-400">{{ group.intermediaryId }}</p>
+          <p class="font-mono text-[11px] text-stone-500">{{ group.intermediaryId }}</p>
         </div>
 
         <div class="mt-3 space-y-2">

@@ -29,7 +29,7 @@ import { user } from "../api";
 
     <ItemEnrollForm mode="intermediary" />
 
-    <p class="mt-6 text-center text-xs text-stone-400">
+    <p class="mt-6 text-center text-xs text-stone-500">
       <RouterLink to="/intermediary" class="link">Torna alla dashboard</RouterLink>
     </p>
   </div>

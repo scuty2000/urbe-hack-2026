@@ -254,7 +254,7 @@ async function confirmRefuse(item: Item) {
               />
               <span
                 v-else
-                class="flex h-full w-full items-center justify-center text-xs text-stone-400"
+                class="flex h-full w-full items-center justify-center text-xs text-stone-500"
                 >Nessuna foto</span
               >
             </div>
