@@ -271,6 +271,13 @@ func TestTimelineForRoles(t *testing.T) {
 func TestClaimCreatedNotifiesCustodianAndSearcher(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	seed.Demo(t, db)
+	// Retire the seeded approved claim so this test exercises the allowed retry
+	// instead of the one-open-claim-per-searcher guard.
+	if err := db.UpdateClaimFields(context.Background(), "claim-phone", map[string]any{
+		"status": "rejected",
+	}); err != nil {
+		t.Fatalf("retiring the seeded claim: %v", err)
+	}
 	notifier := platform.New(db)
 	svc := claimdomain.New(db, claimdomain.Deps{Notifier: notifier})
 

@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
-import { ApiError, getItem, getTimeline } from "../api";
+import { ApiError, getClaimSummary, getItem, getTimeline, reviewClaim } from "../api";
 import StatusBadge from "../components/StatusBadge.vue";
 import Timeline from "../components/Timeline.vue";
 import {
+  claimStatusLabels,
   conditionLabels,
+  confidenceBandLabels,
   displayItemName,
   formatDateTime,
+  returnChannelLabels,
   riskLabels,
 } from "../format";
-import type { Item, TimelineEvent } from "../types";
+import type { ClaimSummary, Item, TimelineEvent } from "../types";
 
 const route = useRoute();
 const item = ref<Item | null>(null);
@@ -18,7 +21,23 @@ const events = ref<TimelineEvent[]>([]);
 const loading = ref(true);
 const error = ref("");
 
+const claim = ref<ClaimSummary | null>(null);
+const claimIDInput = ref("");
+const claimError = ref("");
+const claimBusy = ref(false);
+
+const canReview = computed(
+  () =>
+    claim.value !== null &&
+    ["submitted", "under_review", "more_info"].includes(claim.value.status),
+);
+
 onMounted(() => {
+  const query = route.query.claim;
+  if (typeof query === "string" && query.trim() !== "") {
+    claimIDInput.value = query.trim();
+    void loadClaim();
+  }
   void load();
 });
 
@@ -46,6 +65,52 @@ async function load() {
     }
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadClaim() {
+  const id = claimIDInput.value.trim();
+  if (id === "") {
+    claim.value = null;
+    claimError.value = "";
+    return;
+  }
+  claimBusy.value = true;
+  claimError.value = "";
+  try {
+    claim.value = await getClaimSummary(id);
+  } catch (cause) {
+    claim.value = null;
+    if (cause instanceof ApiError && cause.status === 404) {
+      claimError.value = "Richiesta non trovata.";
+    } else if (cause instanceof ApiError && cause.status === 403) {
+      claimError.value = "Non hai i permessi per questa richiesta.";
+    } else {
+      claimError.value =
+        cause instanceof ApiError
+          ? cause.message
+          : "Non riesco a caricare la richiesta. Riprova.";
+    }
+  } finally {
+    claimBusy.value = false;
+  }
+}
+
+async function review(decision: "approved" | "rejected") {
+  if (!claim.value) {
+    return;
+  }
+  claimBusy.value = true;
+  claimError.value = "";
+  try {
+    claim.value = await reviewClaim(claim.value.id, decision);
+  } catch (cause) {
+    claimError.value =
+      cause instanceof ApiError
+        ? cause.message
+        : "Non riesco a registrare la decisione. Riprova.";
+  } finally {
+    claimBusy.value = false;
   }
 }
 </script>
@@ -183,6 +248,113 @@ async function load() {
           </div>
         </section>
       </div>
+
+      <section class="mt-5 card">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 class="section-title">Richiesta di verifica</h2>
+            <p class="mt-1 text-xs text-stone-500">
+              Apri una richiesta per id. Vedi stato, fascia di confidenza, prove e
+              segnali: il report completo resta alla PA.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <input
+              v-model="claimIDInput"
+              type="text"
+              class="input w-56 font-mono text-xs"
+              placeholder="ID richiesta"
+              aria-label="ID richiesta"
+              @keyup.enter="loadClaim"
+            />
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="claimBusy"
+              @click="loadClaim"
+            >
+              Apri
+            </button>
+          </div>
+        </div>
+
+        <p v-if="claimError" class="mt-3 text-sm text-rose-700">{{ claimError }}</p>
+
+        <div v-if="claim" class="mt-4 rounded-xl border border-stone-200 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p class="data-label">Stato</p>
+              <p class="data-value">
+                {{ claimStatusLabels[claim.status] ?? claim.status }}
+              </p>
+            </div>
+            <div>
+              <p class="data-label">Confidenza</p>
+              <p class="data-value">
+                {{ confidenceBandLabels[claim.confidenceBand] ?? claim.confidenceBand }}
+              </p>
+            </div>
+            <div>
+              <p class="data-label">Canale</p>
+              <p class="data-value">
+                {{ returnChannelLabels[claim.returnChannel] ?? claim.returnChannel }}
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <p class="data-label">Prove</p>
+              <p v-if="claim.evidence.length === 0" class="data-value text-stone-500">
+                Nessuna prova allegata
+              </p>
+              <ul v-else class="mt-1 flex flex-wrap gap-1.5">
+                <li
+                  v-for="entry in claim.evidence"
+                  :key="entry"
+                  class="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs text-stone-700"
+                >
+                  {{ entry }}
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p class="data-label">Segnali</p>
+              <p v-if="claim.flags.length === 0" class="data-value text-stone-500">
+                Nessun segnale
+              </p>
+              <ul v-else class="mt-1 flex flex-wrap gap-1.5">
+                <li
+                  v-for="flag in claim.flags"
+                  :key="flag"
+                  class="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200"
+                >
+                  {{ flag }}
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div v-if="canReview" class="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="claimBusy"
+              @click="review('approved')"
+            >
+              Approva
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="claimBusy"
+              @click="review('rejected')"
+            >
+              Rifiuta
+            </button>
+          </div>
+        </div>
+      </section>
 
       <div class="mt-5 flex flex-wrap gap-2">
         <RouterLink to="/intermediary" class="btn btn-secondary">

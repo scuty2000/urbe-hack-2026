@@ -76,6 +76,9 @@ type WebAPIHandler struct {
 
 	// chatLimiter enforces the per-searcher chat message rate.
 	chatLimiter *chatLimiter
+
+	// claimLimiter enforces the per-searcher claim creation rate.
+	claimLimiter *chatLimiter
 }
 
 // New creates a WebAPIHandler with the given domain services.
@@ -113,5 +116,6 @@ func New(
 		DemoReset:       demoReset,
 		DemoResetSecret: demoResetSecret,
 		chatLimiter:     newChatLimiter(chatRateLimit, chatRateWindow),
+		claimLimiter:    newChatLimiter(claimRateLimit, claimRateWindow),
 	}
 }

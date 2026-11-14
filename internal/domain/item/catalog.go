@@ -155,7 +155,7 @@ func (s *service) Catalog(ctx context.Context, photos []ImageInput, form Catalog
 		return catalogFromForm(form), nil
 	}
 
-	images := s.dataURLs(photos)
+	images := s.catalogImages(photos, form.Category)
 	answers, err := s.deps.D3.Ask(ctx, catalogState, images, catalogQuestions())
 	if err != nil || len(answers) == 0 {
 		// The caller should not have to distinguish "D3 is down" from "D3
@@ -198,6 +198,32 @@ func catalogFromForm(form CatalogForm) CatalogResult {
 		IsDocument:   form.IsDocument,
 		Source:       CatalogSourceForm,
 	}
+}
+
+// documentCategories are never sent to D3 as images. The classification of a
+// document still runs in text/form mode, but an identity or payment document
+// must not leave the application perimeter.
+var documentCategories = map[string]bool{
+	"document":          true,
+	"documento":         true,
+	"documenti":         true,
+	"documents":         true,
+	"identity_document": true,
+}
+
+// catalogImages returns the photos to send to D3. Images are opt-in and are
+// always skipped for document categories; the caller still gets a valid
+// classification from the form values and the text questions.
+func (s *service) catalogImages(photos []ImageInput, category string) []string {
+	if !s.deps.AllowD3Images || isDocumentCategory(category) {
+		return []string{}
+	}
+	return s.dataURLs(photos)
+}
+
+// isDocumentCategory reports whether the form category is a document category.
+func isDocumentCategory(category string) bool {
+	return documentCategories[strings.ToLower(strings.TrimSpace(category))]
 }
 
 // dataURLs converts the photos into the inline data URLs accepted by d3.

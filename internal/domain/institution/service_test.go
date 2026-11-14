@@ -11,6 +11,7 @@ import (
 	institutiondomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/institution"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
@@ -532,6 +533,92 @@ func TestUnclaimedOfferCollectDisposeOrder(t *testing.T) {
 	}
 	if _, err := svc.Dispose(ctx, "item-umbrella", "institution-demo"); !errors.Is(err, errs.ErrConflict) {
 		t.Fatalf("second Dispose() error = %v, want conflict", err)
+	}
+}
+
+func TestTransferReclassifiesDirectClaimsToPA(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+
+	cs := custody.New(db)
+	if _, err := cs.Accept(ctx, "item-umbrella", "bar-x", now); err != nil {
+		t.Fatalf("accept umbrella: %v", err)
+	}
+	if err := db.CreateClaim(ctx, record.ClaimRecord{
+		ID: "claim-umbrella", ItemID: "item-umbrella", SearcherID: "searcher-demo",
+		Status: "approved", ReturnChannel: "intermediary_direct", Confidence: 0.9,
+		Evidence: "[]", ApprovalBy: "bar-x", CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("seed direct claim: %v", err)
+	}
+
+	passes := passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"})
+	direct, err := passes.Issue(ctx, "claim-umbrella", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue(direct) error = %v", err)
+	}
+	if direct.ReturnChannel != "intermediary_direct" {
+		t.Fatalf("direct pass channel = %q, want intermediary_direct", direct.ReturnChannel)
+	}
+	if _, err := cs.MarkPickupDue(ctx, now.Add(8*24*time.Hour)); err != nil {
+		t.Fatalf("mark pickup due: %v", err)
+	}
+
+	notifier := platform.New(db)
+	svc := institutiondomain.New(db, institutiondomain.Deps{Notifier: notifier})
+	if _, err := svc.Transfer(ctx, "item-umbrella", "institution-demo", now); err != nil {
+		t.Fatalf("Transfer() error = %v", err)
+	}
+
+	claimRow, err := db.GetClaimByID(ctx, "claim-umbrella")
+	if err != nil {
+		t.Fatalf("GetClaimByID() error = %v", err)
+	}
+	if claimRow.ReturnChannel != "pa" {
+		t.Fatalf("claim channel = %q, want pa after transfer", claimRow.ReturnChannel)
+	}
+	assertAuditAction(t, db, "item-umbrella", institutiondomain.AuditActionClaimReclassified)
+
+	storedDirect, err := db.GetPassByID(ctx, direct.ID)
+	if err != nil {
+		t.Fatalf("GetPassByID(direct) error = %v", err)
+	}
+	if storedDirect.Status != passdomain.StatusRevoked {
+		t.Fatalf("direct pass status = %q, want revoked", storedDirect.Status)
+	}
+
+	notifications, err := notifier.ListNotifications(ctx, "searcher-demo")
+	if err != nil {
+		t.Fatalf("ListNotifications() error = %v", err)
+	}
+	found := false
+	for _, notification := range notifications {
+		if notification.Type != platform.NotificationTransfer {
+			continue
+		}
+		if notification.Payload["claimId"] == "claim-umbrella" && notification.Payload["returnChannel"] == "pa" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("notifications = %+v, want a transfer notification for claim-umbrella", notifications)
+	}
+
+	paPass, err := passes.Issue(ctx, "claim-umbrella", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue(after transfer) error = %v", err)
+	}
+	if paPass.ReturnChannel != "pa" || paPass.CustodianID != "institution-demo" {
+		t.Fatalf("PA pass = %+v, want the institution custodian", paPass)
+	}
+	validation, err := passes.Validate(ctx, paPass.Token, "institution-demo", now)
+	if err != nil {
+		t.Fatalf("Validate(after transfer) error = %v", err)
+	}
+	if !validation.Valid || validation.ReturnChannel != "pa" {
+		t.Fatalf("validation = %+v, want a valid PA pass", validation)
 	}
 }
 

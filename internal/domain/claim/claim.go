@@ -67,8 +67,9 @@ type Actor struct {
 	Role string
 }
 
-// Claim is the domain read model. Report is only populated for the custodian
-// and the institution: a searcher must never see the verification internals.
+// Claim is the domain read model. Report is only populated for the institution;
+// the custodian receives the safe Evidence/Flags summary and the searcher only
+// the status, confidence band and return channel.
 type Claim struct {
 	ID             string
 	ItemID         string
@@ -77,11 +78,14 @@ type Claim struct {
 	ReturnChannel  string
 	Confidence     float64
 	ConfidenceBand string
-	Evidence       []string
-	ApprovalBy     string
-	ApprovedAt     *time.Time
-	CreatedAt      time.Time
-	Report         *Report
+	// Evidence and Flags are the safe review signals shared with the custodian
+	// and the institution. They never contain the item's private profile.
+	Evidence   []string
+	Flags      []string
+	ApprovalBy string
+	ApprovedAt *time.Time
+	CreatedAt  time.Time
+	Report     *Report
 }
 
 // Report is the full verification report. It contains the questions asked, the
@@ -163,10 +167,15 @@ func ConfidenceBand(confidence float64) string {
 	}
 }
 
-// returnChannelFor derives the only legitimate channel for an item status.
-func returnChannelFor(itemStatus string) (string, bool) {
+// returnChannelForStatus derives the only legitimate channel for an item state.
+// A sensitive item is never returned directly by the intermediary: it must be
+// transferred to the PA first, so it always follows the PA channel.
+func returnChannelForStatus(itemStatus string, sensitive bool) (string, bool) {
 	switch itemStatus {
 	case itemdomain.StatusInCustody:
+		if sensitive {
+			return ReturnChannelPA, true
+		}
 		return ReturnChannelIntermediaryDirect, true
 	case itemStatusTransferred:
 		return ReturnChannelPA, true

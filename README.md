@@ -53,6 +53,10 @@ docker compose up --build -d api qdrant
 open http://localhost:3000/dashboard/
 ```
 
+The compose stack keeps the SQLite database and the uploaded photos together in
+the `./data` volume (mounted at `/data` inside the container), so a container
+recreate does not lose either of them. Qdrant uses `./data/qdrant`.
+
 - 3-minute demo script: [`docs/demo-script.md`](docs/demo-script.md)
 - Submission checklist: [`docs/submission.md`](docs/submission.md)
 - Full API end-to-end test: `go test ./tests/e2e/... -v`

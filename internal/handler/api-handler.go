@@ -32,11 +32,11 @@ func (rt *_router) Handler() http.Handler {
 		rt.platformService,
 	)
 
-	rt.engine.GET("/names/:id", rt.wrap(h.GetNameByID))
-	rt.engine.POST("/names", rt.wrap(h.PostNewName))
-	rt.engine.PUT("/names/:id", rt.wrap(h.PutNameByID))
-	rt.engine.DELETE("/names/:id", rt.wrap(h.DeleteNameByID))
-	rt.engine.POST("/names/:id/replace", rt.wrap(h.PostReplaceNameByID))
+	rt.engine.GET("/names/:id", middleware.RequireRole(rt.authService, auth.RoleAdmin), rt.wrap(h.GetNameByID))
+	rt.engine.POST("/names", middleware.RequireRole(rt.authService, auth.RoleAdmin), rt.wrap(h.PostNewName))
+	rt.engine.PUT("/names/:id", middleware.RequireRole(rt.authService, auth.RoleAdmin), rt.wrap(h.PutNameByID))
+	rt.engine.DELETE("/names/:id", middleware.RequireRole(rt.authService, auth.RoleAdmin), rt.wrap(h.DeleteNameByID))
+	rt.engine.POST("/names/:id/replace", middleware.RequireRole(rt.authService, auth.RoleAdmin), rt.wrap(h.PostReplaceNameByID))
 	rt.engine.GET("/healthz", rt.wrap(h.Liveness))
 	rt.engine.GET("/api/health", rt.wrap(h.Readiness))
 
@@ -59,8 +59,11 @@ func (rt *_router) Handler() http.Handler {
 		middleware.RequireRole(rt.authService, auth.RoleSearcher),
 		rt.wrap(h.PostChat))
 	api.GET("/claims/:id",
-		middleware.RequireAnyRole(rt.authService, auth.RoleSearcher, auth.RoleIntermediary, auth.RoleInstitution),
+		middleware.RequireAnyRole(rt.authService, auth.RoleSearcher, auth.RoleIntermediary, auth.RoleInstitution, auth.RoleAdmin),
 		rt.wrap(h.GetClaim))
+	api.POST("/claims/:id/review",
+		middleware.RequireAnyRole(rt.authService, auth.RoleIntermediary, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.PostClaimReview))
 
 	api.POST("/passes",
 		middleware.RequireRole(rt.authService, auth.RoleSearcher),

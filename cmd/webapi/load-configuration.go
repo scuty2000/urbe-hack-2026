@@ -59,6 +59,9 @@ type WebAPIConfiguration struct {
 		Key     string        `conf:"env:D3_KEY,help:D3 API key"`
 		Model   string        `conf:"env:D3_MODEL,default:d3,help:D3 model name"`
 		Timeout time.Duration `conf:"env:D3_TIMEOUT,default:10s,help:maximum duration of a D3 request"`
+		// AllowImages sends item photos to D3. It defaults to false: identity
+		// and document images must never leave the perimeter.
+		AllowImages bool `conf:"env:D3_ALLOW_IMAGES,default:false,help:send item photos to D3"`
 	}
 
 	// Embeddings points at the vLLM embedding endpoint (4096-d Nemotron).

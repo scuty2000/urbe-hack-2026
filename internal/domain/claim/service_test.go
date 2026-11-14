@@ -310,6 +310,7 @@ func TestCreateClaimValidatesReturnChannelAgainstItemState(t *testing.T) {
 func TestReviewClaimByCustodianAndInstitution(t *testing.T) {
 	svc, db := newClaimService(t, fixedEngine(0.9))
 	seedClaimItem(t, db, "item-review", itemdomain.StatusInCustody, itemdomain.RiskHigh, false)
+	seedClaimItem(t, db, "item-review-two", itemdomain.StatusInCustody, itemdomain.RiskHigh, false)
 
 	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
 		ItemID:     "item-review",
@@ -361,9 +362,9 @@ func TestReviewClaimByCustodianAndInstitution(t *testing.T) {
 		t.Fatalf("review issued %d passes, want none", passes)
 	}
 
-	// A second reviewed claim can be rejected by the institution.
+	// A second claim on another item can be rejected by the institution.
 	second, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
-		ItemID:     "item-review",
+		ItemID:     "item-review-two",
 		SearcherID: "searcher-demo",
 	})
 	if err != nil {
@@ -426,8 +427,11 @@ func TestGetClaimHidesReportFromOwnerAndExposesItToInstitution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("custodian GetClaim() error = %v", err)
 	}
-	if custodian.Report == nil {
-		t.Fatal("custodian report is nil, want the verification report")
+	if custodian.Report != nil {
+		t.Fatalf("custodian report = %+v, want nil (only the institution sees it)", custodian.Report)
+	}
+	if custodian.Evidence == nil || custodian.Flags == nil {
+		t.Fatalf("custodian summary evidence/flags = %v/%v, want safe slices", custodian.Evidence, custodian.Flags)
 	}
 
 	if _, err := svc.GetClaim(context.Background(), created.ID, claim.Actor{ID: "portineria-sapienza", Role: claim.ActorRoleIntermediary}); !errors.Is(err, errs.ErrForbidden) {
@@ -585,6 +589,101 @@ func TestHonestWalletAndPhoneScoresReachReview(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateClaimSensitiveItemUsesPAChannel(t *testing.T) {
+	svc, db := newClaimService(t, fixedEngine(0.9))
+	seedClaimItem(t, db, "item-sensitive", itemdomain.StatusInCustody, itemdomain.RiskSensitive, true)
+
+	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+		ItemID:     "item-sensitive",
+		SearcherID: "searcher-demo",
+		Session:    claim.Session{Answers: map[string]string{"color": "black", "case_color": "blu"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateClaim(sensitive) error = %v", err)
+	}
+	if created.ReturnChannel != claim.ReturnChannelPA {
+		t.Fatalf("returnChannel = %q, want pa for a sensitive item", created.ReturnChannel)
+	}
+
+	if _, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+		ItemID:        "item-sensitive",
+		SearcherID:    "another-searcher",
+		ReturnChannel: claim.ReturnChannelIntermediaryDirect,
+	}); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("sensitive direct channel error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestCreateClaimRejectsDuplicateAndCapsOpenClaims(t *testing.T) {
+	ctx := context.Background()
+	svc, db := newClaimService(t, fixedEngine(0.95))
+
+	// Duplicate: the same searcher cannot open a second claim on the item.
+	seedClaimItem(t, db, "item-dup", itemdomain.StatusInCustody, itemdomain.RiskHigh, false)
+	if _, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID: "item-dup", SearcherID: "searcher-demo",
+		Session: claim.Session{Answers: map[string]string{"color": "black"}},
+	}); err != nil {
+		t.Fatalf("first CreateClaim() error = %v", err)
+	}
+	if _, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID: "item-dup", SearcherID: "searcher-demo",
+	}); !errors.Is(err, errs.ErrConflict) || !strings.Contains(err.Error(), "claim already exists") {
+		t.Fatalf("duplicate CreateClaim() error = %v, want conflict", err)
+	}
+
+	// Cap: five non-rejected claims already exist on the item.
+	seedClaimItem(t, db, "item-cap", itemdomain.StatusInCustody, itemdomain.RiskLow, false)
+	for i := 0; i < maxOpenClaimsForTest; i++ {
+		if err := db.CreateClaim(ctx, record.ClaimRecord{
+			ID:            fmt.Sprintf("claim-cap-%d", i),
+			ItemID:        "item-cap",
+			SearcherID:    fmt.Sprintf("other-searcher-%d", i),
+			Status:        claim.StatusApproved,
+			ReturnChannel: claim.ReturnChannelIntermediaryDirect,
+			Confidence:    0.9,
+			Evidence:      "[]",
+			CreatedAt:     time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("seeding cap claim %d: %v", i, err)
+		}
+	}
+	if _, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID: "item-cap", SearcherID: "searcher-demo",
+	}); !errors.Is(err, errs.ErrConflict) || !strings.Contains(err.Error(), "too many claims") {
+		t.Fatalf("capped CreateClaim() error = %v, want conflict", err)
+	}
+
+	// A rejected claim does not block a retry.
+	seedClaimItem(t, db, "item-retry", itemdomain.StatusInCustody, itemdomain.RiskLow, false)
+	rejected, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:     "item-retry",
+		SearcherID: "searcher-demo",
+		Session:    claim.Session{Answers: map[string]string{"color": "black", "case_color": "blu"}},
+		Flags:      []string{verification.FlagPromptInjection},
+	})
+	if err != nil {
+		t.Fatalf("rejected CreateClaim() error = %v", err)
+	}
+	if rejected.Status != claim.StatusRejected {
+		t.Fatalf("first status = %q, want rejected", rejected.Status)
+	}
+	retry, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:     "item-retry",
+		SearcherID: "searcher-demo",
+		Session:    claim.Session{Answers: map[string]string{"color": "black", "case_color": "blu"}},
+	})
+	if err != nil {
+		t.Fatalf("retry CreateClaim() error = %v", err)
+	}
+	if retry.ID == rejected.ID {
+		t.Fatal("retry reused the rejected claim id")
+	}
+}
+
+// maxOpenClaimsForTest mirrors the service cap without exporting it.
+const maxOpenClaimsForTest = 5
 
 func hasEvent(events []record.CustodyEventRecord, eventType string) bool {
 	for _, event := range events {

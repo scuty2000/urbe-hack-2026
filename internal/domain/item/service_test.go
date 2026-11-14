@@ -371,6 +371,52 @@ func TestCatalogUsesD3Answers(t *testing.T) {
 	}
 }
 
+func TestCatalogSkipsImagesByDefault(t *testing.T) {
+	cataloger := &fakeCataloger{}
+	svc, _ := newService(t, item.Deps{D3: cataloger})
+
+	if _, err := svc.Catalog(context.Background(), []item.ImageInput{{
+		Data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, MediaType: "image/jpeg",
+	}}, item.CatalogForm{Category: "smartphone"}); err != nil {
+		t.Fatalf("Catalog() error = %v", err)
+	}
+	if len(cataloger.images) != 1 || len(cataloger.images[0]) != 0 {
+		t.Fatalf("D3 images = %+v, want none by default", cataloger.images)
+	}
+}
+
+func TestCatalogSendsImagesWhenAllowedForNonDocuments(t *testing.T) {
+	cataloger := &fakeCataloger{}
+	svc, _ := newService(t, item.Deps{D3: cataloger, AllowD3Images: true})
+
+	if _, err := svc.Catalog(context.Background(), []item.ImageInput{{
+		Data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, MediaType: "image/jpeg",
+	}}, item.CatalogForm{Category: "smartphone"}); err != nil {
+		t.Fatalf("Catalog() error = %v", err)
+	}
+	if len(cataloger.images) != 1 || len(cataloger.images[0]) != 1 {
+		t.Fatalf("D3 images = %+v, want one smartphone image", cataloger.images)
+	}
+}
+
+func TestCatalogNeverSendsDocumentImagesToD3(t *testing.T) {
+	for _, category := range []string{"document", "documento", "documenti", "documents", "identity_document"} {
+		cataloger := &fakeCataloger{}
+		svc, _ := newService(t, item.Deps{D3: cataloger, AllowD3Images: true})
+
+		if _, err := svc.Catalog(context.Background(), []item.ImageInput{{
+			Data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, MediaType: "image/jpeg",
+		}}, item.CatalogForm{Category: category}); err != nil {
+			t.Fatalf("Catalog(%q) error = %v", category, err)
+		}
+		for _, images := range cataloger.images {
+			if len(images) != 0 {
+				t.Fatalf("D3 images for category %q = %+v, want none", category, images)
+			}
+		}
+	}
+}
+
 func TestCreateItemDocumentSignalFloorsRiskToSensitive(t *testing.T) {
 	cataloger := &fakeCataloger{responses: []map[string]item.Answer{
 		{

@@ -36,6 +36,8 @@ const (
 	indexTimeout = 2 * time.Second
 	// auditActionPassesRevoked mirrors the pass domain's audit action.
 	auditActionPassesRevoked = "pass.revoked"
+	// claimStatusApproved mirrors claim.StatusApproved without importing it.
+	claimStatusApproved = "approved"
 )
 
 // service implements Service.
@@ -162,9 +164,15 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 	if err != nil {
 		return itemdomain.Item{}, fmt.Errorf("transfer item %q: %w", itemID, err)
 	}
+	claimAuditID, err := newID()
+	if err != nil {
+		return itemdomain.Item{}, fmt.Errorf("transfer item %q: %w", itemID, err)
+	}
 
 	var transferred itemdomain.Item
 	var previousCustodianID string
+	reclassified := 0
+	reclassifiedBySearcher := map[string]string{}
 	err = s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
 		row, err := tx.GetItemByID(ctx, itemID)
 		if err != nil {
@@ -282,6 +290,50 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 			}
 		}
 
+		// After the PA takes custody every approved return follows the PA
+		// channel: a direct claim can no longer be honoured by the intermediary.
+		// The reclassification and its audit entry live in the transfer
+		// transaction so the claim state cannot drift from the custody state.
+		claims, err := tx.ListClaimsByItem(ctx, itemID)
+		if err != nil {
+			return fmt.Errorf("transfer item %q: %w", itemID, err)
+		}
+		for _, claim := range claims {
+			if claim.Status != claimStatusApproved || claim.ReturnChannel == returnChannelPA {
+				continue
+			}
+			if err := tx.UpdateClaimFields(ctx, claim.ID, map[string]any{
+				"return_channel": returnChannelPA,
+			}); err != nil {
+				return fmt.Errorf("transfer item %q: reclassifying claim %q: %w", itemID, claim.ID, err)
+			}
+			reclassified++
+			if _, seen := reclassifiedBySearcher[claim.SearcherID]; !seen && claim.SearcherID != "" {
+				reclassifiedBySearcher[claim.SearcherID] = claim.ID
+			}
+		}
+		if reclassified > 0 {
+			claimMetadata, err := auditMetadata(map[string]any{
+				"itemId":        itemID,
+				"reclassified":  reclassified,
+				"returnChannel": returnChannelPA,
+			})
+			if err != nil {
+				return fmt.Errorf("transfer item %q: %w", itemID, err)
+			}
+			if err := tx.CreateAuditLog(ctx, record.AuditLogRecord{
+				ID:        claimAuditID,
+				ActorID:   actorID,
+				Action:    AuditActionClaimReclassified,
+				Entity:    "item",
+				EntityID:  itemID,
+				Metadata:  claimMetadata,
+				Timestamp: now,
+			}); err != nil {
+				return fmt.Errorf("transfer item %q: %w", itemID, err)
+			}
+		}
+
 		row.Status = itemdomain.StatusTransferred
 		row.CustodyMode = itemdomain.CustodyModeInstitution
 		row.CustodianID = actorID
@@ -301,6 +353,7 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 	// The transfer is committed; the intermediary notification is
 	// best-effort.
 	s.notifyTransfer(ctx, transferred, previousCustodianID)
+	s.notifyClaimsReclassified(ctx, transferred.ID, reclassifiedBySearcher)
 
 	// Indexing is best-effort: the transfer is already committed and a Qdrant
 	// outage must not turn a successful handover into an HTTP error.
@@ -322,6 +375,24 @@ func (s *service) notifyTransfer(ctx context.Context, item itemdomain.Item, prev
 	}
 	platform.TryNotifyAccount(ctx, s.deps.Notifier, "item.transferred", previousCustodianID,
 		platform.NotificationTransfer, payload)
+}
+
+// notifyClaimsReclassified tells each affected searcher that the approved claim
+// now follows the PA channel after the transfer. One notification per searcher.
+func (s *service) notifyClaimsReclassified(ctx context.Context, itemID string, bySearcher map[string]string) {
+	if s.deps.Notifier == nil || len(bySearcher) == 0 {
+		return
+	}
+	for searcherID, claimID := range bySearcher {
+		payload := map[string]any{
+			"itemId":        itemID,
+			"claimId":       claimID,
+			"status":        claimStatusApproved,
+			"returnChannel": returnChannelPA,
+		}
+		platform.TryNotifyAccount(ctx, s.deps.Notifier, "item.transferred", searcherID,
+			platform.NotificationTransfer, payload)
+	}
 }
 
 // CreateOfficialItem enrolls an item that was handed directly to the PA. It

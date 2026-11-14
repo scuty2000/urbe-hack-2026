@@ -181,6 +181,15 @@ func TestDemoFlow(t *testing.T) {
 	t.Run("seeded phone chat and institution approval", func(t *testing.T) {
 		testserver.ResetDemo(t, server)
 
+		// The seeded phone already has an approved claim for the demo searcher.
+		// Retire it so the chat exercises the allowed retry path instead of the
+		// one-open-claim-per-searcher guard.
+		if err := server.DB.UpdateClaimFields(t.Context(), "claim-phone", map[string]any{
+			"status": "rejected",
+		}); err != nil {
+			t.Fatalf("retiring the seeded claim: %v", err)
+		}
+
 		searcher := login(t, server, "searcher-demo")
 		institution := login(t, server, "institution-demo")
 		barX := login(t, server, "bar-x")

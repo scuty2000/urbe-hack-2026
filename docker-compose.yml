@@ -5,7 +5,9 @@ services:
     env_file: .env
     environment:
       API_QDRANT_URL: http://qdrant:6333
-    volumes: ["./data:/data", "./db:/app/db"]
+      API_DB_FILENAME: /data/lostfound.db
+      API_STORAGE_DATA_DIR: /data
+    volumes: ["./data:/data"]
     depends_on: [qdrant]
   qdrant:
     image: qdrant/qdrant:latest

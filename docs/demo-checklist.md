@@ -74,7 +74,7 @@ with `-tags webui`):
 
 ```bash
 scripts/dev-up.sh
-npm --prefix webui run dev   # open http://localhost:5173/
+npm --prefix webui run dev   # open http://localhost:5173/dashboard/
 ```
 
 - [ ] `/healthz` returns 200.
@@ -177,10 +177,10 @@ If the live demo fails:
 
    Without `-tags webui` the binary serves the API only (no `/dashboard/`): in
    that case use the Vite path instead (`scripts/dev-up.sh` +
-   `npm --prefix webui run dev`, open `http://localhost:5173/`).
+   `npm --prefix webui run dev`, open `http://localhost:5173/dashboard/`).
 4. Or use the seeded fast path with either UI:
    `http://localhost:3000/dashboard/searcher?claim=claim-phone` (embedded) or
-   `http://localhost:5173/searcher?claim=claim-phone` (Vite).
+   `http://localhost:5173/dashboard/searcher?claim=claim-phone` (Vite).
 
 ## 7. Public URL (human/account step)
 

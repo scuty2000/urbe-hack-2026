@@ -6,6 +6,7 @@ import type {
   ChatReply,
   ClaimOwner,
   ClaimReport,
+  ClaimSummary,
   CreateItemPayload,
   CustodySummary,
   Fee,
@@ -244,6 +245,22 @@ export function chat(messages: ChatMessage[]): Promise<ChatReply> {
 /** Searcher-safe claim view (status, confidence band, pickup channel). */
 export function getClaim(id: string): Promise<ClaimOwner> {
   return request<ClaimOwner>(`/api/claims/${encodeURIComponent(id)}`);
+}
+
+/** Custodian-safe claim summary (owner fields, evidence and flags). */
+export function getClaimSummary(id: string): Promise<ClaimSummary> {
+  return request<ClaimSummary>(`/api/claims/${encodeURIComponent(id)}`);
+}
+
+/** Records a custodian/institution decision and returns the safe summary. */
+export function reviewClaim(
+  id: string,
+  decision: "approved" | "rejected",
+): Promise<ClaimSummary> {
+  return request<ClaimSummary>(`/api/claims/${encodeURIComponent(id)}/review`, {
+    method: "POST",
+    json: { decision },
+  });
 }
 
 /** Issues the single-use pickup pass for an approved claim. */

@@ -56,6 +56,107 @@ func newClaimRouter(t *testing.T) http.Handler {
 	return router.Handler()
 }
 
+func TestClaimReviewHttpFlow(t *testing.T) {
+	api := newClaimRouter(t)
+
+	finder := loginAs(t, api, "finder-demo")
+	intermediary := loginAs(t, api, "bar-x")
+	otherIntermediary := loginAs(t, api, "portineria-sapienza")
+	searcher := loginAs(t, api, "searcher-demo")
+	institution := loginAs(t, api, "institution-demo")
+
+	createReviewable := func() string {
+		t.Helper()
+		created := postItemRequest(t, api, finder, itemPayload{
+			IntermediaryID: "bar-x",
+			Category:       "smartphone",
+			Color:          "black",
+			PrivateProfile: map[string]any{"case_color": "blu"},
+			FoundAt:        "2026-11-14T10:00:00Z",
+			FoundZone:      "San Lorenzo",
+			RightsAssigned: true,
+		}, false)
+		if created.Code != http.StatusCreated {
+			t.Fatalf("POST item status = %d (body %s)", created.Code, created.Body.String())
+		}
+		var itemBody map[string]any
+		if err := json.NewDecoder(created.Body).Decode(&itemBody); err != nil {
+			t.Fatalf("decoding item: %v", err)
+		}
+		itemID, _ := itemBody["id"].(string)
+		if got := doRequest(t, api, http.MethodPost, "/api/items/"+itemID+"/custody/accept", "", intermediary).Code; got != http.StatusOK {
+			t.Fatalf("custody accept status = %d, want 200", got)
+		}
+
+		body := `{"itemId":"` + itemID + `","answers":{"category":"smartphone","color":"black","case_color":"blu"}}`
+		claim := doRequest(t, api, http.MethodPost, "/api/claims", body, searcher)
+		if claim.Code != http.StatusCreated {
+			t.Fatalf("POST claim status = %d (body %s)", claim.Code, claim.Body.String())
+		}
+		var claimBody map[string]any
+		if err := json.NewDecoder(claim.Body).Decode(&claimBody); err != nil {
+			t.Fatalf("decoding claim: %v", err)
+		}
+		claimID, _ := claimBody["id"].(string)
+		if claimID == "" {
+			t.Fatalf("claim id missing: %+v", claimBody)
+		}
+		if claimBody["status"] != claimdomain.StatusUnderReview {
+			t.Fatalf("claim status = %v, want under_review", claimBody["status"])
+		}
+		return claimID
+	}
+
+	approveClaim := createReviewable()
+
+	if got := doRequest(t, api, http.MethodPost, "/api/claims/"+approveClaim+"/review",
+		`{"decision":"approved"}`, otherIntermediary).Code; got != http.StatusForbidden {
+		t.Fatalf("wrong custodian review status = %d, want 403", got)
+	}
+	if got := doRequest(t, api, http.MethodPost, "/api/claims/"+approveClaim+"/review",
+		`{"decision":"maybe"}`, intermediary).Code; got != http.StatusBadRequest {
+		t.Fatalf("invalid decision status = %d, want 400", got)
+	}
+
+	reviewed := doRequest(t, api, http.MethodPost, "/api/claims/"+approveClaim+"/review",
+		`{"decision":"approved"}`, intermediary)
+	if reviewed.Code != http.StatusOK {
+		t.Fatalf("custodian review status = %d (body %s)", reviewed.Code, reviewed.Body.String())
+	}
+	var reviewedBody map[string]any
+	if err := json.NewDecoder(reviewed.Body).Decode(&reviewedBody); err != nil {
+		t.Fatalf("decoding reviewed claim: %v", err)
+	}
+	if reviewedBody["status"] != claimdomain.StatusApproved {
+		t.Fatalf("reviewed status = %v, want approved", reviewedBody["status"])
+	}
+	for _, hidden := range []string{"report", "confidence", "questions", "answers", "probabilities", "rationale"} {
+		if _, ok := reviewedBody[hidden]; ok {
+			t.Fatalf("review response leaks %q: %+v", hidden, reviewedBody)
+		}
+	}
+
+	rejectClaim := createReviewable()
+	rejected := doRequest(t, api, http.MethodPost, "/api/claims/"+rejectClaim+"/review",
+		`{"decision":"rejected"}`, intermediary)
+	if rejected.Code != http.StatusOK {
+		t.Fatalf("custodian reject status = %d (body %s)", rejected.Code, rejected.Body.String())
+	}
+	var rejectedBody map[string]any
+	if err := json.NewDecoder(rejected.Body).Decode(&rejectedBody); err != nil {
+		t.Fatalf("decoding rejected claim: %v", err)
+	}
+	if rejectedBody["status"] != claimdomain.StatusRejected {
+		t.Fatalf("rejected status = %v, want rejected", rejectedBody["status"])
+	}
+
+	institutionClaim := createReviewable()
+	if got := doRequest(t, api, http.MethodPost, "/api/claims/"+institutionClaim+"/review",
+		`{"decision":"approved"}`, institution).Code; got != http.StatusOK {
+		t.Fatalf("institution review status = %d, want 200", got)
+	}
+}
+
 func TestClaimHttpFlow(t *testing.T) {
 	api := newClaimRouter(t)
 
@@ -158,29 +259,45 @@ func TestClaimHttpFlow(t *testing.T) {
 		t.Fatal("owner GET leaks the raw confidence")
 	}
 
-	// The institution and the custodian receive the full report.
-	for name, cookie := range map[string]*http.Cookie{
-		"institution": institution,
-		"custodian":   intermediary,
-	} {
-		recorder := doRequest(t, api, http.MethodGet, "/api/claims/"+claimID, "", cookie)
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("%s GET status = %d (body %s)", name, recorder.Code, recorder.Body.String())
+	// The institution receives the full report; the custodian only the safe
+	// summary (no report, no raw confidence).
+	institutionResponse := doRequest(t, api, http.MethodGet, "/api/claims/"+claimID, "", institution)
+	if institutionResponse.Code != http.StatusOK {
+		t.Fatalf("institution GET status = %d (body %s)", institutionResponse.Code, institutionResponse.Body.String())
+	}
+	var institutionBody map[string]any
+	if err := json.NewDecoder(institutionResponse.Body).Decode(&institutionBody); err != nil {
+		t.Fatalf("decoding institution claim: %v", err)
+	}
+	institutionReport, ok := institutionBody["report"].(map[string]any)
+	if !ok {
+		t.Fatalf("institution response has no report: %+v", institutionBody)
+	}
+	if institutionReport["decision"] != "auto_approve" {
+		t.Fatalf("institution report decision = %v, want auto_approve", institutionReport["decision"])
+	}
+	if _, ok := institutionBody["confidence"]; !ok {
+		t.Fatalf("institution response has no confidence: %+v", institutionBody)
+	}
+
+	custodianResponse := doRequest(t, api, http.MethodGet, "/api/claims/"+claimID, "", intermediary)
+	if custodianResponse.Code != http.StatusOK {
+		t.Fatalf("custodian GET status = %d (body %s)", custodianResponse.Code, custodianResponse.Body.String())
+	}
+	var custodianBody map[string]any
+	if err := json.NewDecoder(custodianResponse.Body).Decode(&custodianBody); err != nil {
+		t.Fatalf("decoding custodian claim: %v", err)
+	}
+	for _, hidden := range []string{"report", "confidence", "questions", "answers", "probabilities", "rationale"} {
+		if _, ok := custodianBody[hidden]; ok {
+			t.Fatalf("custodian response leaks %q: %+v", hidden, custodianBody)
 		}
-		var reportBody map[string]any
-		if err := json.NewDecoder(recorder.Body).Decode(&reportBody); err != nil {
-			t.Fatalf("decoding %s claim: %v", name, err)
-		}
-		report, ok := reportBody["report"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s response has no report: %+v", name, reportBody)
-		}
-		if report["decision"] != "auto_approve" {
-			t.Fatalf("%s report decision = %v, want auto_approve", name, report["decision"])
-		}
-		if _, ok := reportBody["confidence"]; !ok {
-			t.Fatalf("%s response has no confidence: %+v", name, reportBody)
-		}
+	}
+	if _, ok := custodianBody["evidence"]; !ok {
+		t.Fatalf("custodian response has no evidence: %+v", custodianBody)
+	}
+	if _, ok := custodianBody["flags"]; !ok {
+		t.Fatalf("custodian response has no flags: %+v", custodianBody)
 	}
 
 	if got := doRequest(t, api, http.MethodGet, "/api/claims/"+claimID, "", otherIntermediary).Code; got != http.StatusForbidden {

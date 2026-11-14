@@ -36,3 +36,27 @@ func TestRedactMessageUsesSeenItemsWithoutCandidates(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactMessageShortValueUsesWordBoundaries(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+
+	svc, ok := New(db, Deps{DeepSeekKey: ""}).(*service)
+	if !ok {
+		t.Fatal("New() did not return the concrete service")
+	}
+
+	turn := &turnState{
+		allowed: map[string]bool{"item-phone": true},
+		seen:    map[string]bool{"item-phone": true},
+	}
+	got := svc.redactMessage(context.Background(),
+		"Il colore è blu ma il bluetooth resta.", turn)
+	want := "Il colore è " + redactionPlaceholder + " ma il bluetooth resta."
+	if got != want {
+		t.Fatalf("redaction = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "è blu") {
+		t.Fatalf("short private value was not redacted: %q", got)
+	}
+}

@@ -16,6 +16,7 @@ export const statusLabels: Record<ItemStatus, string> = {
   pickup_due: "Ritiro dovuto",
   sensitive_pickup: "Ritiro urgente",
   transferred: "Trasferito alla PA",
+  returned: "Restituito",
   unclaimed: "Non reclamato",
   offered_to_finder: "Offerto al finder",
   finder_collected: "Ritirato dal finder",
@@ -30,6 +31,7 @@ export const statusTones: Record<ItemStatus, string> = {
   pickup_due: "bg-orange-50 text-orange-800 ring-orange-200",
   sensitive_pickup: "bg-rose-50 text-rose-800 ring-rose-200",
   transferred: "bg-indigo-50 text-indigo-800 ring-indigo-200",
+  returned: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   unclaimed: "bg-stone-100 text-stone-700 ring-stone-200",
   offered_to_finder: "bg-sky-50 text-sky-800 ring-sky-200",
   finder_collected: "bg-emerald-50 text-emerald-800 ring-emerald-200",
@@ -83,6 +85,8 @@ export const passReasonLabels: Record<PassReason, string> = {
   already_redeemed: "Il pass è già stato utilizzato per una riconsegna.",
   item_not_in_custody: "L'oggetto non è più in custodia presso questo punto.",
   claim_not_approved: "Il reclamo collegato non è approvato.",
+  sensitive_requires_pa: "Oggetto sensibile: la consegna avviene solo tramite la PA dopo il trasferimento.",
+  custody_expired: "Il termine di custodia dell'oggetto è scaduto: è necessario il trasferimento alla PA.",
 };
 
 export function formatDateTime(value?: string | null): string {
@@ -188,6 +192,7 @@ export const claimStatusLabels: Record<string, string> = {
   approved: "Approvata",
   rejected: "Rifiutata",
   more_info: "Servono altre informazioni",
+  handed_over: "Consegnato",
 };
 
 export const confidenceBandLabels: Record<string, string> = {

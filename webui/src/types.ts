@@ -16,6 +16,7 @@ export type ItemStatus =
   | "pickup_due"
   | "sensitive_pickup"
   | "transferred"
+  | "returned"
   | "unclaimed"
   | "offered_to_finder"
   | "finder_collected"
@@ -103,7 +104,9 @@ export type PassReason =
   | "revoked"
   | "already_redeemed"
   | "item_not_in_custody"
-  | "claim_not_approved";
+  | "claim_not_approved"
+  | "sensitive_requires_pa"
+  | "custody_expired";
 
 export interface PassValidation {
   valid: boolean;
@@ -174,7 +177,8 @@ export type ClaimStatus =
   | "under_review"
   | "approved"
   | "rejected"
-  | "more_info";
+  | "more_info"
+  | "handed_over";
 
 export type ClaimReturnChannel = "intermediary_direct" | "pa";
 
@@ -186,6 +190,12 @@ export interface ClaimOwner {
   confidenceBand: "low" | "medium" | "high";
   returnChannel: ClaimReturnChannel;
   createdAt: string;
+}
+
+/** Custodian-safe claim summary: owner fields plus evidence and flags only. */
+export interface ClaimSummary extends ClaimOwner {
+  evidence: string[];
+  flags: string[];
 }
 
 export interface VerificationQuestion {

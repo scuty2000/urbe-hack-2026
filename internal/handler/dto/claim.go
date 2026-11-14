@@ -29,8 +29,8 @@ type ClaimOwnerResponse struct {
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
-// ClaimReport is the full verification report shown to the custodian and the
-// institution. It never contains the item's private profile values.
+// ClaimReport is the full verification report shown to the institution. It
+// never contains the item's private profile values.
 type ClaimReport struct {
 	Questions     map[string]itemdomain.Question `json:"questions"`
 	Answers       map[string]string              `json:"answers"`
@@ -44,7 +44,7 @@ type ClaimReport struct {
 	Reasons       []string                       `json:"reasons"`
 }
 
-// ClaimReportResponse is the custodian/institution claim read model.
+// ClaimReportResponse is the institution/admin claim read model.
 type ClaimReportResponse struct {
 	ClaimOwnerResponse
 	Confidence float64      `json:"confidence"`
@@ -63,7 +63,25 @@ func ToClaimOwnerResponse(c claimdomain.Claim) ClaimOwnerResponse {
 	}
 }
 
-// ToClaimReportResponse maps the full custodian/institution view.
+// ClaimSummaryResponse is the intermediary custodian view: the owner fields plus
+// the safe evidence and flags. It deliberately has no questions, answers,
+// probabilities, rationale or confidence.
+type ClaimSummaryResponse struct {
+	ClaimOwnerResponse
+	Evidence []string `json:"evidence"`
+	Flags    []string `json:"flags"`
+}
+
+// ToClaimSummaryResponse maps the safe custodian view.
+func ToClaimSummaryResponse(c claimdomain.Claim) ClaimSummaryResponse {
+	return ClaimSummaryResponse{
+		ClaimOwnerResponse: ToClaimOwnerResponse(c),
+		Evidence:           nonNilStrings(c.Evidence),
+		Flags:              nonNilStrings(c.Flags),
+	}
+}
+
+// ToClaimReportResponse maps the full institution view.
 func ToClaimReportResponse(c claimdomain.Claim) ClaimReportResponse {
 	response := ClaimReportResponse{
 		ClaimOwnerResponse: ToClaimOwnerResponse(c),

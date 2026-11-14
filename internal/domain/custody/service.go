@@ -224,6 +224,19 @@ func (s *service) notifyCustodyAccepted(ctx context.Context, itemID string, dueA
 			platform.NotificationCustodyAccepted, payload)
 		break
 	}
+
+	// A sensitive item always raises the institution inbox, so the PA knows it
+	// must be picked up within the short window. The payload carries no
+	// deadline or private detail, only the item identifier and the flag.
+	if row.Sensitive {
+		sensitivePayload := map[string]any{
+			"itemId":    itemID,
+			"status":    itemdomain.StatusInCustody,
+			"sensitive": true,
+		}
+		platform.TryNotifyRole(ctx, s.deps.Notifier, "custody.accepted", platform.RoleInstitution,
+			platform.NotificationSensitive, sensitivePayload)
+	}
 }
 
 // notifyPickupDue tells the holding intermediary and the institution inbox that

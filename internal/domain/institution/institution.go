@@ -32,12 +32,16 @@ const (
 // Audit actions written alongside the institution events. They are exported so
 // tests and the audit timeline can assert the public-administration trail.
 const (
-	AuditActionOfficialIntake = "item.official_intake"
-	AuditActionTransferred    = "item.transferred"
-	AuditActionOffered        = "item.offered_to_finder"
-	AuditActionCollected      = "item.finder_collected"
-	AuditActionDisposed       = "item.disposed"
+	AuditActionOfficialIntake    = "item.official_intake"
+	AuditActionTransferred       = "item.transferred"
+	AuditActionOffered           = "item.offered_to_finder"
+	AuditActionCollected         = "item.finder_collected"
+	AuditActionDisposed          = "item.disposed"
+	AuditActionClaimReclassified = "claim.reclassified"
 )
+
+// returnChannelPA mirrors the claim/pass PA channel without importing them.
+const returnChannelPA = "pa"
 
 // PickupGroup is one intermediary/zone bucket of the PA pickup queue.
 // Sensitive reports are always returned before ordinary ones.

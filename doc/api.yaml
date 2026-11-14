@@ -80,6 +80,9 @@ paths:
       description: |
         Inserts a new name into the collection.
         Returns the created resource and a `Location` header pointing to it.
+        Admin only.
+      security:
+        - cookieAuth: []
       requestBody:
         required: true
         content:
@@ -106,6 +109,10 @@ paths:
                 name: "Alice"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -119,7 +126,9 @@ paths:
       tags: [Names]
       operationId: getNameById
       summary: Get a name
-      description: Returns the name resource identified by `id`.
+      description: Returns the name resource identified by `id`. Admin only.
+      security:
+        - cookieAuth: []
       responses:
         "200":
           description: Name found
@@ -132,6 +141,10 @@ paths:
                 name: "Alice"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -141,7 +154,9 @@ paths:
       tags: [Names]
       operationId: updateNameById
       summary: Update a name
-      description: Replaces the `name` field of the resource identified by `id`.
+      description: Replaces the `name` field of the resource identified by `id`. Admin only.
+      security:
+        - cookieAuth: []
       requestBody:
         required: true
         content:
@@ -162,6 +177,10 @@ paths:
                 name: "UpdatedAlice"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -173,12 +192,18 @@ paths:
       summary: Delete a name
       description: |
         Permanently removes the resource identified by `id`.
-        Returns `204 No Content` on success with an empty body.
+        Returns `204 No Content` on success with an empty body. Admin only.
+      security:
+        - cookieAuth: []
       responses:
         "204":
           description: Name deleted — no content returned
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -200,6 +225,9 @@ paths:
         transaction. If any step fails the database is left unchanged.
 
         The response contains the **newly created** resource (with a new `id`).
+        Admin only.
+      security:
+        - cookieAuth: []
       requestBody:
         required: true
         content:
@@ -220,6 +248,10 @@ paths:
                 name: "NewAlice"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -375,6 +407,13 @@ paths:
         keeps high-risk claims under review (review threshold `0.85`), always
         reviews sensitive items, and rejects claims carrying a prompt-injection
         or identity-mismatch flag. No pickup pass is issued here.
+
+        A sensitive item in intermediary custody always follows the `pa`
+        channel: it can only be handed over by the PA after the transfer.
+
+        Abuse guard: one non-rejected claim per searcher and item, and at most
+        five non-rejected claims per item. A rejected claim does not block a
+        retry. The endpoint is also rate-limited per searcher.
       security:
         - cookieAuth: []
       requestBody:
@@ -417,14 +456,14 @@ paths:
       operationId: getClaim
       summary: Get a claim
       description: |
-        Returns a claim to its owner (the searcher who created it) or to the
-        current custodian, the legal finder and the institution.
+        Returns a claim in the caller's role-safe shape.
 
-        The searcher receives only the status, the confidence band and the
-        pickup channel. The custodian and the institution receive the full
-        verification report (questions, answers, probabilities, rationale,
-        model version, evidence, flags and the deterministic decision). The
-        item's private profile is never returned.
+        The searcher owner receives only the status, the confidence band and
+        the pickup channel. The intermediary custodian/legal finder receives
+        the same summary plus `evidence` and `flags` (no questions, answers,
+        probabilities or rationale). Only the institution and an administrator
+        receive the full verification report. The item's private profile is
+        never returned.
       security:
         - cookieAuth: []
       responses:
@@ -435,6 +474,7 @@ paths:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/ClaimOwner"
+                  - $ref: "#/components/schemas/ClaimSummary"
                   - $ref: "#/components/schemas/ClaimInstitution"
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -442,6 +482,49 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/claims/{id}/review:
+    parameters:
+      - $ref: "#/components/parameters/claimId"
+
+    post:
+      tags: [Claims]
+      operationId: reviewClaim
+      summary: Review an ownership claim
+      description: |
+        Records an `approved` or `rejected` decision for the current custodian,
+        the legal finder, an institution operator or an administrator. The claim
+        must be `submitted`, `under_review` or `more_info`.
+
+        The response is the safe summary (owner fields plus evidence and flags),
+        never the full verification report.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewClaimPayload"
+      responses:
+        "200":
+          description: Claim reviewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -455,8 +538,13 @@ paths:
       description: |
         Issues a single-use pickup pass for an approved claim. The caller must
         be the searcher who owns the claim; the item must currently be
-        `in_custody` (direct return) or `transferred` (PA return), and the claim
-        channel must match the item state.
+        `in_custody` (direct return) or `transferred` (PA return), the claim
+        channel must match the item state, and the custody deadline must not
+        have elapsed.
+
+        A sensitive item cannot be returned directly by the intermediary: while
+        it is `in_custody` the request is rejected with `409`, and the pass
+        becomes issuable only after the PA transfer.
 
         The pass is signed with HMAC-SHA256 (`AUTH_PASS_SECRET`) and expires
         after `AUTH_PASS_TTL`. Only the SHA-256 hash of the token is stored. The
@@ -521,7 +609,8 @@ paths:
         An unusable pass is a normal scanner outcome, not a server error: the
         response is `200` with `valid: false` and one of the reasons
         `expired`, `wrong_custodian`, `unpaid`, `revoked`, `already_redeemed`,
-        `item_not_in_custody`, `claim_not_approved` or `invalid_token`.
+        `item_not_in_custody`, `claim_not_approved`, `sensitive_requires_pa`,
+        `custody_expired` or `invalid_token`.
         The item summary is returned only when the pass is valid and never
         contains the private profile or exact coordinates.
 
@@ -1206,8 +1295,10 @@ paths:
         intermediary. The intermediary custody row is closed, a new institution
         custody row is opened without a deadline, and the item becomes
         `transferred` with `transferred_at` and `legal_term_start` set to now.
-        Open pickup passes are revoked in the same transaction. The search index
-        is refreshed best effort. Restricted to `institution` and `admin`.
+        Open pickup passes are revoked and every approved direct claim is
+        reclassified to the `pa` channel in the same transaction. Affected
+        searchers are notified after the commit. The search index is refreshed
+        best effort. Restricted to `institution` and `admin`.
       security:
         - cookieAuth: []
       responses:
@@ -2033,8 +2124,9 @@ components:
           enum: [intermediary_direct, pa]
           description: |
             Optional. Must match the channel derived from the item state:
-            `in_custody` requires `intermediary_direct`, `transferred` requires
-            `pa`. A conflicting value is rejected with `400`.
+            `in_custody` requires `intermediary_direct` (or `pa` for a
+            sensitive item), `transferred` requires `pa`. A conflicting value is
+            rejected with `400`.
         answers:
           type: object
           additionalProperties:
@@ -2067,7 +2159,7 @@ components:
           format: uuid
         status:
           type: string
-          enum: [submitted, under_review, approved, rejected, more_info]
+          enum: [submitted, under_review, approved, rejected, more_info, handed_over]
         confidenceBand:
           type: string
           enum: [low, medium, high]
@@ -2077,6 +2169,24 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    ClaimSummary:
+      allOf:
+        - $ref: "#/components/schemas/ClaimOwner"
+        - type: object
+          description: |
+            Custodian-safe claim view. It adds only evidence and flags to the
+            owner fields; questions, answers, probabilities, rationale and the
+            raw confidence stay reserved for the institution.
+          properties:
+            evidence:
+              type: array
+              items:
+                type: string
+            flags:
+              type: array
+              items:
+                type: string
 
     VerificationReport:
       type: object
@@ -2250,6 +2360,8 @@ components:
             - already_redeemed
             - item_not_in_custody
             - claim_not_approved
+            - sensitive_requires_pa
+            - custody_expired
         expiresAt:
           type: string
           format: date-time

@@ -9,9 +9,11 @@ import (
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/seed"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/testutil"
 )
 
@@ -630,4 +632,35 @@ func auditActions(logs []record.AuditLogRecord) []string {
 		actions = append(actions, entry.Action)
 	}
 	return actions
+}
+
+func TestAcceptSensitiveItemNotifiesInstitution(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	notifier := platform.New(db)
+	svc := custody.New(db, custody.Deps{Notifier: notifier})
+	now := time.Now().UTC()
+
+	if _, err := svc.Accept(context.Background(), "item-document", "bar-x", now); err != nil {
+		t.Fatalf("Accept() error = %v", err)
+	}
+
+	notifications, err := notifier.ListNotifications(context.Background(), "institution-demo")
+	if err != nil {
+		t.Fatalf("ListNotifications() error = %v", err)
+	}
+	found := false
+	for _, notification := range notifications {
+		if notification.Type != platform.NotificationSensitive {
+			continue
+		}
+		if notification.Payload["itemId"] == "item-document" &&
+			notification.Payload["status"] == itemdomain.StatusInCustody &&
+			notification.Payload["sensitive"] == true {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("institution notifications = %+v, want a sensitive custody notification", notifications)
+	}
 }

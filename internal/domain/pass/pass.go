@@ -55,14 +55,16 @@ const (
 // Validation reasons returned to the scanner. They are deliberately coarse:
 // they never reveal private profile data or exact coordinates.
 const (
-	ReasonInvalidToken     = "invalid_token"
-	ReasonExpired          = "expired"
-	ReasonWrongCustodian   = "wrong_custodian"
-	ReasonUnpaid           = "unpaid"
-	ReasonRevoked          = "revoked"
-	ReasonAlreadyRedeemed  = "already_redeemed"
-	ReasonItemNotInCustody = "item_not_in_custody"
-	ReasonClaimNotApproved = "claim_not_approved"
+	ReasonInvalidToken        = "invalid_token"
+	ReasonExpired             = "expired"
+	ReasonWrongCustodian      = "wrong_custodian"
+	ReasonUnpaid              = "unpaid"
+	ReasonRevoked             = "revoked"
+	ReasonAlreadyRedeemed     = "already_redeemed"
+	ReasonItemNotInCustody    = "item_not_in_custody"
+	ReasonClaimNotApproved    = "claim_not_approved"
+	ReasonSensitiveRequiresPA = "sensitive_requires_pa"
+	ReasonCustodyExpired      = "custody_expired"
 )
 
 // defaultTTL is used when the configuration does not provide PassTTL.

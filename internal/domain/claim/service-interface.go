@@ -36,9 +36,10 @@ type Service interface {
 	// item event and the audit entry. It never issues a pickup pass.
 	CreateClaim(ctx context.Context, input CreateClaimInput) (Claim, error)
 
-	// GetClaim returns a claim to its owner or to the custodian / institution.
+	// GetClaim returns a claim to its owner, the custodian or the institution.
 	// The owner receives only status, confidence band and return channel; the
-	// custodian and the institution receive the verification report.
+	// custodian receives evidence and flags; only the institution receives the
+	// verification report.
 	GetClaim(ctx context.Context, claimID string, actor Actor) (Claim, error)
 
 	// ReviewClaim records a custodian or institution decision on an

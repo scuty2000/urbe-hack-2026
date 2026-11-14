@@ -507,6 +507,125 @@ func TestPassValidateReportsItemNotInCustodyAndClaimNotApproved(t *testing.T) {
 	}
 }
 
+func TestPassSensitiveItemRequiresPA(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	svc := pass.New(db, pass.Deps{PassSecret: testSecret, PassTTL: 30 * time.Minute})
+	now := time.Now().UTC()
+	ctx := context.Background()
+
+	// A direct pass issued before the item became sensitive cannot be used once
+	// it is sensitive and still held by the intermediary.
+	direct, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue(non-sensitive) error = %v", err)
+	}
+	if err := db.UpdateItemFields(ctx, "item-phone", map[string]any{
+		"sensitive": true, "risk_tier": itemdomain.RiskSensitive,
+	}); err != nil {
+		t.Fatalf("making the item sensitive: %v", err)
+	}
+	if _, err := svc.Validate(ctx, direct.Token, "bar-x", now); pass.ReasonOf(err) != pass.ReasonSensitiveRequiresPA {
+		t.Fatalf("Validate(sensitive direct) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonSensitiveRequiresPA)
+	}
+	if _, err := svc.Redeem(ctx, direct.Token, "bar-x", "bar-x", now); pass.ReasonOf(err) != pass.ReasonSensitiveRequiresPA {
+		t.Fatalf("Redeem(sensitive direct) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonSensitiveRequiresPA)
+	}
+
+	// A sensitive item still in intermediary custody cannot get a pass.
+	if err := db.UpdateItemFields(ctx, "item-document", map[string]any{
+		"status": itemdomain.StatusInCustody,
+	}); err != nil {
+		t.Fatalf("moving the document to custody: %v", err)
+	}
+	if err := db.CreateClaim(ctx, record.ClaimRecord{
+		ID: "claim-document", ItemID: "item-document", SearcherID: "searcher-demo",
+		Status: "approved", ReturnChannel: pass.ReturnChannelPA, Evidence: "[]",
+		ApprovalBy: "institution-demo", CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("CreateClaim(document) error = %v", err)
+	}
+	if _, err := svc.Issue(ctx, "claim-document", "searcher-demo", now); !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("Issue(sensitive in custody) error = %v, want conflict", err)
+	}
+
+	// After the PA transfer the same claim yields a usable PA pass.
+	if err := db.UpdateItemFields(ctx, "item-document", map[string]any{
+		"status":           itemdomain.StatusTransferred,
+		"custody_mode":     itemdomain.CustodyModeInstitution,
+		"custodian_id":     "institution-demo",
+		"transferred_at":   now,
+		"legal_term_start": now,
+	}); err != nil {
+		t.Fatalf("transferring the document: %v", err)
+	}
+	if err := db.UpdateCustodyFields(ctx, "custody-document", map[string]any{
+		"custodian_type": itemdomain.CustodyModeInstitution,
+		"custodian_id":   "institution-demo",
+		"due_at":         nil,
+	}); err != nil {
+		t.Fatalf("updating the document custody: %v", err)
+	}
+
+	transferred, err := svc.Issue(ctx, "claim-document", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue(after transfer) error = %v", err)
+	}
+	if transferred.ReturnChannel != pass.ReturnChannelPA || transferred.CustodianID != "institution-demo" {
+		t.Fatalf("transferred pass = %+v, want a PA pass for the institution", transferred)
+	}
+	if _, err := svc.Validate(ctx, transferred.Token, "institution-demo", now); err != nil {
+		t.Fatalf("Validate(after transfer) error = %v", err)
+	}
+	item, err := svc.Redeem(ctx, transferred.Token, "institution-demo", "institution-demo", now)
+	if err != nil {
+		t.Fatalf("Redeem(after transfer) error = %v", err)
+	}
+	if item.Status != itemdomain.StatusReturned {
+		t.Fatalf("redeemed document status = %q, want returned", item.Status)
+	}
+}
+
+func TestPassCustodyDeadlineIsEnforced(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	svc := pass.New(db, pass.Deps{PassSecret: testSecret, PassTTL: 30 * time.Minute})
+	now := time.Now().UTC()
+	ctx := context.Background()
+
+	p, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now)
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); err != nil {
+		t.Fatalf("Validate(future deadline) error = %v", err)
+	}
+
+	if err := db.UpdateCustodyFields(ctx, "custody-phone", map[string]any{
+		"due_at": now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("backdating the custody deadline: %v", err)
+	}
+	if _, err := svc.Issue(ctx, "claim-phone", "searcher-demo", now); !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("Issue(elapsed deadline) error = %v, want conflict", err)
+	}
+	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); pass.ReasonOf(err) != pass.ReasonCustodyExpired {
+		t.Fatalf("Validate(elapsed deadline) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonCustodyExpired)
+	}
+	if _, err := svc.Redeem(ctx, p.Token, "bar-x", "bar-x", now); pass.ReasonOf(err) != pass.ReasonCustodyExpired {
+		t.Fatalf("Redeem(elapsed deadline) reason = %q, want %q", pass.ReasonOf(err), pass.ReasonCustodyExpired)
+	}
+
+	if err := db.UpdateCustodyFields(ctx, "custody-phone", map[string]any{
+		"due_at": now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("restoring the custody deadline: %v", err)
+	}
+	if _, err := svc.Validate(ctx, p.Token, "bar-x", now); err != nil {
+		t.Fatalf("Validate(restored deadline) error = %v", err)
+	}
+}
+
 func assertCustodyEvent(t *testing.T, db repository.Database, itemID, eventType string) {
 	t.Helper()
 	events, err := db.ListCustodyEvents(context.Background(), itemID)

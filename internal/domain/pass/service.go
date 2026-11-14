@@ -84,7 +84,23 @@ func (s *service) Issue(ctx context.Context, claimID, actorID string, now time.T
 		}
 		summary := itemSummary(itemRow)
 
-		channel, ok := returnChannelFor(itemRow.Status)
+		// Sensitive items never leave the intermediary directly: the PA takes
+		// custody first, then issues the pass for the PA return.
+		if itemRow.Sensitive && itemRow.Status == itemdomain.StatusInCustody {
+			return fmt.Errorf(
+				"issue pass %q: sensitive items are handed over only by the PA after transfer: %w",
+				claimID, errs.ErrConflict,
+			)
+		}
+		expired, err := s.custodyExpired(ctx, tx, itemRow, now)
+		if err != nil {
+			return fmt.Errorf("issue pass %q: %w", claimID, err)
+		}
+		if expired {
+			return fmt.Errorf("issue pass %q: the custody deadline has elapsed: %w", claimID, errs.ErrConflict)
+		}
+
+		channel, ok := returnChannelForStatus(itemRow.Status, itemRow.Sensitive)
 		if !ok {
 			return fmt.Errorf("issue pass %q: item is %q: %w", claimID, itemRow.Status, errs.ErrConflict)
 		}
@@ -329,7 +345,20 @@ func (s *service) validate(
 	if row.CustodianID != custodianID || itemRow.CustodianID != custodianID {
 		return invalidValidation(ReasonWrongCustodian, errs.ErrForbidden)
 	}
-	channel, ok := returnChannelFor(itemRow.Status)
+	expired, err := s.custodyExpired(ctx, s.db.Repository(), itemRow, now)
+	if err != nil {
+		return Validation{}, fmt.Errorf("validate pass: %w", err)
+	}
+	if expired {
+		return invalidValidation(ReasonCustodyExpired, errs.ErrConflict)
+	}
+	if itemRow.Sensitive && itemRow.Status == itemdomain.StatusInCustody {
+		return invalidValidation(ReasonSensitiveRequiresPA, errs.ErrConflict)
+	}
+	if itemRow.Sensitive && row.ReturnChannel != ReturnChannelPA {
+		return invalidValidation(ReasonSensitiveRequiresPA, errs.ErrConflict)
+	}
+	channel, ok := returnChannelForStatus(itemRow.Status, itemRow.Sensitive)
 	if !ok || row.ReturnChannel != channel {
 		return invalidValidation(ReasonItemNotInCustody, errs.ErrConflict)
 	}
@@ -484,7 +513,20 @@ func (s *service) Redeem(
 		if itemRow.CustodianID != custodianID {
 			return reasonError(ReasonWrongCustodian, errs.ErrForbidden)
 		}
-		channel, ok := returnChannelFor(itemRow.Status)
+		expired, err := s.custodyExpired(ctx, tx, itemRow, now)
+		if err != nil {
+			return fmt.Errorf("redeem pass: %w", err)
+		}
+		if expired {
+			return reasonError(ReasonCustodyExpired, errs.ErrConflict)
+		}
+		if itemRow.Sensitive && itemRow.Status == itemdomain.StatusInCustody {
+			return reasonError(ReasonSensitiveRequiresPA, errs.ErrConflict)
+		}
+		if itemRow.Sensitive && row.ReturnChannel != ReturnChannelPA {
+			return reasonError(ReasonSensitiveRequiresPA, errs.ErrConflict)
+		}
+		channel, ok := returnChannelForStatus(itemRow.Status, itemRow.Sensitive)
 		if !ok || row.ReturnChannel != channel {
 			return reasonError(ReasonItemNotInCustody, errs.ErrConflict)
 		}
@@ -654,16 +696,46 @@ func itemSummary(row record.ItemRecord) ItemSummary {
 	}
 }
 
-// returnChannelFor derives the legitimate pickup channel from the item state.
-func returnChannelFor(itemStatus string) (string, bool) {
+// returnChannelForStatus derives the legitimate pickup channel from the item
+// state. A sensitive item in intermediary custody always requires the PA, so its
+// only valid channel is `pa`; passes are still refused until it is transferred.
+func returnChannelForStatus(itemStatus string, sensitive bool) (string, bool) {
 	switch itemStatus {
 	case itemdomain.StatusInCustody:
+		if sensitive {
+			return ReturnChannelPA, true
+		}
 		return ReturnChannelIntermediaryDirect, true
 	case itemStatusTransferred:
 		return ReturnChannelPA, true
 	default:
 		return "", false
 	}
+}
+
+// custodyExpired reports whether the item is still in intermediary custody past
+// its deadline. It is a defence-in-depth check: a stale UI or a missed admin
+// tick must not allow a pickup after the legal window.
+func (s *service) custodyExpired(
+	ctx context.Context,
+	repo repository.Repository,
+	item record.ItemRecord,
+	now time.Time,
+) (bool, error) {
+	if item.Status != itemdomain.StatusInCustody {
+		return false, nil
+	}
+	custodyRow, err := repo.GetCustodyByItemID(ctx, item.ID)
+	if errors.Is(err, errs.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if custodyRow.ClosedAt != nil || custodyRow.DueAt == nil {
+		return false, nil
+	}
+	return !now.Before(*custodyRow.DueAt), nil
 }
 
 func invalidValidation(reason string, sentinel error) (Validation, error) {

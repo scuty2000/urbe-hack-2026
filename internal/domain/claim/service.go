@@ -56,7 +56,7 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		return Claim{}, fmt.Errorf("create claim %q: %w", itemID, err)
 	}
 
-	channel, ok := returnChannelFor(item.Status)
+	channel, ok := returnChannelForStatus(item.Status, item.Sensitive)
 	if !ok {
 		return Claim{}, fmt.Errorf("create claim %q: item is %q: %w", itemID, item.Status, errs.ErrConflict)
 	}
@@ -66,6 +66,12 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 			"create claim %q: return channel %q conflicts with item status %q: %w",
 			itemID, requestedChannel, item.Status, errs.ErrInvalidInput,
 		)
+	}
+
+	// Abuse guard: one open claim per searcher and item, at most five open
+	// claims per item. A rejected claim does not block a retry.
+	if err := s.checkClaimLimits(ctx, itemID, searcherID); err != nil {
+		return Claim{}, fmt.Errorf("create claim %q: %w", itemID, err)
 	}
 
 	evidence := mergeStrings(input.Evidence, input.Session.Evidence)
@@ -181,7 +187,7 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		if err != nil {
 			return fmt.Errorf("create claim %q: %w", itemID, err)
 		}
-		currentChannel, ok := returnChannelFor(current.Status)
+		currentChannel, ok := returnChannelForStatus(current.Status, current.Sensitive)
 		if !ok {
 			return fmt.Errorf("create claim %q: item is %q: %w", itemID, current.Status, errs.ErrConflict)
 		}
@@ -233,6 +239,33 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 	return claimFromRecord(claimRow), nil
 }
 
+// maxOpenClaimsPerItem caps the non-rejected claims on one item. It is a small
+// abuse guard, not a business limit: rejected claims never count.
+const maxOpenClaimsPerItem = 5
+
+// checkClaimLimits rejects a duplicate open claim and an item that already has
+// the maximum number of non-rejected claims.
+func (s *service) checkClaimLimits(ctx context.Context, itemID, searcherID string) error {
+	rows, err := s.db.ListClaimsByItem(ctx, itemID)
+	if err != nil {
+		return err
+	}
+	open := 0
+	for _, row := range rows {
+		if row.Status == StatusRejected {
+			continue
+		}
+		open++
+		if row.SearcherID == searcherID {
+			return fmt.Errorf("claim already exists for this item: %w", errs.ErrConflict)
+		}
+	}
+	if open >= maxOpenClaimsPerItem {
+		return fmt.Errorf("too many claims for this item: %w", errs.ErrConflict)
+	}
+	return nil
+}
+
 // notifyClaimCreated tells the item's custodian/legal finder that a claim
 // matched, and the searcher that the claim was recorded. Recipients without an
 // account are skipped by the platform notifier.
@@ -266,9 +299,10 @@ func (s *service) notifyClaimCreated(ctx context.Context, item itemdomain.Item, 
 	platform.TryNotifyAccount(ctx, s.deps.Notifier, "claim.created", row.SearcherID, platform.NotificationMatch, searcherPayload)
 }
 
-// GetClaim returns the role-safe claim. Only the custodian and the institution
-// receive the verification report; the searcher receives status, confidence
-// band and return channel.
+// GetClaim returns the role-safe claim. The searcher owner receives status,
+// confidence band and return channel; the intermediary custodian/legal finder
+// receives the same summary plus safe evidence and flags; only the institution
+// (and an administrator) receives the full verification report.
 func (s *service) GetClaim(ctx context.Context, claimID string, actor Actor) (Claim, error) {
 	claimID = strings.TrimSpace(claimID)
 	if claimID == "" {
@@ -288,6 +322,7 @@ func (s *service) GetClaim(ctx context.Context, claimID string, actor Actor) (Cl
 	}
 
 	result := claimFromRecord(row)
+	result.Evidence = evidenceFromRecord(row)
 	if actor.Role == ActorRoleSearcher {
 		// Defence in depth: the service never hands the raw confidence to an
 		// owner, even if a future caller forgets the role-safe DTO.
@@ -309,6 +344,15 @@ func (s *service) GetClaim(ctx context.Context, claimID string, actor Actor) (Cl
 	if err != nil {
 		return Claim{}, fmt.Errorf("get claim %q: %w", claimID, err)
 	}
+
+	if actor.Role == ActorRoleIntermediary {
+		// The custodian is not the investigator: keep only the safe review
+		// signals and discard questions, answers, probabilities and rationale.
+		result.Evidence = report.Evidence
+		result.Flags = report.Flags
+		return result, nil
+	}
+
 	result.Report = &report
 	return result, nil
 }
@@ -443,6 +487,19 @@ func authorizeReview(ctx context.Context, tx repository.Repository, item record.
 		return err
 	}
 	return errs.ErrForbidden
+}
+
+// evidenceFromRecord decodes the stored evidence list. Malformed legacy JSON is
+// treated as no evidence rather than failing the whole read.
+func evidenceFromRecord(row record.ClaimRecord) []string {
+	evidence := []string{}
+	if row.Evidence == "" {
+		return evidence
+	}
+	if err := json.Unmarshal([]byte(row.Evidence), &evidence); err != nil {
+		return []string{}
+	}
+	return evidence
 }
 
 // buildReport decodes the stored session and recomputes the deterministic

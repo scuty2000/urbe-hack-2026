@@ -221,14 +221,36 @@ func run() error {
 		cataloger = d3.New(cfg.D3.URL, cfg.D3.Key, cfg.D3.Model, cfg.D3.Timeout)
 	}
 	itemService := itemdomain.New(db, itemdomain.Deps{
-		Storage: storage.NewLocal(cfg.Storage.DataDir, cfg.Storage.MaxUploadMB),
-		D3:      cataloger,
+		Storage:       storage.NewLocal(cfg.Storage.DataDir, cfg.Storage.MaxUploadMB),
+		D3:            cataloger,
+		AllowD3Images: cfg.D3.AllowImages,
 	})
 	custodyService := custodydomain.New(db, custodydomain.Deps{
 		MaxDays:        cfg.Civic.CustodyDays,
 		SensitiveHours: cfg.Sensitive.CustodyHours,
 		Notifier:       platformService,
 	})
+
+	// The custody deadline is enforced by the domain checks, but the pickup
+	// queue still needs to advance without an operator. A one-minute ticker
+	// moves elapsed items to pickup_due; the admin tick remains available as a
+	// manual override.
+	tickerCtx, stopTicker := context.WithCancel(context.Background())
+	defer stopTicker()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-tickerCtx.Done():
+				return
+			case ticked := <-ticker.C:
+				if _, err := custodyService.MarkPickupDue(tickerCtx, ticked); err != nil {
+					logger.Warn("marking pickup due", slog.Any("err", err))
+				}
+			}
+		}
+	}()
 	// Claims use D3 when configured and the deterministic local scorer
 	// otherwise; the verification engine itself falls back on outage.
 	claimService := claimdomain.New(db, claimdomain.Deps{
@@ -399,6 +421,9 @@ func run() error {
 
 	case sig := <-shutdown:
 		logger.Info("signal received, start shutdown", slog.String("signal", sig.String()))
+
+		// Stop the custody ticker before the server drains.
+		stopTicker()
 
 		// Asking API server to shut down and load shed.
 		err := apirouter.Close()

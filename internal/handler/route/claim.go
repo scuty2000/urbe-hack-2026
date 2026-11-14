@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
@@ -15,12 +16,22 @@ import (
 // maxClaimBody bounds the small JSON body of the claim routes.
 const maxClaimBody = 64 << 10
 
+// claimRateLimit is the number of claims a searcher may create per window.
+const claimRateLimit = 10
+
+// claimRateWindow is the claim rate-limit window.
+const claimRateWindow = time.Minute
+
 // PostClaim creates a claim for the authenticated searcher. The handler never
 // accepts a raw confidence: the service builds the verification session and
 // applies the deterministic policy.
 func (h *WebAPIHandler) PostClaim(ctx *reqcontext.RequestContext) {
 	if ctx.User == nil {
 		respondWithJSONError(ctx, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if !h.claimLimiter.allow(ctx.User.ID) {
+		respondWithJSONError(ctx, http.StatusTooManyRequests, "too many claims, try again later")
 		return
 	}
 
@@ -54,8 +65,9 @@ func (h *WebAPIHandler) PostClaim(ctx *reqcontext.RequestContext) {
 	ctx.JSON(http.StatusCreated, dto.ToClaimOwnerResponse(created))
 }
 
-// GetClaim returns a claim to its owner or to the custodian/institution. The
-// searcher receives only the safe DTO; reviewers receive the full report.
+// GetClaim returns a claim in the caller's role-safe shape. The searcher owner
+// gets the owner summary, the custodian/legal finder gets the same summary plus
+// safe evidence and flags, and only the institution/admin gets the full report.
 func (h *WebAPIHandler) GetClaim(ctx *reqcontext.RequestContext) {
 	if ctx.User == nil {
 		respondWithJSONError(ctx, http.StatusUnauthorized, "authentication required")
@@ -72,11 +84,52 @@ func (h *WebAPIHandler) GetClaim(ctx *reqcontext.RequestContext) {
 		return
 	}
 
-	if ctx.User.Role == auth.RoleSearcher {
+	switch ctx.User.Role {
+	case auth.RoleInstitution, auth.RoleAdmin:
+		ctx.JSON(http.StatusOK, dto.ToClaimReportResponse(found))
+	case auth.RoleIntermediary:
+		ctx.JSON(http.StatusOK, dto.ToClaimSummaryResponse(found))
+	default:
 		ctx.JSON(http.StatusOK, dto.ToClaimOwnerResponse(found))
+	}
+}
+
+// PostClaimReview records the custodian, legal finder or institution decision.
+// It returns the safe summary (never the verification report), so the
+// intermediary can refresh its claim card without seeing the questions.
+func (h *WebAPIHandler) PostClaimReview(ctx *reqcontext.RequestContext) {
+	if ctx.User == nil {
+		respondWithJSONError(ctx, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	ctx.JSON(http.StatusOK, dto.ToClaimReportResponse(found))
+
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxClaimBody)
+	var payload dto.ReviewClaimPayload
+	if err := json.NewDecoder(ctx.Request.Body).Decode(&payload); err != nil {
+		ctx.Logger.Error("PostClaimReview invalid body", "err", err)
+		respondWithJSONError(ctx, http.StatusBadRequest, "body must be JSON with a decision")
+		return
+	}
+
+	reviewed, err := h.Claims.ReviewClaim(
+		ctx.Request.Context(), ctx.Param("id"), payload.Decision, ctx.User.ID,
+	)
+	if err != nil {
+		respondWithClaimError(ctx, "PostClaimReview", err)
+		return
+	}
+
+	// Reload so the response carries the refreshed status and the safe
+	// evidence/flags; a reload failure must not turn a recorded decision into an
+	// error.
+	refreshed, err := h.Claims.GetClaim(ctx.Request.Context(), ctx.Param("id"),
+		claimdomain.Actor{ID: ctx.User.ID, Role: ctx.User.Role})
+	if err != nil {
+		ctx.Logger.Error("PostClaimReview reload", "err", err)
+		ctx.JSON(http.StatusOK, dto.ToClaimSummaryResponse(reviewed))
+		return
+	}
+	ctx.JSON(http.StatusOK, dto.ToClaimSummaryResponse(refreshed))
 }
 
 // respondWithClaimError maps domain sentinels to the shared HTTP error shape.

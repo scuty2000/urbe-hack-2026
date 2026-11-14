@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
@@ -226,7 +227,8 @@ func (s *service) redactMessage(ctx context.Context, message string, turn *turnS
 }
 
 // privateTokens extracts the values that must never be visible to a searcher.
-// Short tokens are skipped so redaction cannot mangle ordinary words.
+// Values shorter than two characters and common stopwords are skipped so
+// redaction cannot mangle ordinary prose.
 func privateTokens(profile map[string]any) []string {
 	tokens := make([]string, 0, len(profile))
 	for _, value := range profile {
@@ -253,9 +255,32 @@ func collectTokens(value any, tokens *[]string) {
 	}
 }
 
+// redactionStopwords are too common to redact without mangling normal prose.
+// They are compared case-insensitively after trimming.
+var redactionStopwords = map[string]bool{
+	"si": true, "sì": true, "no": true, "ok": true,
+	"il": true, "lo": true, "la": true, "un": true, "una": true,
+	"di": true, "da": true, "in": true, "con": true, "su": true,
+	"per": true, "e": true, "o": true, "a": true,
+}
+
 func appendToken(tokens *[]string, value string) {
 	value = strings.TrimSpace(value)
-	if len(value) < 4 {
+	runes := []rune(value)
+	if len(runes) < 2 {
+		return
+	}
+	if redactionStopwords[strings.ToLower(value)] {
+		return
+	}
+	hasWord := false
+	for _, r := range runes {
+		if isWordRune(r) {
+			hasWord = true
+			break
+		}
+	}
+	if !hasWord {
 		return
 	}
 	*tokens = append(*tokens, value)
@@ -270,23 +295,54 @@ func isSeparator(r rune) bool {
 	}
 }
 
-// replaceAllFold replaces every case-insensitive occurrence of token.
+// isWordRune reports whether r is a letter or digit for word-boundary purposes.
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// replaceAllFold replaces every case-insensitive whole-word occurrence of
+// token. A two-character private value such as "blu" is redacted, while the
+// longer word "bluetooth" is left intact.
 func replaceAllFold(text, token, replacement string) string {
 	if token == "" {
 		return text
 	}
-	lowerText := strings.ToLower(text)
-	lowerToken := strings.ToLower(token)
-	var builder strings.Builder
-	for {
-		index := strings.Index(lowerText, lowerToken)
-		if index < 0 {
-			builder.WriteString(text)
-			return builder.String()
-		}
-		builder.WriteString(text[:index])
-		builder.WriteString(replacement)
-		text = text[index+len(lowerToken):]
-		lowerText = lowerText[index+len(lowerToken):]
+	lowerText := []rune(strings.ToLower(text))
+	lowerToken := []rune(strings.ToLower(token))
+	if len(lowerToken) == 0 {
+		return text
 	}
+	original := []rune(text)
+
+	var builder strings.Builder
+	last := 0
+	for i := 0; i+len(lowerToken) <= len(lowerText); {
+		match := true
+		for j := range lowerToken {
+			if lowerText[i+j] != lowerToken[j] {
+				match = false
+				break
+			}
+		}
+		if !match {
+			i++
+			continue
+		}
+		beforeOK := i == 0 || !isWordRune(lowerText[i-1])
+		afterIndex := i + len(lowerToken)
+		afterOK := afterIndex == len(lowerText) || !isWordRune(lowerText[afterIndex])
+		if !beforeOK || !afterOK {
+			i++
+			continue
+		}
+		builder.WriteString(string(original[last:i]))
+		builder.WriteString(replacement)
+		last = afterIndex
+		i = afterIndex
+	}
+	if last == 0 {
+		return text
+	}
+	builder.WriteString(string(original[last:]))
+	return builder.String()
 }

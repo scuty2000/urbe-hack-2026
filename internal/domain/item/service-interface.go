@@ -12,6 +12,9 @@ import (
 type Deps struct {
 	Storage Storage
 	D3      Cataloger
+	// AllowD3Images sends item photos to D3. It is false by default and always
+	// false for document categories, regardless of this flag.
+	AllowD3Images bool
 	// Now is injectable for deterministic tests; production uses time.Now.
 	Now func() time.Time
 }
