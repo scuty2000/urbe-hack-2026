@@ -25,7 +25,9 @@ type Deps struct {
 	Custody custodydomain.Service
 	// Claim applies the deterministic verification policy and records reviews.
 	Claim claimdomain.Service
-	// Pass revokes open pickup passes when an item moves to the PA.
+	// Pass is the pickup-pass service. Transfer revokes open passes through
+	// the transaction-scoped repository; the dependency is kept on the PA
+	// surface for the pass operations of later tasks.
 	Pass passdomain.Service
 	// Search refreshes the vector index after a transfer.
 	Search search.Service

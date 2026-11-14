@@ -211,9 +211,10 @@ func TestTransferClosesIntermediaryCustodyAndRevokesPasses(t *testing.T) {
 	if storedPass.Status != "revoked" {
 		t.Fatalf("pass status = %q, want revoked", storedPass.Status)
 	}
-	if passes.callCount() != 1 {
-		t.Fatalf("pass revoker calls = %d, want 1", passes.callCount())
+	if passes.callCount() != 0 {
+		t.Fatalf("post-commit pass revoker calls = %d, want 0 (revocation is transactional)", passes.callCount())
 	}
+	assertAuditAction(t, db, "item-umbrella", "pass.revoked")
 
 	indexed := indexer.indexedItems()
 	if len(indexed) != 1 {
@@ -299,7 +300,11 @@ func TestCreateOfficialItemStartsInstitutionCustody(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	seed.Demo(t, db)
 	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
-	svc := institutiondomain.New(db, institutiondomain.Deps{Now: func() time.Time { return now }})
+	indexer := &recordingSearch{Service: search.New(db, search.Deps{})}
+	svc := institutiondomain.New(db, institutiondomain.Deps{
+		Now:    func() time.Time { return now },
+		Search: indexer,
+	})
 
 	created, err := svc.CreateOfficialItem(context.Background(), institutiondomain.CreateOfficialItemInput{
 		InstitutionID: "institution-demo",
@@ -324,6 +329,9 @@ func TestCreateOfficialItemStartsInstitutionCustody(t *testing.T) {
 	if created.CustodianID != "institution-demo" || created.LegalFinderID != "institution-demo" {
 		t.Fatalf("created item = %+v, want institution as custodian and legal finder", created)
 	}
+	if created.LegalTermStart == nil || !created.LegalTermStart.Equal(now) {
+		t.Fatalf("LegalTermStart = %v, want %v", created.LegalTermStart, now)
+	}
 
 	custodyRow, err := db.GetCustodyByItemID(context.Background(), created.ID)
 	if err != nil {
@@ -347,6 +355,81 @@ func TestCreateOfficialItemStartsInstitutionCustody(t *testing.T) {
 		t.Fatalf("events = %v, want %q", eventTypes(events), institutiondomain.EventAccepted)
 	}
 	assertAuditAction(t, db, created.ID, institutiondomain.AuditActionOfficialIntake)
+
+	indexed := indexer.indexedItems()
+	if len(indexed) != 1 || indexed[0].ID != created.ID || indexed[0].Status != itemdomain.StatusInCustody {
+		t.Fatalf("indexed official items = %+v, want the new in_custody item", indexed)
+	}
+}
+
+func TestCreateOfficialItemRollsBackOnTransactionFailure(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	ctx := context.Background()
+
+	before, err := db.ListItemsByCustodian(ctx, "institution-demo")
+	if err != nil {
+		t.Fatalf("ListItemsByCustodian(before) error = %v", err)
+	}
+
+	svc := institutiondomain.New(db)
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := svc.CreateOfficialItem(canceled, institutiondomain.CreateOfficialItemInput{
+		InstitutionID: "institution-demo",
+		ActorID:       "institution-demo",
+		Category:      "umbrella",
+	}); err == nil {
+		t.Fatal("CreateOfficialItem() with a canceled context returned nil error")
+	}
+
+	after, err := db.ListItemsByCustodian(ctx, "institution-demo")
+	if err != nil {
+		t.Fatalf("ListItemsByCustodian(after) error = %v", err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("items after failed intake = %d, want %d (the transaction must roll back)", len(after), len(before))
+	}
+}
+
+func TestOfficialItemCanEnterUnclaimedFlow(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	svc := institutiondomain.New(db, institutiondomain.Deps{
+		Now: func() time.Time { return now },
+	})
+
+	created, err := svc.CreateOfficialItem(ctx, institutiondomain.CreateOfficialItemInput{
+		InstitutionID: "institution-demo",
+		ActorID:       "institution-demo",
+		Category:      "umbrella",
+	})
+	if err != nil {
+		t.Fatalf("CreateOfficialItem() error = %v", err)
+	}
+	if created.LegalTermStart == nil || !created.LegalTermStart.Equal(now) {
+		t.Fatalf("legal term start = %v, want %v", created.LegalTermStart, now)
+	}
+
+	if _, err := svc.OfferUnclaimed(ctx, created.ID, now.AddDate(0, 11, 0)); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("early OfferUnclaimed() error = %v, want invalid input", err)
+	}
+	offered, err := svc.OfferUnclaimed(ctx, created.ID, now.AddDate(1, 0, 0))
+	if err != nil {
+		t.Fatalf("OfferUnclaimed(official item) error = %v", err)
+	}
+	if offered.Status != itemdomain.StatusOfferedToFinder || offered.OfferedToFinderAt == nil {
+		t.Fatalf("offered official item = %+v, want offered_to_finder", offered)
+	}
+	disposed, err := svc.Dispose(ctx, created.ID, "institution-demo")
+	if err != nil {
+		t.Fatalf("Dispose(official item) error = %v", err)
+	}
+	if disposed.Status != itemdomain.StatusDisposed || disposed.DisposedAt == nil {
+		t.Fatalf("disposed official item = %+v, want disposed", disposed)
+	}
 }
 
 func TestReviewClaimAsInstitution(t *testing.T) {

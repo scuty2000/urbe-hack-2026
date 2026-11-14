@@ -1048,9 +1048,11 @@ paths:
       description: |
         Enrolls an item handed directly to the public administration. The
         institution is the source, the legal finder and the custodian; the item
-        starts in `in_custody` with an accepted institution custody row and no
-        7-day deadline. It uses the same multipart shape and catalog/risk path
-        as `POST /api/items`. Restricted to `institution` and `admin`.
+        starts in `in_custody` with an accepted institution custody row, no
+        7-day deadline and `legal_term_start` already set, so it can later follow
+        the unclaimed offer flow. It uses the same multipart shape and
+        catalog/risk path as `POST /api/items`, and is written atomically.
+        Restricted to `institution` and `admin`.
       security:
         - cookieAuth: []
       requestBody:
@@ -1103,8 +1105,8 @@ paths:
         intermediary. The intermediary custody row is closed, a new institution
         custody row is opened without a deadline, and the item becomes
         `transferred` with `transferred_at` and `legal_term_start` set to now.
-        Open pickup passes are revoked; the search index is refreshed best
-        effort. Restricted to `institution` and `admin`.
+        Open pickup passes are revoked in the same transaction. The search index
+        is refreshed best effort. Restricted to `institution` and `admin`.
       security:
         - cookieAuth: []
       responses:
@@ -1140,9 +1142,11 @@ paths:
       operationId: offerUnclaimedItem
       summary: Offer an unclaimed item to the legal finder
       description: |
-        Moves a `transferred` item to `offered_to_finder` only after one year
-        has elapsed since `legal_term_start`; an earlier request is `400`.
-        Records the `offered_to_finder` event and audit entry.
+        Moves a `transferred`/`unclaimed` item, or an officially intaken
+        institution `in_custody` item with a legal term, to
+        `offered_to_finder` only after one year has elapsed since
+        `legal_term_start`; an earlier request is `400`. Records the
+        `offered_to_finder` event and audit entry.
       security:
         - cookieAuth: []
       responses:

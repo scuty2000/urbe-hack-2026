@@ -2,6 +2,7 @@ package institution
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,14 @@ const (
 	institutionCustodyDays = 365
 	// hoursPerDay converts the overdue duration to whole days.
 	hoursPerDay = 24
+	// publicCodeAttempts bounds retries on a public-code collision.
+	publicCodeAttempts = 3
+	// indexTimeout bounds the best-effort index refresh after an official
+	// intake. It is detached from request cancellation so a client disconnect
+	// does not interrupt a useful index write.
+	indexTimeout = 2 * time.Second
+	// auditActionPassesRevoked mirrors the pass domain's audit action.
+	auditActionPassesRevoked = "pass.revoked"
 )
 
 // service implements Service.
@@ -124,10 +133,10 @@ func (s *service) pickupDueAt(ctx context.Context, itemID string) (*time.Time, e
 // Transfer moves an item from the intermediary to the institution.
 //
 // The transaction closes the intermediary custody, inserts the institution
-// custody and advances the item to transferred. The storage-level partial
-// unique index guarantees that the old row is closed before the new one opens.
-// Open pickup passes are revoked afterwards by the pass domain; a failure of
-// that step is returned so the caller never acts as if the passes were revoked.
+// custody, advances the item to transferred and revokes every open pass. The
+// storage-level partial unique index guarantees that the old row is closed
+// before the new one opens, and the pass revocation cannot be lost after the
+// item has already moved.
 func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time.Time) (itemdomain.Item, error) {
 	itemID = strings.TrimSpace(itemID)
 	actorID = strings.TrimSpace(actorID)
@@ -145,6 +154,10 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 		return itemdomain.Item{}, fmt.Errorf("transfer item %q: %w", itemID, err)
 	}
 	auditID, err := newID()
+	if err != nil {
+		return itemdomain.Item{}, fmt.Errorf("transfer item %q: %w", itemID, err)
+	}
+	passAuditID, err := newID()
 	if err != nil {
 		return itemdomain.Item{}, fmt.Errorf("transfer item %q: %w", itemID, err)
 	}
@@ -241,6 +254,31 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 			return fmt.Errorf("transfer item %q: %w", itemID, err)
 		}
 
+		revoked, err := tx.RevokePassesByItem(ctx, itemID, "")
+		if err != nil {
+			return fmt.Errorf("transfer item %q: revoking passes: %w", itemID, err)
+		}
+		if revoked > 0 {
+			passMetadata, err := auditMetadata(map[string]any{
+				"itemId":  itemID,
+				"revoked": revoked,
+			})
+			if err != nil {
+				return fmt.Errorf("transfer item %q: %w", itemID, err)
+			}
+			if err := tx.CreateAuditLog(ctx, record.AuditLogRecord{
+				ID:        passAuditID,
+				ActorID:   actorID,
+				Action:    auditActionPassesRevoked,
+				Entity:    "item",
+				EntityID:  itemID,
+				Metadata:  passMetadata,
+				Timestamp: now,
+			}); err != nil {
+				return fmt.Errorf("transfer item %q: %w", itemID, err)
+			}
+		}
+
 		row.Status = itemdomain.StatusTransferred
 		row.CustodyMode = itemdomain.CustodyModeInstitution
 		row.CustodianID = actorID
@@ -257,11 +295,6 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 		return itemdomain.Item{}, err
 	}
 
-	if s.deps.Pass != nil {
-		if _, err := s.deps.Pass.RevokePassesByItem(ctx, itemID); err != nil {
-			return itemdomain.Item{}, fmt.Errorf("transfer item %q: revoking passes: %w", itemID, err)
-		}
-	}
 	// Indexing is best-effort: the transfer is already committed and a Qdrant
 	// outage must not turn a successful handover into an HTTP error.
 	if s.deps.Search != nil {
@@ -272,139 +305,198 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 
 // CreateOfficialItem enrolls an item that was handed directly to the PA. It
 // reuses the item domain's catalog/risk path (and therefore D3 when configured)
-// and then moves the item into an accepted institution custody without a
-// 7-day deadline.
+// and writes the item, its accepted institution custody, the event and the
+// audit entry in one transaction. The item starts in in_custody with no 7-day
+// deadline and with the legal term already running, so it can later follow the
+// unclaimed offer/collect/dispose flow.
 func (s *service) CreateOfficialItem(ctx context.Context, input CreateOfficialItemInput) (itemdomain.Item, error) {
-	input.InstitutionID = strings.TrimSpace(input.InstitutionID)
-	input.ActorID = strings.TrimSpace(input.ActorID)
+	input = normalizeOfficialInput(input)
 	if input.InstitutionID == "" {
 		return itemdomain.Item{}, fmt.Errorf("create official item: institution id is required: %w", errs.ErrInvalidInput)
 	}
 	if input.ActorID == "" {
 		input.ActorID = input.InstitutionID
 	}
-	now := input.FoundAt
-	if now.IsZero() {
-		now = s.now()
-	}
-	now = now.UTC()
 
-	created, err := s.deps.Items.CreateItem(ctx, itemdomain.CreateItemInput{
-		Source:         itemdomain.SourceOperator,
-		FinderID:       input.ActorID,
-		LegalFinderID:  input.InstitutionID,
-		RightsAssigned: true,
-		Category:       input.Category,
-		Brand:          input.Brand,
-		Model:          input.Model,
-		Color:          input.Color,
-		Condition:      input.Condition,
-		PrivateProfile: input.PrivateProfile,
-		Photos:         input.Photos,
-		FoundAt:        now,
-		FoundLat:       input.FoundLat,
-		FoundLng:       input.FoundLng,
-		FoundZone:      input.FoundZone,
-		FoundNotes:     input.FoundNotes,
+	acceptedAt := s.now()
+	foundAt := input.FoundAt
+	if foundAt.IsZero() {
+		foundAt = acceptedAt
+	}
+	foundAt = foundAt.UTC()
+
+	// Reuse the item service catalog so D3, the deterministic risk policy and
+	// the document detection behave exactly like the finder/intermediary path.
+	catalogResult, err := s.deps.Items.Catalog(ctx, catalogImages(input.Photos), itemdomain.CatalogForm{
+		Category:  input.Category,
+		Color:     input.Color,
+		Condition: input.Condition,
 	})
+	if err != nil {
+		return itemdomain.Item{}, fmt.Errorf("create official item catalog: %w", err)
+	}
+	if input.Category == "" {
+		input.Category = catalogResult.Category
+	}
+	if input.Color == "" {
+		input.Color = catalogResult.Color
+	}
+	if input.Condition == "" {
+		input.Condition = catalogResult.Condition
+	}
+	if input.PrivateProfile == nil {
+		input.PrivateProfile = map[string]any{}
+	}
+	if catalogResult.DocumentType != "" {
+		input.PrivateProfile["document_type"] = catalogResult.DocumentType
+	}
+	if catalogResult.Source != "" {
+		input.PrivateProfile["catalog_source"] = catalogResult.Source
+	}
+	if input.Category == "" {
+		input.Category = "other"
+	}
+
+	riskTier, sensitive := itemdomain.RiskForCategory(input.Category)
+	if catalogResult.IsDocument || catalogResult.DocumentType != "" {
+		riskTier = itemdomain.RiskSensitive
+		sensitive = true
+	}
+
+	privateProfile, err := marshalOfficialProfile(input.PrivateProfile)
+	if err != nil {
+		return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
+	}
+	photos, err := marshalOfficialPhotos(input.Photos)
 	if err != nil {
 		return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
 	}
 
-	acceptedAt := s.now()
-	eventID, err := newID()
-	if err != nil {
-		return itemdomain.Item{}, fmt.Errorf("create official item %q: %w", created.ID, err)
-	}
-	auditID, err := newID()
-	if err != nil {
-		return itemdomain.Item{}, fmt.Errorf("create official item %q: %w", created.ID, err)
-	}
-
 	var accepted itemdomain.Item
-	err = s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
-		row, err := tx.GetItemByID(ctx, created.ID)
+	var lastErr error
+	for attempt := 0; attempt < publicCodeAttempts; attempt++ {
+		publicCode, err := newPublicCode()
 		if err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
+			return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
 		}
-		if row.Status != itemdomain.StatusPendingCustody {
-			return fmt.Errorf("create official item %q: item is %q: %w", created.ID, row.Status, errs.ErrConflict)
-		}
-		custodyRow, err := tx.GetCustodyByItemID(ctx, created.ID)
+		itemID, err := newID()
 		if err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
+			return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
 		}
-		if custodyRow.ClosedAt != nil {
-			return fmt.Errorf("create official item %q: no open custody: %w", created.ID, errs.ErrConflict)
+		custodyID, err := newID()
+		if err != nil {
+			return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
+		}
+		eventID, err := newID()
+		if err != nil {
+			return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
+		}
+		auditID, err := newID()
+		if err != nil {
+			return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
 		}
 
-		transitioned, err := tx.TransitionItemStatus(ctx, created.ID, itemdomain.StatusPendingCustody, itemdomain.StatusInCustody)
-		if err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
+		row := record.ItemRecord{
+			ID:               itemID,
+			PublicCode:       publicCode,
+			Source:           itemdomain.SourceOperator,
+			CustodyMode:      itemdomain.CustodyModeInstitution,
+			Status:           itemdomain.StatusInCustody,
+			LegalFinderID:    input.InstitutionID,
+			RightsAssignedAt: &acceptedAt,
+			Category:         input.Category,
+			Brand:            input.Brand,
+			Model:            input.Model,
+			Color:            input.Color,
+			Condition:        input.Condition,
+			PrivateProfile:   privateProfile,
+			Photos:           photos,
+			FoundAt:          foundAt,
+			FoundLat:         input.FoundLat,
+			FoundLng:         input.FoundLng,
+			FoundZone:        input.FoundZone,
+			FoundNotes:       input.FoundNotes,
+			CustodianID:      input.InstitutionID,
+			RiskTier:         riskTier,
+			Sensitive:        sensitive,
+			LegalTermStart:   &acceptedAt,
+			CreatedAt:        acceptedAt,
+			UpdatedAt:        acceptedAt,
 		}
-		if !transitioned {
-			return fmt.Errorf("create official item %q: status changed concurrently: %w", created.ID, errs.ErrConflict)
+		custodyRow := record.CustodyRecord{
+			ID:                custodyID,
+			ItemID:            itemID,
+			CustodianType:     itemdomain.CustodyModeInstitution,
+			CustodianID:       input.InstitutionID,
+			LegalFinderID:     input.InstitutionID,
+			RightsAssignedAt:  &acceptedAt,
+			ApprovalAuthority: itemdomain.CustodyModeInstitution,
+			MaxCustodyDays:    institutionCustodyDays,
+			AcceptedAt:        &acceptedAt,
 		}
-
-		if err := tx.UpdateCustodyFields(ctx, custodyRow.ID, map[string]any{
-			"custodian_type":     itemdomain.CustodyModeInstitution,
-			"custodian_id":       input.InstitutionID,
-			"approval_authority": itemdomain.CustodyModeInstitution,
-			"max_custody_days":   institutionCustodyDays,
-			"accepted_at":        acceptedAt,
-			"due_at":             nil,
-		}); err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
-		}
-		if err := tx.UpdateItemFields(ctx, created.ID, map[string]any{
-			"custody_mode": itemdomain.CustodyModeInstitution,
-			"custodian_id": input.InstitutionID,
-		}); err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
-		}
-
-		if err := tx.CreateCustodyEvent(ctx, record.CustodyEventRecord{
+		event := record.CustodyEventRecord{
 			ID:        eventID,
-			ItemID:    created.ID,
+			ItemID:    itemID,
 			Type:      EventAccepted,
 			ActorID:   input.ActorID,
 			Timestamp: acceptedAt,
 			Notes:     "official intake; institution custody accepted",
-		}); err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
 		}
 		metadata, err := auditMetadata(map[string]any{
-			"source":      itemdomain.SourceOperator,
-			"custodyMode": itemdomain.CustodyModeInstitution,
-			"institution": input.InstitutionID,
+			"source":           itemdomain.SourceOperator,
+			"custodyMode":      itemdomain.CustodyModeInstitution,
+			"institution":      input.InstitutionID,
+			"legalTermStartAt": acceptedAt.Format(time.RFC3339),
 		})
 		if err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
+			return itemdomain.Item{}, fmt.Errorf("create official item: %w", err)
 		}
-		if err := tx.CreateAuditLog(ctx, record.AuditLogRecord{
+		audit := record.AuditLogRecord{
 			ID:        auditID,
 			ActorID:   input.ActorID,
 			Action:    AuditActionOfficialIntake,
 			Entity:    "item",
-			EntityID:  created.ID,
+			EntityID:  itemID,
 			Metadata:  metadata,
 			Timestamp: acceptedAt,
-		}); err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
 		}
 
-		row.Status = itemdomain.StatusInCustody
-		row.CustodyMode = itemdomain.CustodyModeInstitution
-		row.CustodianID = input.InstitutionID
-		row.UpdatedAt = acceptedAt
+		err = s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
+			if err := tx.CreateItem(ctx, row); err != nil {
+				return fmt.Errorf("create official item %q: %w", itemID, err)
+			}
+			if err := tx.CreateCustody(ctx, custodyRow); err != nil {
+				return fmt.Errorf("create official item %q: %w", itemID, err)
+			}
+			if err := tx.CreateCustodyEvent(ctx, event); err != nil {
+				return fmt.Errorf("create official item %q: %w", itemID, err)
+			}
+			return tx.CreateAuditLog(ctx, audit)
+		})
+		if err != nil {
+			lastErr = err
+			if !errors.Is(err, errs.ErrConflict) {
+				return itemdomain.Item{}, err
+			}
+			continue
+		}
+
 		accepted, err = itemdomain.FromRecord(row)
 		if err != nil {
-			return fmt.Errorf("create official item %q: %w", created.ID, err)
+			return itemdomain.Item{}, fmt.Errorf("create official item %q: %w", itemID, err)
 		}
-		return nil
-	})
-	if err != nil {
-		return itemdomain.Item{}, err
+		break
+	}
+	if accepted.ID == "" {
+		return itemdomain.Item{}, fmt.Errorf("create official item after %d attempts: %w", publicCodeAttempts, lastErr)
+	}
+
+	// The item is committed; indexing is best effort and bounded so a vector
+	// outage can never fail the intake.
+	if s.deps.Search != nil {
+		indexCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexTimeout)
+		defer cancel()
+		_ = s.deps.Search.IndexItem(indexCtx, accepted)
 	}
 	return accepted, nil
 }
@@ -444,7 +536,15 @@ func (s *service) OfferUnclaimed(ctx context.Context, itemID string, now time.Ti
 		if err != nil {
 			return fmt.Errorf("offer unclaimed %q: %w", itemID, err)
 		}
-		if row.Status != itemdomain.StatusTransferred && row.Status != itemdomain.StatusUnclaimed {
+		switch row.Status {
+		case itemdomain.StatusTransferred, itemdomain.StatusUnclaimed:
+		case itemdomain.StatusInCustody:
+			// An officially intaken item starts in institution custody with the
+			// legal term already running; it follows the same one-year rule.
+			if row.CustodyMode != itemdomain.CustodyModeInstitution {
+				return fmt.Errorf("offer unclaimed %q: item is %q: %w", itemID, row.Status, errs.ErrConflict)
+			}
+		default:
 			return fmt.Errorf("offer unclaimed %q: item is %q: %w", itemID, row.Status, errs.ErrConflict)
 		}
 		if row.LegalTermStart == nil {
@@ -702,6 +802,77 @@ func daysOverdue(dueAt *time.Time, now time.Time) int {
 		return 0
 	}
 	return int(now.Sub(*dueAt).Hours() / hoursPerDay)
+}
+
+// normalizeOfficialInput trims user-supplied strings and drops empty photo
+// entries before the catalog and the transaction.
+func normalizeOfficialInput(input CreateOfficialItemInput) CreateOfficialItemInput {
+	input.InstitutionID = strings.TrimSpace(input.InstitutionID)
+	input.ActorID = strings.TrimSpace(input.ActorID)
+	input.Category = strings.TrimSpace(input.Category)
+	input.Brand = strings.TrimSpace(input.Brand)
+	input.Model = strings.TrimSpace(input.Model)
+	input.Color = strings.TrimSpace(input.Color)
+	input.Condition = strings.TrimSpace(input.Condition)
+	input.FoundZone = strings.TrimSpace(input.FoundZone)
+	input.FoundNotes = strings.TrimSpace(input.FoundNotes)
+
+	photos := make([]string, 0, len(input.Photos))
+	for _, photo := range input.Photos {
+		if trimmed := strings.TrimSpace(photo); trimmed != "" {
+			photos = append(photos, trimmed)
+		}
+	}
+	input.Photos = photos
+	if input.PrivateProfile == nil {
+		input.PrivateProfile = map[string]any{}
+	}
+	return input
+}
+
+// catalogImages turns stored relative paths into catalog inputs.
+func catalogImages(paths []string) []itemdomain.ImageInput {
+	images := make([]itemdomain.ImageInput, 0, len(paths))
+	for _, path := range paths {
+		images = append(images, itemdomain.ImageInput{Path: path})
+	}
+	return images
+}
+
+// marshalOfficialProfile serialises the private profile, defaulting to an empty
+// JSON object so the NOT NULL column is always valid JSON.
+func marshalOfficialProfile(profile map[string]any) (string, error) {
+	if len(profile) == 0 {
+		return "{}", nil
+	}
+	encoded, err := json.Marshal(profile)
+	if err != nil {
+		return "", fmt.Errorf("encoding private profile: %w", err)
+	}
+	return string(encoded), nil
+}
+
+// marshalOfficialPhotos serialises the upload paths, defaulting to an empty JSON
+// array.
+func marshalOfficialPhotos(photos []string) (string, error) {
+	if len(photos) == 0 {
+		return "[]", nil
+	}
+	encoded, err := json.Marshal(photos)
+	if err != nil {
+		return "", fmt.Errorf("encoding photos: %w", err)
+	}
+	return string(encoded), nil
+}
+
+// newPublicCode returns "LF-" plus 8 uppercase hex characters, matching the item
+// domain's receipt handle.
+func newPublicCode() (string, error) {
+	buf := make([]byte, 4)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("LF-%X", buf), nil
 }
 
 func auditMetadata(fields map[string]any) (string, error) {
