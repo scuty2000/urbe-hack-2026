@@ -1,6 +1,26 @@
 package wizard
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
+
+// optionalField cleans a free-text prefill field. Placeholder answers such as
+// "non visibile" are dropped so the finder sees an empty field instead of a
+// non-answer.
+func optionalField(raw string, maxRunes int) string {
+	value := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	switch strings.ToLower(value) {
+	case "", "-", "n/d", "n/a", "nd", "unknown", "sconosciuto", "sconosciuta",
+		"non visibile", "non riconoscibile", "non leggibile", "nessuna", "nessuno":
+		return ""
+	}
+	if maxRunes > 0 && utf8.RuneCountInString(value) > maxRunes {
+		runes := []rune(value)
+		value = string(runes[:maxRunes])
+	}
+	return value
+}
 
 // NormalizeCategory maps D3's English categories (and the Italian form values)
 // onto the shared UI catalog. Unknown values become "altro" rather than
@@ -71,13 +91,13 @@ func NormalizeColor(raw string) string {
 // NormalizeCondition maps the D3/Italian condition vocabulary onto the UI.
 func NormalizeCondition(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "new", "like_new", "come nuovo":
+	case "new", "like_new", "come nuovo", "come nuova", "ottimo", "ottime condizioni", "pari al nuovo":
 		return "like_new"
-	case "good", "buono":
+	case "good", "buono", "buona", "buone condizioni", "in buono stato":
 		return "good"
-	case "worn", "used", "fair", "discreto":
+	case "worn", "used", "fair", "discreto", "discreta", "condizioni discrete", "usurato":
 		return "fair"
-	case "damaged", "poor", "da riparare":
+	case "damaged", "poor", "da riparare", "danneggiato", "danneggiata", "rotto":
 		return "poor"
 	default:
 		return ""

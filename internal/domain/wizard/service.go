@@ -33,10 +33,10 @@ func (s *service) Analyze(ctx context.Context, input AnalyzeInput) (Analysis, er
 	if err != nil || result.Source != item.CatalogSourceD3 {
 		return manualAnalysis(), nil
 	}
-	return s.analyzeResult(ctx, result), nil
+	return s.analyzeResult(ctx, result, input.Photos), nil
 }
 
-func (s *service) analyzeResult(ctx context.Context, result item.CatalogResult) Analysis {
+func (s *service) analyzeResult(ctx context.Context, result item.CatalogResult, photos []item.ImageInput) Analysis {
 	category := NormalizeCategory(result.Category)
 	if category == "" {
 		category = "altro"
@@ -49,7 +49,6 @@ func (s *service) analyzeResult(ctx context.Context, result item.CatalogResult) 
 		return documentAnalysis()
 	}
 
-	privatePrefill := fallbackPrivate(result)
 	plan := Plan{}
 	source := "d3+fallback"
 	warnings := make([]string, 0, 2)
@@ -63,47 +62,59 @@ func (s *service) analyzeResult(ctx context.Context, result item.CatalogResult) 
 			HasSticker: result.HasSticker,
 			HasCase:    result.HasCase,
 			IsDocument: result.IsDocument,
-			PhotoCount: 1,
+			PhotoCount: len(photos),
+			Photos:     photos,
 		}
 		planned, err := s.deps.Planner.Plan(ctx, plannerInput)
 		if err == nil {
 			plan = sanitizePlan(planned)
 			source = "d3+deepseek"
 		} else {
-			warnings = append(warnings, "Suggerimenti automatici parziali: il piano foto usa le regole locali.")
+			warnings = append(warnings, "Alcuni suggerimenti automatici non sono disponibili: puoi completare i campi manualmente.")
 		}
 	} else {
-		warnings = append(warnings, "Suggerimenti automatici parziali: il piano foto usa le regole locali.")
-	}
-
-	if len(plan.PhotoPlan) == 0 {
-		plan.PhotoPlan = fallbackPlan(category)
-	}
-	if strings.TrimSpace(plan.PrivatePrefill) == "" {
-		plan.PrivatePrefill = privatePrefill
+		warnings = append(warnings, "Alcuni suggerimenti automatici non sono disponibili: puoi completare i campi manualmente.")
 	}
 
 	prefill := Prefill{
 		Category:  category,
-		Color:     NormalizeColor(result.Color),
-		Condition: NormalizeCondition(result.Condition),
+		Brand:     optionalField(plan.Prefill.Brand, 80),
+		Model:     optionalField(plan.Prefill.Model, 80),
+		Color:     NormalizeColor(plan.Prefill.Color),
+		Condition: NormalizeCondition(plan.Prefill.Condition),
+	}
+	if prefill.Category == "altro" {
+		if refined := NormalizeCategory(plan.Prefill.Category); refined != "altro" {
+			prefill.Category = refined
+		}
+	}
+	if prefill.Category == "documenti" {
+		return documentAnalysis()
+	}
+	if len(plan.PhotoPlan) == 0 {
+		plan.PhotoPlan = fallbackPlan(prefill.Category)
 	}
 	if prefill.Color == "" {
-		prefill.Color = NormalizeColor(plan.Prefill.Color)
+		prefill.Color = NormalizeColor(result.Color)
 	}
 	if prefill.Condition == "" {
-		prefill.Condition = NormalizeCondition(plan.Prefill.Condition)
+		prefill.Condition = NormalizeCondition(result.Condition)
 	}
 	if prefill.Condition == "" {
 		prefill.Condition = "good"
 	}
 
-	_, sensitive := item.RiskForCategory(category)
+	privatePrefill := optionalField(plan.PrivatePrefill, 480)
+	if privatePrefill == "" {
+		privatePrefill = fallbackPrivate(result)
+	}
+
+	_, sensitive := item.RiskForCategory(prefill.Category)
 	return Analysis{
-		ObjectType:        category,
+		ObjectType:        prefill.Category,
 		PhotoPlan:         plan.PhotoPlan,
 		Prefill:           prefill,
-		PrivatePrefill:    strings.TrimSpace(plan.PrivatePrefill),
+		PrivatePrefill:    privatePrefill,
 		PrivateAttributes: privateAttributes(result),
 		Warnings:          append(warnings, plan.Warnings...),
 		Source:            source,

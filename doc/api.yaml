@@ -1613,11 +1613,13 @@ paths:
       operationId: analyzeFinderPhoto
       summary: Classify a finder photo and return the photo plan and prefill
       description: |
-        D3 classifies the uploaded photo(s); DeepSeek writes the additional-photo
-        plan and the editable card-1/private prefill from the sanitized D3
-        result. Nothing is persisted. A document result stops additional photos
-        and the private prefill. D3/DeepSeek failures return a deterministic
-        manual/fallback analysis, never a 500.
+        D3 classifies the uploaded photo(s) and extracts the structured
+        attributes used for ownership verification; DeepSeek reads the same
+        photos and fills the editable card (category, brand, model, colour,
+        condition) and the specific private details. Nothing is persisted. A
+        document result stops additional photos and the private prefill.
+        Provider failures return a deterministic manual/fallback analysis,
+        never a 500.
       security:
         - cookieAuth: []
       requestBody:
@@ -2750,6 +2752,12 @@ components:
         category:
           type: string
           example: smartphone
+        brand:
+          type: string
+          example: Apple
+        model:
+          type: string
+          example: iPhone 17
         color:
           type: string
           example: nero
@@ -2776,7 +2784,7 @@ components:
           $ref: "#/components/schemas/WizardPrefill"
         privatePrefill:
           type: string
-          example: Custodia blu, crepa visibile.
+          example: Custodia in silicone blu, crepa sull'angolo in basso a destra, adesivo a forma di gatto sul retro.
         privateAttributes:
           type: object
           additionalProperties: true

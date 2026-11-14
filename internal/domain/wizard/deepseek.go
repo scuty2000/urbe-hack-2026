@@ -10,23 +10,36 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
 )
 
-const plannerToolName = "submit_wizard_analysis"
+const (
+	plannerToolName = "submit_wizard_analysis"
+	// maxPlannerPhotos bounds the images sent to the vision provider. The
+	// first photo carries the brand/model cues; a second detail photo helps
+	// with accessories and marks.
+	maxPlannerPhotos = 2
+	// maxPlannerImageBytes skips oversized uploads instead of failing the
+	// whole analysis on a provider payload limit.
+	maxPlannerImageBytes = 4 << 20
+)
 
 const plannerSystemPrompt = `Sei il regista del wizard di segnalazione di un oggetto smarrito.
-Ricevi solo una classificazione strutturata; non vedi foto e non devi inventare
-marca o modello. Scrivi in italiano e restituisci esclusivamente il tool
-submit_wizard_analysis con:
+Ricevi una o più foto dell'oggetto e una classificazione strutturata. Scrivi in
+italiano e restituisci esclusivamente il tool submit_wizard_analysis con:
 - photoPlan: massimo 3 foto aggiuntive, ognuna con key, label, instruction,
   required. La prima foto è già stata caricata: qui elenca solo le successive.
   Chiedi solo cose che un finder può fotografare senza sbloccare, aprire o
   mostrare dati personali. Mai contenuto di documenti, notifiche o interni di
   portafogli con carte visibili.
-- prefill: categoria, colore e condizioni in italiano, coerenti con la
-  classificazione.
-- privatePrefill: una frase breve sui segni visibili (custodia, crepe, adesivi);
-  vuota per i documenti.
+- prefill: categoria, marca, modello, colore e condizioni in italiano. Compila
+  marca e modello solo se sono leggibili o riconoscibili con ragionevole
+  certezza dalla foto (logo, scritta, forma); se non lo sono, lascia la stringa
+  vuota. Non inventare.
+- privatePrefill: 1-3 frasi specifiche sui dettagli visibili che aiutano a
+  riconoscere l'oggetto: colore e materiale di custodia o cinturino, graffi,
+  crepe, adesivi, incisioni, segni d'uso. Descrivi solo ciò che vedi; non
+  inventare. Vuota per i documenti.
 - warnings: massimo 3 avvisi brevi.
-Non includere nomi, telefoni, indirizzi, numeri di documento o dati personali.`
+Non includere nomi, telefoni, indirizzi, numeri di documento, targhe o dati
+personali.`
 
 // NewDeepSeekPlanner returns a planner backed by the DeepSeek client, or nil
 // when no client is configured (the service will use its deterministic plan).
@@ -46,9 +59,21 @@ func (p *deepSeekPlanner) Plan(ctx context.Context, input PlannerInput) (Plan, e
 	if err != nil {
 		return Plan{}, fmt.Errorf("wizard planner: encoding input: %w", errs.ErrUnavailable)
 	}
+	content := []deepseek.ContentPart{deepseek.TextPart(string(inputJSON))}
+	images := 0
+	for _, photo := range input.Photos {
+		if images >= maxPlannerPhotos {
+			break
+		}
+		if len(photo.Data) == 0 || len(photo.Data) > maxPlannerImageBytes {
+			continue
+		}
+		content = append(content, deepseek.ImagePart(photo.MediaType, photo.Data))
+		images++
+	}
 	completion, err := p.client.Complete(ctx, []deepseek.Message{
 		{Role: "system", Content: plannerSystemPrompt},
-		{Role: "user", Content: string(inputJSON)},
+		{Role: "user", Content: content},
 	}, []deepseek.Tool{plannerTool()})
 	if err != nil {
 		return Plan{}, err
@@ -92,6 +117,8 @@ func plannerTool() deepseek.Tool {
 						"type": "object",
 						"properties": map[string]any{
 							"category":  map[string]any{"type": "string"},
+							"brand":     map[string]any{"type": "string"},
+							"model":     map[string]any{"type": "string"},
 							"color":     map[string]any{"type": "string"},
 							"condition": map[string]any{"type": "string"},
 						},

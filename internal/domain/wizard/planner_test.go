@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/wizard"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
@@ -33,26 +34,37 @@ func TestDeepSeekPlannerParsesToolCall(t *testing.T) {
 		encoded, _ := json.Marshal(decoded)
 		requestBody = string(encoded)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call-1","type":"function","function":{"name":"submit_wizard_analysis","arguments":"{\"photoPlan\":[{\"key\":\"back\",\"label\":\"Retro\",\"instruction\":\"Fotografa il retro\",\"required\":true}],\"prefill\":{\"category\":\"smartphone\",\"color\":\"nero\",\"condition\":\"good\"},\"privatePrefill\":\"Custodia blu.\",\"warnings\":[]}"}}]}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call-1","type":"function","function":{"name":"submit_wizard_analysis","arguments":"{\"photoPlan\":[{\"key\":\"back\",\"label\":\"Retro\",\"instruction\":\"Fotografa il retro\",\"required\":true}],\"prefill\":{\"category\":\"smartphone\",\"brand\":\"Apple\",\"model\":\"iPhone 17\",\"color\":\"nero\",\"condition\":\"good\"},\"privatePrefill\":\"Custodia blu, crepa sull'angolo.\",\"warnings\":[]}"}}]}}]}`))
 	}))
 	defer server.Close()
 
 	planner := wizard.NewDeepSeekPlanner(deepseek.New(server.URL, "test-key", "test-model", time.Second))
-	plan, err := planner.Plan(context.Background(), wizard.PlannerInput{Category: "smartphone", Color: "black", PhotoCount: 1})
+	plan, err := planner.Plan(context.Background(), wizard.PlannerInput{
+		Category: "smartphone", Color: "black", PhotoCount: 1,
+		Photos: []item.ImageInput{{
+			Data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, MediaType: "image/jpeg",
+		}},
+	})
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
 	if len(plan.PhotoPlan) != 1 || plan.PhotoPlan[0].Key != "back" || !plan.PhotoPlan[0].Required {
 		t.Fatalf("plan = %+v", plan)
 	}
-	if plan.PrivatePrefill != "Custodia blu." {
+	if plan.Prefill.Brand != "Apple" || plan.Prefill.Model != "iPhone 17" {
+		t.Fatalf("prefill = %+v", plan.Prefill)
+	}
+	if plan.PrivatePrefill != "Custodia blu, crepa sull'angolo." {
 		t.Fatalf("privatePrefill = %q", plan.PrivatePrefill)
 	}
 	if !strings.Contains(requestBody, "submit_wizard_analysis") {
 		t.Fatalf("request does not declare the planner tool: %s", requestBody)
 	}
-	if strings.Contains(requestBody, "image/jpeg") || strings.Contains(requestBody, "base64") {
-		t.Fatalf("request leaks image data: %s", requestBody)
+	if !strings.Contains(requestBody, "data:image/jpeg;base64,") {
+		t.Fatalf("request does not carry the photo to the vision planner: %s", requestBody)
+	}
+	if !strings.Contains(requestBody, `"brand"`) || !strings.Contains(requestBody, `"model"`) {
+		t.Fatalf("planner tool does not ask for brand/model: %s", requestBody)
 	}
 }
 

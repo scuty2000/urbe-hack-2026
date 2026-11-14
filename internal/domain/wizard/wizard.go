@@ -1,11 +1,12 @@
 /*
 Package wizard orchestrates the finder enrollment wizard. D3 classifies the
-photos, DeepSeek writes the additional-photo plan and the prefill from the
-sanitized D3 result, and Mapbox supplies the zone and walking distances.
+photos and extracts the structured attributes used for ownership verification;
+DeepSeek sees the photo and fills the editable card (brand, model, colour,
+condition) together with the specific private details. Mapbox supplies the zone
+and walking distances.
 
-The package never sends photos to DeepSeek and never persists the analyzed
-bytes: the wizard is a UX layer, while the existing item enrollment remains the
-only write and the policy authority.
+The wizard never persists the analyzed bytes: it is a UX layer, while the
+existing item enrollment remains the only write and the policy authority.
 */
 package wizard
 
@@ -37,22 +38,26 @@ type PhotoSlot struct {
 // Prefill is the editable card-1 prefill.
 type Prefill struct {
 	Category  string `json:"category"`
+	Brand     string `json:"brand"`
+	Model     string `json:"model"`
 	Color     string `json:"color"`
 	Condition string `json:"condition"`
 }
 
-// PlannerInput is the only data DeepSeek receives: structured D3 answers, no
-// images and no private profile.
+// PlannerInput is the data DeepSeek receives: the already-classified public
+// attributes plus the first photos. Photos are sent as multimodal parts and
+// are excluded from the JSON text payload.
 type PlannerInput struct {
-	Category   string `json:"category"`
-	Color      string `json:"color"`
-	Condition  string `json:"condition"`
-	CaseColor  string `json:"caseColor"`
-	HasCrack   bool   `json:"hasCrack"`
-	HasSticker bool   `json:"hasSticker"`
-	HasCase    bool   `json:"hasCase"`
-	IsDocument bool   `json:"isDocument"`
-	PhotoCount int    `json:"photoCount"`
+	Category   string            `json:"category"`
+	Color      string            `json:"color"`
+	Condition  string            `json:"condition"`
+	CaseColor  string            `json:"caseColor"`
+	HasCrack   bool              `json:"hasCrack"`
+	HasSticker bool              `json:"hasSticker"`
+	HasCase    bool              `json:"hasCase"`
+	IsDocument bool              `json:"isDocument"`
+	PhotoCount int               `json:"photoCount"`
+	Photos     []item.ImageInput `json:"-"`
 }
 
 // Plan is the DeepSeek planner output. The service normalizes and truncates it
@@ -96,7 +101,7 @@ type Analyzer interface {
 	Analyze(ctx context.Context, photos []item.ImageInput, form item.CatalogForm) (item.CatalogResult, error)
 }
 
-// Planner is the DeepSeek text-only port.
+// Planner is the DeepSeek vision/text port used for the editable prefill.
 type Planner interface {
 	Plan(ctx context.Context, input PlannerInput) (Plan, error)
 }

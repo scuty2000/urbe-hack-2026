@@ -377,6 +377,8 @@ export interface WizardPhotoSlot {
 
 export interface WizardPrefill {
   category: string;
+  brand: string;
+  model: string;
   color: string;
   condition: string;
 }

@@ -122,7 +122,8 @@ func firstToolResult(t *testing.T, messages []deepseek.Message) string {
 	t.Helper()
 	for _, message := range messages {
 		if message.Role == "tool" {
-			return message.Content
+			content, _ := message.Content.(string)
+			return content
 		}
 	}
 	t.Fatal("no tool message recorded")
@@ -136,7 +137,7 @@ func toolResultFor(t *testing.T, messages []deepseek.Message, name string) strin
 	found := false
 	for _, message := range messages {
 		if message.Role == "tool" && message.Name == name {
-			result = message.Content
+			result, _ = message.Content.(string)
 			found = true
 		}
 	}
@@ -245,8 +246,9 @@ func TestToolLoopSearchesThenAnswers(t *testing.T) {
 	if len(first) < 2 || first[0].Role != "system" {
 		t.Fatalf("first call messages = %+v", first)
 	}
-	if !strings.Contains(strings.ToLower(first[0].Content), "una sola domanda") {
-		t.Fatalf("system prompt missing the one-question rule: %q", first[0].Content)
+	prompt, _ := first[0].Content.(string)
+	if !strings.Contains(strings.ToLower(prompt), "una sola domanda") {
+		t.Fatalf("system prompt missing the one-question rule: %q", prompt)
 	}
 
 	// The tool result is sent back as a tool message and carries the item id.

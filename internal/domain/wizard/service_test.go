@@ -53,8 +53,8 @@ func TestAnalyzeUsesD3AndPlanner(t *testing.T) {
 		PhotoPlan: []wizard.PhotoSlot{{
 			Key: "back", Label: "Retro", Instruction: "Fotografa il retro", Required: true,
 		}},
-		Prefill:        wizard.Prefill{Category: "smartphone"},
-		PrivatePrefill: "Custodia blu, crepa visibile.",
+		Prefill:        wizard.Prefill{Category: "smartphone", Brand: "Apple", Model: "iPhone 17", Color: "nero"},
+		PrivatePrefill: "Custodia blu, crepa visibile sull'angolo.",
 		Warnings:       []string{"Controlla il colore."},
 	}}
 	svc := wizard.New(repository.Database{}, wizard.Deps{Items: analyzer, Planner: planner})
@@ -69,7 +69,10 @@ func TestAnalyzeUsesD3AndPlanner(t *testing.T) {
 	if got.Prefill.Category != "smartphone" || got.Prefill.Color != "nero" || got.Prefill.Condition != "good" {
 		t.Fatalf("prefill = %+v", got.Prefill)
 	}
-	if got.PrivatePrefill != "Custodia blu, crepa visibile." {
+	if got.Prefill.Brand != "Apple" || got.Prefill.Model != "iPhone 17" {
+		t.Fatalf("prefill did not use the vision planner: %+v", got.Prefill)
+	}
+	if got.PrivatePrefill != "Custodia blu, crepa visibile sull'angolo." {
 		t.Fatalf("privatePrefill = %q", got.PrivatePrefill)
 	}
 	if len(got.PhotoPlan) != 1 || got.PhotoPlan[0].Key != "back" {
@@ -80,6 +83,9 @@ func TestAnalyzeUsesD3AndPlanner(t *testing.T) {
 	}
 	if planner.input.CaseColor != "blue" || planner.input.PhotoCount != 1 || planner.input.HasCrack != true {
 		t.Fatalf("planner input = %+v", planner.input)
+	}
+	if len(planner.input.Photos) != 1 || len(planner.input.Photos[0].Data) == 0 {
+		t.Fatalf("planner did not receive the photo: %+v", planner.input.Photos)
 	}
 }
 

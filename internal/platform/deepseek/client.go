@@ -16,6 +16,7 @@ package deepseek
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,13 +39,45 @@ const (
 )
 
 // Message is one OpenAI-compatible chat message. Assistant messages may carry
-// tool calls; tool messages reference the call they answer.
+// tool calls; tool messages reference the call they answer. Content is a
+// string for text-only turns and a []ContentPart for multimodal turns.
 type Message struct {
 	Role       string     `json:"role"`
-	Content    string     `json:"content"`
+	Content    any        `json:"content"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	Name       string     `json:"name,omitempty"`
+}
+
+// ContentPart is one part of an OpenAI-compatible multimodal message.
+type ContentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *ImageURL `json:"image_url,omitempty"`
+}
+
+// ImageURL is the image payload of a ContentPart. URL may be an https URL or
+// a data URL.
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
+// TextPart returns a text content part.
+func TextPart(text string) ContentPart {
+	return ContentPart{Type: "text", Text: text}
+}
+
+// ImagePart returns a data-URL image content part so the provider can see the
+// photo without a public URL.
+func ImagePart(mediaType string, data []byte) ContentPart {
+	mediaType = strings.TrimSpace(mediaType)
+	if mediaType == "" {
+		mediaType = "image/jpeg"
+	}
+	return ContentPart{
+		Type:     "image_url",
+		ImageURL: &ImageURL{URL: "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data)},
+	}
 }
 
 // ToolCall is one function invocation requested by the model.

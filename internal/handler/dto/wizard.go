@@ -21,6 +21,8 @@ type PhotoPlanSlotResponse struct {
 // WizardPrefillResponse is the editable card-1 prefill.
 type WizardPrefillResponse struct {
 	Category  string `json:"category"`
+	Brand     string `json:"brand"`
+	Model     string `json:"model"`
 	Color     string `json:"color"`
 	Condition string `json:"condition"`
 }
@@ -98,6 +100,8 @@ func ToWizardAnalysisResponse(analysis wizard.Analysis) WizardAnalysisResponse {
 		PhotoPlan:  plan,
 		Prefill: WizardPrefillResponse{
 			Category:  analysis.Prefill.Category,
+			Brand:     analysis.Prefill.Brand,
+			Model:     analysis.Prefill.Model,
 			Color:     analysis.Prefill.Color,
 			Condition: analysis.Prefill.Condition,
 		},

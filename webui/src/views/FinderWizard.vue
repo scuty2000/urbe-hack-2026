@@ -50,6 +50,8 @@ const condition = ref("good");
 const privateDetails = ref("");
 const touched = reactive({
   category: false,
+  brand: false,
+  model: false,
   color: false,
   condition: false,
   private: false,
@@ -85,20 +87,6 @@ const plan = computed<WizardPhotoSlot[]>(() => analysis.value?.photoPlan ?? []);
 const selectedDropPoint = computed(() =>
   dropPoints.value.find((point) => point.id === dropPoint.value),
 );
-const sourceLabel = computed(() => {
-  switch (analysis.value?.source) {
-    case "d3+deepseek":
-      return "Analisi D3 + DeepSeek";
-    case "d3+fallback":
-      return "Analisi D3 + regole locali";
-    case "d3":
-      return "Analisi D3";
-    case "manual":
-      return "Compilazione manuale";
-    default:
-      return "";
-  }
-});
 const allPhotos = computed<File[]>(() => {
   const files: File[] = [];
   if (firstPhoto.value) {
@@ -137,6 +125,12 @@ function resetAnalysis() {
   }
   if (!touched.category) {
     category.value = "";
+  }
+  if (!touched.brand) {
+    brand.value = "";
+  }
+  if (!touched.model) {
+    model.value = "";
   }
   if (!touched.color) {
     color.value = "";
@@ -193,7 +187,7 @@ async function analyze() {
           required: false,
         },
       ],
-      prefill: { category: "", color: "", condition: "good" },
+      prefill: { category: "", brand: "", model: "", color: "", condition: "good" },
       privatePrefill: "",
       warnings: ["Analisi automatica non disponibile: compila i campi manualmente."],
       source: "manual",
@@ -210,6 +204,12 @@ async function analyze() {
 function applyAnalysis(result: WizardAnalysis) {
   if (!touched.category) {
     category.value = result.prefill.category || "";
+  }
+  if (!touched.brand) {
+    brand.value = result.prefill.brand || "";
+  }
+  if (!touched.model) {
+    model.value = result.prefill.model || "";
   }
   if (!touched.color) {
     color.value = result.prefill.color || "";
@@ -232,6 +232,12 @@ function applyAnalysis(result: WizardAnalysis) {
 
 function onCategoryChange() {
   touched.category = true;
+}
+function onBrandInput() {
+  touched.brand = true;
+}
+function onModelInput() {
+  touched.model = true;
 }
 function onColorChange() {
   touched.color = true;
@@ -547,7 +553,6 @@ onBeforeUnmount(() => {
 
         <div v-if="analysis" class="space-y-3">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="badge-soft">{{ sourceLabel }}</span>
             <span v-if="analysis.sensitive" class="badge-danger">Oggetto sensibile</span>
             <span v-if="analysis.confidence" class="text-xs text-stone-500">Confidenza {{ Math.round(analysis.confidence * 100) }}%</span>
           </div>
@@ -574,12 +579,11 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <label class="label" for="wiz-brand">Marca <span class="font-normal text-stone-500">(facoltativo)</span></label>
-            <input id="wiz-brand" v-model="brand" class="input" maxlength="80" type="text" placeholder="Es. Apple" />
-            <p class="hint">D3 non legge la marca: confermala o compilala.</p>
+            <input id="wiz-brand" v-model="brand" class="input" maxlength="80" type="text" placeholder="Es. Apple" @input="onBrandInput" />
           </div>
           <div>
             <label class="label" for="wiz-model">Modello <span class="font-normal text-stone-500">(facoltativo)</span></label>
-            <input id="wiz-model" v-model="model" class="input" maxlength="80" type="text" placeholder="Es. iPhone 15" />
+            <input id="wiz-model" v-model="model" class="input" maxlength="80" type="text" placeholder="Es. iPhone 15" @input="onModelInput" />
           </div>
           <div>
             <label class="label" for="wiz-color">Colore</label>
@@ -633,7 +637,7 @@ onBeforeUnmount(() => {
 
         <GeoPicker v-model:lat="lat" v-model:lng="lng" :zone="zone" @update:zone="onZoneInput" />
         <p v-if="reverseLoading" class="text-xs text-stone-500" role="status">Riconosco la zona dalla posizione…</p>
-        <p v-else-if="reverseSource === 'unavailable' && zone" class="text-xs text-amber-800">Zona inserita manualmente: il servizio di geocoding non è disponibile.</p>
+        <p v-else-if="reverseSource === 'unavailable' && zone" class="text-xs text-amber-800">Zona inserita manualmente: non riesco a ricavarla dalla posizione.</p>
         <p v-else-if="reverseSource === 'mapbox' && zone" class="text-xs text-emerald-700">Zona compilata dalla posizione: controllala e correggila se serve.</p>
         <p v-if="fieldErrors.zone" class="text-xs font-medium text-rose-700">{{ fieldErrors.zone }}</p>
         <p v-if="fieldErrors.geo" class="text-xs font-medium text-rose-700">{{ fieldErrors.geo }}</p>

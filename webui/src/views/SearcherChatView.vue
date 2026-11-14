@@ -6,7 +6,6 @@ import {
   chat,
   createPass,
   getClaim,
-  getHealth,
   user,
 } from "../api";
 import CandidateCard from "../components/CandidateCard.vue";
@@ -21,7 +20,6 @@ import type {
   ChatCandidate,
   ChatMessage as ChatTurn,
   ClaimOwner,
-  HealthStatus,
 } from "../types";
 
 const router = useRouter();
@@ -36,26 +34,9 @@ const generating = ref(false);
 const done = ref(false);
 const error = ref("");
 const notice = ref("");
-const health = ref<HealthStatus | null>(null);
-const healthError = ref(false);
 const lookupId = ref("");
 const lookupBusy = ref(false);
 const transcript = ref<HTMLElement | null>(null);
-
-const mode = computed(() => {
-  // Fail closed: only an explicit backend signal enables the "d3" badge.
-  // Older/partial health responses (or a probe failure) show the fallback.
-  if (health.value?.d3 === true && health.value?.agentMode === "deepseek") {
-    return "d3";
-  }
-  return "fallback";
-});
-
-// The badge reflects configuration, not a live D3/DeepSeek probe: the backend
-// reports both as configured, and falls back to the local scorer/mock on error.
-const modeLabel = computed(() =>
-  mode.value === "d3" ? "D3 + agente configurati" : "modalità fallback",
-);
 
 const claimTone = computed(() => {
   switch (claim.value?.status) {
@@ -77,23 +58,12 @@ const emptyConversation = computed(
 );
 
 onMounted(() => {
-  void loadHealth();
   const queryClaim = typeof route.query.claim === "string" ? route.query.claim : "";
   if (queryClaim.trim()) {
     lookupId.value = queryClaim.trim();
     void loadClaim(lookupId.value);
   }
 });
-
-async function loadHealth() {
-  try {
-    health.value = await getHealth();
-    healthError.value = false;
-  } catch {
-    health.value = null;
-    healthError.value = true;
-  }
-}
 
 async function scrollToBottom() {
   await nextTick();
@@ -252,29 +222,6 @@ function resetConversation() {
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <span
-          class="badge"
-          role="status"
-          :class="
-            mode === 'd3'
-              ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
-              : 'bg-amber-50 text-amber-800 ring-amber-200'
-          "
-          :title="
-            healthError
-              ? 'Stato del backend non disponibile: uso il percorso locale di fallback'
-              : mode === 'd3'
-                ? 'D3 e agente conversazionale configurati; se un provider non risponde la demo usa il percorso locale'
-                : 'Il backend usa il percorso locale di fallback'
-          "
-        >
-          <span
-            class="h-1.5 w-1.5 rounded-full"
-            :class="mode === 'd3' ? 'bg-emerald-600' : 'bg-amber-500'"
-            aria-hidden="true"
-          ></span>
-          {{ modeLabel }}
-        </span>
         <button
           v-if="messages.length > 0 || claim"
           type="button"

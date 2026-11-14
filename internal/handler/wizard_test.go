@@ -126,7 +126,7 @@ func TestWizardAnalyzeRolesAndPrivacy(t *testing.T) {
 	fake := &fakeWizard{analysis: wizard.Analysis{
 		ObjectType: "smartphone",
 		PhotoPlan:  []wizard.PhotoSlot{{Key: "back", Label: "Retro", Instruction: "Fotografa il retro", Required: true}},
-		Prefill:    wizard.Prefill{Category: "smartphone", Color: "nero", Condition: "good"},
+		Prefill:    wizard.Prefill{Category: "smartphone", Brand: "Apple", Model: "iPhone 17", Color: "nero", Condition: "good"},
 		Warnings:   []string{"Controlla i campi"},
 		Source:     "d3+deepseek",
 	}}
@@ -155,6 +155,10 @@ func TestWizardAnalyzeRolesAndPrivacy(t *testing.T) {
 	}
 	if response["source"] != "d3+deepseek" || response["objectType"] != "smartphone" {
 		t.Fatalf("response = %+v", response)
+	}
+	prefill, _ := response["prefill"].(map[string]any)
+	if prefill["brand"] != "Apple" || prefill["model"] != "iPhone 17" {
+		t.Fatalf("prefill = %+v, want the vision prefill", prefill)
 	}
 	plan, _ := response["photoPlan"].([]any)
 	if len(plan) != 1 {
