@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
@@ -22,6 +23,19 @@ var profileMetadataKeys = map[string]bool{
 	"photos":         true,
 }
 
+// questionAttributeKeys is an allowlist, not a denylist: only these
+// non-sensitive private attributes may be forwarded to the model or the
+// verification engine. Enrollment accepts arbitrary keys, so anything not
+// listed here is dropped even when IsIdentityField does not recognise it
+// (owner, via, recapito, serial, imei, ...).
+var questionAttributeKeys = map[string]bool{
+	"case_color": true,
+	"has_crack":  true,
+	"sticker":    true,
+	"handle":     true,
+	"contents":   true,
+}
+
 // freeTextKeys are private-profile values that may contain arbitrary prose
 // (including a person's name) and are therefore excluded from the sanitized
 // profile and from the scoring attributes.
@@ -35,6 +49,29 @@ var freeTextKeys = map[string]bool{
 	"dettaglio":   true,
 	"comment":     true,
 	"comments":    true,
+}
+
+// turnState scopes the tools to the items discovered by search in the current
+// conversation turn and records every item whose private profile was touched,
+// so the final message is redacted even without search candidates.
+type turnState struct {
+	allowed map[string]bool
+	seen    map[string]bool
+	// userText is the lower-cased concatenation of the searcher's messages.
+	userText string
+	// used reports whether any tool ran, so a provider failure never restarts
+	// the mock after side effects.
+	used bool
+	// claimCreated prevents duplicate claims within a turn.
+	claimCreated bool
+}
+
+func newTurnState(messages []Message) *turnState {
+	return &turnState{
+		allowed:  map[string]bool{},
+		seen:     map[string]bool{},
+		userText: strings.ToLower(userText(messages)),
+	}
 }
 
 // toolOutcome is the result of one tool call.
@@ -137,17 +174,22 @@ func toolDefinitions() []deepseek.Tool {
 
 // executeTool dispatches one model tool call. Tool failures are returned to the
 // model as an error JSON object so the conversation can continue; they never
-// abort the request.
-func (s *service) executeTool(ctx context.Context, searcherID string, call deepseek.ToolCall) toolOutcome {
+// abort the request. Every tool is scoped to the items discovered by
+// search_items in this turn.
+func (s *service) executeTool(ctx context.Context, searcherID string, call deepseek.ToolCall, state *turnState) toolOutcome {
+	if state == nil {
+		state = newTurnState(nil)
+	}
+	state.used = true
 	switch strings.TrimSpace(call.Function.Name) {
 	case ToolSearchItems:
-		return s.toolSearch(ctx, call)
+		return s.toolSearch(ctx, call, state)
 	case ToolGetPrivateProfile:
-		return s.toolPrivateProfile(ctx, call)
+		return s.toolPrivateProfile(ctx, call, state)
 	case ToolScoreWithD3:
-		return s.toolScore(ctx, call)
+		return s.toolScore(ctx, call, state)
 	case ToolCreateClaim:
-		return s.toolCreateClaim(ctx, searcherID, call)
+		return s.toolCreateClaim(ctx, searcherID, call, state)
 	case ToolEscalate:
 		return s.toolEscalate()
 	default:
@@ -155,7 +197,7 @@ func (s *service) executeTool(ctx context.Context, searcherID string, call deeps
 	}
 }
 
-func (s *service) toolSearch(ctx context.Context, call deepseek.ToolCall) toolOutcome {
+func (s *service) toolSearch(ctx context.Context, call deepseek.ToolCall, state *turnState) toolOutcome {
 	var args struct {
 		Query    string `json:"query"`
 		Category string `json:"category"`
@@ -175,6 +217,13 @@ func (s *service) toolSearch(ctx context.Context, call deepseek.ToolCall) toolOu
 	}
 	if results == nil {
 		results = []search.SearchResult{}
+	}
+	for _, result := range results {
+		if result.ItemID == "" {
+			continue
+		}
+		state.allowed[result.ItemID] = true
+		state.seen[result.ItemID] = true
 	}
 	return toolOutcome{
 		content:    mustJSON(map[string]any{"candidates": results}),
@@ -202,30 +251,37 @@ type documentProfile struct {
 	IdentityMatch map[string]bool `json:"identity_match"`
 }
 
-func (s *service) toolPrivateProfile(ctx context.Context, call deepseek.ToolCall) toolOutcome {
+func (s *service) toolPrivateProfile(ctx context.Context, call deepseek.ToolCall, state *turnState) toolOutcome {
 	var args struct {
 		ItemID string `json:"item_id"`
 	}
 	if err := decodeArguments(call, &args); err != nil {
 		return toolError("invalid profile arguments")
 	}
-	item, err := s.deps.Items.ItemForAgent(ctx, strings.TrimSpace(args.ItemID))
+	itemID := strings.TrimSpace(args.ItemID)
+	if !state.allowed[itemID] {
+		return toolError("item not available in this turn")
+	}
+	item, err := s.deps.Items.ItemForAgent(ctx, itemID)
 	if err != nil {
 		return toolError("item not found")
 	}
+	state.seen[itemID] = true
 	return toolOutcome{content: mustJSON(sanitizeProfile(item))}
 }
 
-// sanitizeProfile keeps public listing attributes and non-sensitive private
-// attributes. Identity values become booleans and free text is dropped.
+// sanitizeProfile keeps public listing attributes and an allowlist of
+// non-sensitive private attributes. Identity values become booleans, and every
+// other key is dropped: the profile is written by enrollment, so an unknown key
+// may well contain a name, a phone number or a document number.
 func sanitizeProfile(item itemdomain.Item) sanitizedProfile {
 	profile := sanitizedProfile{
 		ItemID:    item.ID,
-		Category:  item.Category,
-		Brand:     item.Brand,
-		Model:     item.Model,
-		Color:     item.Color,
-		Condition: item.Condition,
+		Category:  safePublicText(item.Category),
+		Brand:     safePublicText(item.Brand),
+		Model:     safePublicText(item.Model),
+		Color:     safePublicText(item.Color),
+		Condition: safePublicText(item.Condition),
 	}
 	attributes := map[string]any{}
 	identity := map[string]bool{}
@@ -237,8 +293,8 @@ func sanitizeProfile(item itemdomain.Item) sanitizedProfile {
 			continue
 		}
 		if normalized == "document_type" || normalized == "document" {
-			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
-				documentType = strings.TrimSpace(text)
+			if text, ok := value.(string); ok {
+				documentType = safeText(text)
 			}
 			continue
 		}
@@ -246,10 +302,15 @@ func sanitizeProfile(item itemdomain.Item) sanitizedProfile {
 			identity[normalized] = hasContent(value)
 			continue
 		}
-		if !supportedValue(value) {
+		if !questionAttributeKeys[normalized] {
+			// Fail closed: unknown keys are never forwarded.
 			continue
 		}
-		attributes[normalized] = value
+		sanitized, ok := safeAttributeValue(value)
+		if !ok {
+			continue
+		}
+		attributes[normalized] = sanitized
 	}
 
 	if len(attributes) > 0 {
@@ -264,6 +325,126 @@ func sanitizeProfile(item itemdomain.Item) sanitizedProfile {
 	return profile
 }
 
+// safeAttributeValue accepts only booleans, short safe strings and lists of
+// short safe strings. Numbers are dropped because a bare number in a private
+// profile is more likely a document number, phone or serial than a question
+// attribute.
+func safeAttributeValue(value any) (any, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		text := safeText(typed)
+		return text, text != ""
+	case []string:
+		values := make([]any, 0, len(typed))
+		for _, element := range typed {
+			text := safeText(element)
+			if text == "" {
+				continue
+			}
+			values = append(values, text)
+		}
+		if len(values) == 0 {
+			return nil, false
+		}
+		return values, true
+	case []any:
+		values := make([]any, 0, len(typed))
+		for _, element := range typed {
+			text, ok := element.(string)
+			if !ok {
+				continue
+			}
+			safe := safeText(text)
+			if safe == "" {
+				continue
+			}
+			values = append(values, safe)
+		}
+		if len(values) == 0 {
+			return nil, false
+		}
+		return values, true
+	default:
+		return nil, false
+	}
+}
+
+// safeText rejects the value shapes that carry personal data: e-mail addresses,
+// URLs, digit sequences (phones, documents, serials) and full names or postal
+// addresses. The question attributes are short descriptive words.
+func safeText(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" || len(text) > 80 {
+		return ""
+	}
+	lower := strings.ToLower(text)
+	if strings.ContainsAny(text, "@\n\r\t") {
+		return ""
+	}
+	if strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || strings.Contains(lower, "www.") {
+		return ""
+	}
+	if strings.IndexFunc(text, unicode.IsDigit) >= 0 {
+		return ""
+	}
+	if containsAddressMarker(lower) {
+		return ""
+	}
+	if looksLikeFullName(text) {
+		return ""
+	}
+	return text
+}
+
+// safePublicText applies the personal-data shape checks to a public listing
+// attribute while keeping legitimate model numbers ("iPhone 17").
+func safePublicText(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" || len(text) > 80 {
+		return ""
+	}
+	lower := strings.ToLower(text)
+	if strings.ContainsAny(text, "@\n\r\t") {
+		return ""
+	}
+	if strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || strings.Contains(lower, "www.") {
+		return ""
+	}
+	if containsAddressMarker(lower) || looksLikeFullName(text) {
+		return ""
+	}
+	return text
+}
+
+func containsAddressMarker(lower string) bool {
+	for _, token := range strings.Fields(lower) {
+		switch token {
+		case "via", "viale", "piazza", "corso", "vicolo", "largo", "indirizzo",
+			"residenza", "recapito", "street", "road", "avenue", "addr":
+			return true
+		}
+	}
+	return false
+}
+
+// looksLikeFullName reports whether two or more words start with a capital
+// letter, which is how a first and last name usually appear.
+func looksLikeFullName(text string) bool {
+	capitalized := 0
+	for _, token := range strings.Fields(text) {
+		runes := []rune(token)
+		if len(runes) == 0 {
+			continue
+		}
+		if unicode.IsUpper(runes[0]) {
+			capitalized++
+		}
+	}
+	return capitalized >= 2
+}
+
 // scoreResult is the only scoring output sent to the model. Expected values are
 // never included.
 type scoreResult struct {
@@ -272,7 +453,7 @@ type scoreResult struct {
 	Reasons    []string `json:"reasons"`
 }
 
-func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall) toolOutcome {
+func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall, state *turnState) toolOutcome {
 	var args struct {
 		ItemID  string            `json:"item_id"`
 		Answers map[string]string `json:"answers"`
@@ -280,30 +461,35 @@ func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall) toolOut
 	if err := decodeArguments(call, &args); err != nil {
 		return toolError("invalid score arguments")
 	}
-	item, err := s.deps.Items.ItemForAgent(ctx, strings.TrimSpace(args.ItemID))
+	itemID := strings.TrimSpace(args.ItemID)
+	if !state.allowed[itemID] {
+		return toolError("item not available in this turn")
+	}
+	item, err := s.deps.Items.ItemForAgent(ctx, itemID)
 	if err != nil {
 		return toolError("item not found")
 	}
+	state.seen[itemID] = true
 
 	attributes, privateKeys := scoringAttributes(item)
 	questions := questionsFor(attributes)
-	state := verification.State{
+	verificationState := verification.State{
 		Item:          attributes,
 		Searcher:      stringAnswers(args.Answers),
 		IdentityMatch: identityMatches(item.PrivateProfile, args.Answers),
 		RiskTier:      riskTierOf(item),
 	}
 	flags := []string{}
-	if hasIdentityMismatch(state.IdentityMatch) {
+	if hasIdentityMismatch(verificationState.IdentityMatch) {
 		flags = append(flags, verification.FlagIdentityMismatch)
 	}
 
-	result, err := s.deps.Engine.Score(ctx, state, questions)
+	result, err := s.deps.Engine.Score(ctx, verificationState, questions)
 	if err != nil {
 		return toolError("scoring is unavailable")
 	}
 	confidence := clamp01(result.Confidence)
-	policy := verification.Decision(state.RiskTier, confidence, nil, flags)
+	policy := verification.Decision(verificationState.RiskTier, confidence, nil, flags)
 	// Mirror the claim service: an automatic approval needs at least one
 	// matching private attribute.
 	if policy.Decision == verification.DecisionAutoApprove && !hasPrivateMatch(result.Answers, privateKeys) {
@@ -328,7 +514,7 @@ type claimToolResult struct {
 	ConfidenceBand string `json:"confidenceBand"`
 }
 
-func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call deepseek.ToolCall) toolOutcome {
+func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call deepseek.ToolCall, turn *turnState) toolOutcome {
 	var args struct {
 		ItemID   string            `json:"item_id"`
 		Answers  map[string]string `json:"answers"`
@@ -337,17 +523,35 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 	if err := decodeArguments(call, &args); err != nil {
 		return toolError("invalid claim arguments")
 	}
+	itemID := strings.TrimSpace(args.ItemID)
+	if !turn.allowed[itemID] {
+		return toolError("item not available in this turn")
+	}
+	if turn.claimCreated {
+		return toolError("a claim has already been created in this turn")
+	}
+
+	// The model may have read expected values from the private profile. Only
+	// answers the searcher actually wrote may reach the claim service, so an
+	// invented answer cannot auto-approve a claim.
+	answers := answersFromUserText(args.Answers, turn.userText)
+	if len(answers) == 0 {
+		return toolError("answers must come from the searcher's messages")
+	}
+
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
-		ItemID:     strings.TrimSpace(args.ItemID),
+		ItemID:     itemID,
 		SearcherID: searcherID,
 		Session: claim.Session{
-			Answers: args.Answers,
+			Answers: answers,
 		},
 		Evidence: args.Evidence,
 	})
 	if err != nil {
 		return toolError("claim could not be created")
 	}
+	turn.claimCreated = true
+	turn.seen[itemID] = true
 	band := created.ConfidenceBand
 	if band == "" {
 		band = claim.ConfidenceBand(created.Confidence)
@@ -363,6 +567,25 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 	}
 }
 
+// answersFromUserText drops every answer whose value does not appear verbatim
+// (case-insensitive) in the searcher's messages.
+func answersFromUserText(answers map[string]string, userText string) map[string]string {
+	filtered := make(map[string]string, len(answers))
+	if userText == "" {
+		return filtered
+	}
+	for key, value := range answers {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(userText, strings.ToLower(trimmed)) {
+			filtered[key] = trimmed
+		}
+	}
+	return filtered
+}
+
 func (s *service) toolEscalate() toolOutcome {
 	return toolOutcome{
 		content:   mustJSON(map[string]any{"escalated": true}),
@@ -371,7 +594,9 @@ func (s *service) toolEscalate() toolOutcome {
 }
 
 // scoringAttributes mirrors the claim service: public listing attributes plus
-// supported private scalars, with identity and free text excluded.
+// the allowlisted private question attributes, with values sanitized exactly
+// like the model profile. Identity, free text and unknown keys never reach the
+// engine.
 func scoringAttributes(item itemdomain.Item) (map[string]any, map[string]bool) {
 	attributes := map[string]any{}
 	private := map[string]bool{}
@@ -386,17 +611,21 @@ func scoringAttributes(item itemdomain.Item) (map[string]any, map[string]bool) {
 		"category": true, "brand": true, "model": true, "color": true, "condition": true,
 	}
 	for key, value := range public {
-		if strings.TrimSpace(value) != "" {
-			attributes[key] = value
+		if safe := safePublicText(value); safe != "" {
+			attributes[key] = safe
 		}
 	}
 	for key, value := range item.PrivateProfile {
 		normalized := normalizeKey(key)
 		if normalized == "" || profileMetadataKeys[normalized] || freeTextKeys[normalized] ||
-			verification.IsIdentityField(normalized) || !supportedValue(value) {
+			verification.IsIdentityField(normalized) || !questionAttributeKeys[normalized] {
 			continue
 		}
-		attributes[normalized] = value
+		sanitized, ok := safeAttributeValue(value)
+		if !ok {
+			continue
+		}
+		attributes[normalized] = sanitized
 		if !publicKeys[normalized] {
 			private[normalized] = true
 		}
@@ -523,35 +752,6 @@ func hasContent(value any) bool {
 		return strings.TrimSpace(typed) != ""
 	default:
 		return true
-	}
-}
-
-func supportedValue(value any) bool {
-	switch typed := value.(type) {
-	case nil:
-		return false
-	case string:
-		return strings.TrimSpace(typed) != ""
-	case bool:
-		return true
-	case float64, float32, int, int64, int32:
-		return true
-	case []string:
-		return len(typed) > 0
-	case []any:
-		if len(typed) == 0 {
-			return false
-		}
-		for _, element := range typed {
-			switch element.(type) {
-			case string, bool, float64, float32, int, int64, int32:
-			default:
-				return false
-			}
-		}
-		return true
-	default:
-		return false
 	}
 }
 

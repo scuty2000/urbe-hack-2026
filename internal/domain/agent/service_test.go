@@ -21,6 +21,8 @@ type scriptedLLM struct {
 	mu    sync.Mutex
 	steps []deepseek.Completion
 	err   error
+	// errAt makes Complete fail on the 1-based call number errAt (0 = never).
+	errAt int
 	calls [][]deepseek.Message
 	tools [][]deepseek.Tool
 }
@@ -30,7 +32,7 @@ func (f *scriptedLLM) Complete(_ context.Context, messages []deepseek.Message, t
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, append([]deepseek.Message(nil), messages...))
 	f.tools = append(f.tools, append([]deepseek.Tool(nil), tools...))
-	if f.err != nil {
+	if f.err != nil && (f.errAt == 0 || len(f.calls) == f.errAt) {
 		return deepseek.Completion{}, f.err
 	}
 	if len(f.steps) == 0 {
@@ -108,6 +110,23 @@ func firstToolResult(t *testing.T, messages []deepseek.Message) string {
 	}
 	t.Fatal("no tool message recorded")
 	return ""
+}
+
+// toolResultFor returns the last tool result for the named tool.
+func toolResultFor(t *testing.T, messages []deepseek.Message, name string) string {
+	t.Helper()
+	result := ""
+	found := false
+	for _, message := range messages {
+		if message.Role == "tool" && message.Name == name {
+			result = message.Content
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no tool message for %q recorded", name)
+	}
+	return result
 }
 
 var privateTokens = []string{
@@ -234,23 +253,39 @@ func TestToolLoopSearchesThenAnswers(t *testing.T) {
 }
 
 func TestPrivateProfileToolSanitizesDocuments(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	// item-document is not searchable; put the document fields on the searchable
+	// phone to exercise the document view through the scoped tool.
+	if err := db.GormDB().Exec(
+		`UPDATE items SET private_profile = ? WHERE id = ?`,
+		`{"document_type":"identity_card","number":"CA00000AA","holder":"Mario Rossi","case_color":"blu"}`,
+		"item-phone",
+	).Error; err != nil {
+		t.Fatalf("updating profile: %v", err)
+	}
+
 	llm := &scriptedLLM{steps: []deepseek.Completion{
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "get_private_profile", `{"item_id":"item-document"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "get_private_profile", `{"item_id":"item-phone"}`)}},
 		{Content: "Che tipo di documento hai perso?"},
 	}}
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+	svc := agent.New(db, agent.Deps{DeepSeekKey: "test-key", Client: llm})
 
 	if _, err := svc.Chat(context.Background(), "searcher-demo",
-		[]agent.Message{{Role: "user", Content: "ho perso un documento"}}); err != nil {
+		[]agent.Message{{Role: "user", Content: "ho perso un iphone"}}); err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	result := firstToolResult(t, llm.call(1))
+	result := toolResultFor(t, llm.call(2), "get_private_profile")
 	if !strings.Contains(result, "identity_card") {
 		t.Fatalf("document type missing from sanitized profile: %s", result)
 	}
 	if !strings.Contains(result, "identity_match") {
 		t.Fatalf("identity booleans missing from sanitized profile: %s", result)
+	}
+	if !strings.Contains(result, "case_color") || !strings.Contains(result, "blu") {
+		t.Fatalf("allowlisted private attribute missing: %s", result)
 	}
 	for _, secret := range []string{"CA00000AA", "Mario Rossi", `"holder":"`, `"number":"`} {
 		if strings.Contains(result, secret) {
@@ -259,9 +294,161 @@ func TestPrivateProfileToolSanitizesDocuments(t *testing.T) {
 	}
 }
 
+func TestPrivateProfileToolAllowlistDropsUnknownPII(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	profile := `{"owner":"Mario Rossi","recapito":"3331234567","serial":"ABC123","imei":"123456789012345",` +
+		`"case_color":"blu","handle":"legno chiaro","sticker":"Mario Rossi","contents":["bancomat"]}`
+	if err := db.GormDB().Exec(
+		`UPDATE items SET private_profile = ? WHERE id = ?`, profile, "item-phone",
+	).Error; err != nil {
+		t.Fatalf("updating profile: %v", err)
+	}
+
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "get_private_profile", `{"item_id":"item-phone"}`)}},
+		{Content: "Mario Rossi ha una custodia blu."},
+	}}
+	svc := agent.New(db, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+
+	if _, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "ho perso un iphone"}}); err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	result := toolResultFor(t, llm.call(2), "get_private_profile")
+	if !strings.Contains(result, `"case_color":"blu"`) {
+		t.Fatalf("allowlisted attribute missing: %s", result)
+	}
+	if !strings.Contains(result, `"handle":"legno chiaro"`) {
+		t.Fatalf("allowlisted attribute missing: %s", result)
+	}
+	if !strings.Contains(result, `"contents":["bancomat"]`) {
+		t.Fatalf("sanitized list attribute missing: %s", result)
+	}
+	// sticker carries a full name: the value shape must reject it even though
+	// the key is allowlisted.
+	if strings.Contains(result, `"sticker"`) {
+		t.Fatalf("unsafe value forwarded for allowlisted key: %s", result)
+	}
+	for _, secret := range []string{"Mario Rossi", "3331234567", "ABC123", "123456789012345", "owner", "recapito", "serial", "imei"} {
+		if strings.Contains(result, secret) {
+			t.Fatalf("sanitized profile leaks %q: %s", secret, result)
+		}
+	}
+}
+
+func TestToolsRejectItemsNotDiscoveredBySearch(t *testing.T) {
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "get_private_profile", `{"item_id":"item-document"}`)}},
+		{Content: "Non ho informazioni su questo oggetto."},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "ho perso un documento"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	result := firstToolResult(t, llm.call(1))
+	if !strings.Contains(result, "not available") {
+		t.Fatalf("unscoped profile access was not rejected: %s", result)
+	}
+	if strings.Contains(result, "identity_card") || strings.Contains(result, "Mario Rossi") {
+		t.Fatalf("unscoped profile leaked document data: %s", result)
+	}
+	if reply.ClaimID != "" || len(reply.Candidates) != 0 {
+		t.Fatalf("unscoped turn returned item data: %+v", reply)
+	}
+}
+
+func TestClaimAnswersMustComeFromUserText(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-laundered", Status: claim.StatusApproved}}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "create_claim",
+			`{"item_id":"item-phone","answers":{"case_color":"blu"}}`)}},
+		{Content: "Non riesco a verificare, prova a descrivere l'oggetto."},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "ho perso un iphone"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if claims.calls != 0 {
+		t.Fatalf("claim service called with model-invented answers %d times", claims.calls)
+	}
+	if reply.ClaimID != "" {
+		t.Fatalf("reply carries a claim from invented answers: %q", reply.ClaimID)
+	}
+	result := toolResultFor(t, llm.call(2), "create_claim")
+	if !strings.Contains(result, "error") {
+		t.Fatalf("invented answers were not rejected: %s", result)
+	}
+}
+
+func TestProviderFailureAfterClaimReturnsPartialReply(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-partial", Status: claim.StatusUnderReview}}
+	llm := &scriptedLLM{
+		err:   errs.ErrUnavailable,
+		errAt: 2,
+		steps: []deepseek.Completion{
+			{ToolCalls: []deepseek.ToolCall{
+				toolCall("call-1", "search_items", `{"query":"iphone"}`),
+				toolCall("call-2", "create_claim", `{"item_id":"item-phone","answers":{"color":"nero"}}`),
+			}},
+		},
+	}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "è nero"}})
+	if err != nil {
+		t.Fatalf("Chat() restarted the mock after a side effect: %v", err)
+	}
+	if claims.calls != 1 {
+		t.Fatalf("CreateClaim calls = %d, want 1", claims.calls)
+	}
+	if reply.ClaimID != "claim-partial" || !reply.Done {
+		t.Fatalf("partial reply lost the claim: %+v", reply)
+	}
+	if strings.TrimSpace(reply.Message) == "" {
+		t.Fatal("partial reply has no message")
+	}
+}
+
+func TestMultipleCreateClaimCallsCreateOneClaim(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-once", Status: claim.StatusUnderReview}}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{
+			toolCall("call-1", "search_items", `{"query":"iphone"}`),
+			toolCall("call-2", "create_claim", `{"item_id":"item-phone","answers":{"color":"nero"}}`),
+			toolCall("call-3", "create_claim", `{"item_id":"item-phone","answers":{"color":"nero"}}`),
+		}},
+		{Content: "Richiesta registrata."},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "è nero"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if claims.calls != 1 {
+		t.Fatalf("CreateClaim calls = %d, want 1", claims.calls)
+	}
+	if reply.ClaimID != "claim-once" {
+		t.Fatalf("reply claim id = %q", reply.ClaimID)
+	}
+}
+
 func TestScoreToolReturnsNoExpectedValues(t *testing.T) {
 	llm := &scriptedLLM{steps: []deepseek.Completion{
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "score_with_d3",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
 			`{"item_id":"item-phone","answers":{"color":"nero","has_crack":"sì"}}`)}},
 		{Content: "Grazie, verifico le informazioni."},
 	}}
@@ -272,7 +459,7 @@ func TestScoreToolReturnsNoExpectedValues(t *testing.T) {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	result := firstToolResult(t, llm.call(1))
+	result := toolResultFor(t, llm.call(2), "score_with_d3")
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(result), &decoded); err != nil {
 		t.Fatalf("decoding score result %q: %v", result, err)
@@ -301,7 +488,8 @@ func TestCreateClaimToolUsesServerSearcher(t *testing.T) {
 		ConfidenceBand: "medium",
 	}}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
-		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "create_claim",
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "create_claim",
 			`{"item_id":"item-phone","answers":{"color":"nero"},"evidence":["ricevuta"]}`)}},
 		{Content: "Ho inviato la richiesta di verifica."},
 	}}

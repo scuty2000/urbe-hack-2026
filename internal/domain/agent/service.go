@@ -15,9 +15,13 @@ const (
 	fallbackMessage = "Non riesco a completare la verifica in questa conversazione. Ho inoltrato la richiesta a un operatore."
 	// escalationMessage is returned when the model escalates.
 	escalationMessage = "Ho inoltrato la richiesta a un operatore. Riceverai aggiornamenti in questa conversazione."
-	// maxRedactedCandidates bounds the private-profile lookups performed before
+	// partialFailureMessage is returned when the provider fails after a tool
+	// already ran. The mock is not restarted, so a created claim is not
+	// duplicated.
+	partialFailureMessage = "La conversazione si è interrotta. Se una richiesta è stata registrata, la trovi tra le tue richieste; riprova tra poco per continuare."
+	// maxRedactedItems bounds the private-profile lookups performed before
 	// returning a model-generated message.
-	maxRedactedCandidates = 3
+	maxRedactedItems = 10
 	// redactionPlaceholder replaces private values found in a model message.
 	redactionPlaceholder = "[dettaglio riservato]"
 )
@@ -95,16 +99,27 @@ func (s *service) llmChat(ctx context.Context, searcherID string, messages []Mes
 	var candidates []search.SearchResult
 	claimID := ""
 	escalated := false
+	turn := newTurnState(messages)
 
 	for round := 0; round < s.rounds; round++ {
 		conversation = trimConversation(conversation)
 		completion, err := s.deps.Client.Complete(ctx, conversation, toolDefinitions())
 		if err != nil {
+			// Never restart the mock after a tool ran: a claim may already
+			// exist, and the mock would create a duplicate.
+			if turn.used {
+				return Reply{
+					Message:    partialFailureMessage,
+					Candidates: candidates,
+					ClaimID:    claimID,
+					Done:       claimID != "" || escalated,
+				}, nil
+			}
 			return Reply{}, err
 		}
 
 		if len(completion.ToolCalls) == 0 {
-			message := s.redactMessage(ctx, completion.Content, candidates)
+			message := s.redactMessage(ctx, completion.Content, turn)
 			if message == "" {
 				message = fallbackMessage
 			}
@@ -122,7 +137,7 @@ func (s *service) llmChat(ctx context.Context, searcherID string, messages []Mes
 			ToolCalls: completion.ToolCalls,
 		})
 		for _, call := range completion.ToolCalls {
-			outcome := s.executeTool(ctx, searcherID, call)
+			outcome := s.executeTool(ctx, searcherID, call, turn)
 			if len(outcome.candidates) > 0 {
 				candidates = mergeCandidates(candidates, outcome.candidates)
 			}
@@ -182,22 +197,23 @@ func mergeCandidates(existing, added []search.SearchResult) []search.SearchResul
 	return existing
 }
 
-// redactMessage removes private values of the candidate items from a
-// model-generated message. It is defence in depth: the model never receives raw
-// identity values, but it could still echo a non-sensitive private attribute it
-// received for question generation.
-func (s *service) redactMessage(ctx context.Context, message string, candidates []search.SearchResult) string {
+// redactMessage removes private values of every item touched in the turn from a
+// model-generated message. It always runs, even when no search candidate was
+// collected: a turn that fetched a profile without search must not echo it.
+func (s *service) redactMessage(ctx context.Context, message string, turn *turnState) string {
 	message = strings.TrimSpace(message)
-	if message == "" || len(candidates) == 0 {
+	if message == "" || turn == nil || len(turn.seen) == 0 {
 		return message
 	}
 
 	tokens := make([]string, 0, 16)
-	for index, candidate := range candidates {
-		if index >= maxRedactedCandidates {
+	inspected := 0
+	for itemID := range turn.seen {
+		if inspected >= maxRedactedItems {
 			break
 		}
-		item, err := s.deps.Items.ItemForAgent(ctx, candidate.ItemID)
+		inspected++
+		item, err := s.deps.Items.ItemForAgent(ctx, itemID)
 		if err != nil {
 			continue
 		}

@@ -52,6 +52,35 @@ func newChatRouter(t *testing.T) (http.Handler, repository.Database) {
 	return router.Handler(), db
 }
 
+func TestChatRateLimitCountsMessages(t *testing.T) {
+	api, _ := newChatRouter(t)
+	searcher := loginAs(t, api, "searcher-demo")
+
+	// Two requests of ten messages consume the whole per-minute budget.
+	for i := 0; i < 2; i++ {
+		if got := doRequest(t, api, http.MethodPost, "/api/chat", chatBody(10), searcher).Code; got != http.StatusOK {
+			t.Fatalf("batch %d status = %d, want 200", i+1, got)
+		}
+	}
+	// A third one-message request exceeds the 20-message budget immediately.
+	if got := doRequest(t, api, http.MethodPost, "/api/chat", chatBody(1), searcher).Code; got != http.StatusTooManyRequests {
+		t.Fatalf("request after 20 messages status = %d, want 429", got)
+	}
+}
+
+// chatBody builds a request body with n user messages.
+func chatBody(n int) string {
+	messages := make([]map[string]string, 0, n)
+	for i := 0; i < n; i++ {
+		messages = append(messages, map[string]string{"role": "user", "content": "iphone"})
+	}
+	encoded, err := json.Marshal(map[string]any{"messages": messages})
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
+
 func TestChatRequiresSearcherRole(t *testing.T) {
 	api, _ := newChatRouter(t)
 	body := `{"messages":[{"role":"user","content":"ho perso un iphone in zona San Lorenzo"}]}`

@@ -31,10 +31,6 @@ func (h *WebAPIHandler) PostChat(ctx *reqcontext.RequestContext) {
 		respondWithJSONError(ctx, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	if !h.chatLimiter.allow(ctx.User.ID) {
-		respondWithJSONError(ctx, http.StatusTooManyRequests, "too many chat messages, try again later")
-		return
-	}
 
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxChatBody)
 	decoder := json.NewDecoder(ctx.Request.Body)
@@ -44,6 +40,12 @@ func (h *WebAPIHandler) PostChat(ctx *reqcontext.RequestContext) {
 	if err := decoder.Decode(&payload); err != nil {
 		ctx.Logger.Error("PostChat invalid body", "err", err)
 		respondWithJSONError(ctx, http.StatusBadRequest, "body must be JSON with a messages array")
+		return
+	}
+	// The limit is per message, not per request: a single request may carry a
+	// whole conversation.
+	if !h.chatLimiter.allowN(ctx.User.ID, len(payload.Messages)) {
+		respondWithJSONError(ctx, http.StatusTooManyRequests, "too many chat messages, try again later")
 		return
 	}
 
@@ -86,10 +88,14 @@ func newChatLimiter(limit int, window time.Duration) *chatLimiter {
 	}
 }
 
-// allow records one message for key and reports whether it is within the limit.
-func (l *chatLimiter) allow(key string) bool {
+// allowN records n messages for key and reports whether the whole batch is
+// within the limit. A batch that would exceed the limit is not consumed.
+func (l *chatLimiter) allowN(key string, n int) bool {
 	if l == nil || key == "" {
 		return true
+	}
+	if n <= 0 {
+		n = 1
 	}
 	now := l.now().UTC()
 
@@ -101,13 +107,13 @@ func (l *chatLimiter) allow(key string) bool {
 	}
 	window, ok := l.counters[key]
 	if !ok || now.Sub(window.start) >= l.window {
-		l.counters[key] = chatWindow{start: now, count: 1}
+		l.counters[key] = chatWindow{start: now, count: n}
 		return true
 	}
-	if window.count >= l.limit {
+	if window.count+n > l.limit {
 		return false
 	}
-	window.count++
+	window.count += n
 	l.counters[key] = window
 	return true
 }
