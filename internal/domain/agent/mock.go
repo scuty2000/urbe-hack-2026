@@ -171,14 +171,14 @@ func mockAnswers(text string) map[string]string {
 		value  string
 	}{
 		{[]string{"nero", "black", "nera"}, "nero"},
-		{[]string{"blu", "blue", "azzurro"}, "blu"},
+		{[]string{"blu", "blue", "azzurro", "azzurra"}, "blu"},
 		{[]string{"bianco", "white", "bianca"}, "bianco"},
 		{[]string{"marrone", "brown"}, "marrone"},
 		{[]string{"rosso", "red", "rossa"}, "rosso"},
 		{[]string{"verde", "green"}, "verde"},
-		{[]string{"grigio", "gray", "grey"}, "grigio"},
+		{[]string{"grigio", "gray", "grey", "grigia"}, "grigio"},
 		{[]string{"rosa", "pink"}, "rosa"},
-		{[]string{"giallo", "yellow"}, "giallo"},
+		{[]string{"giallo", "yellow", "gialla"}, "giallo"},
 	} {
 		if !containsAny(lower, color.tokens...) {
 			continue

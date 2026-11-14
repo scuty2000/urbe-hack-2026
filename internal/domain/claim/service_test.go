@@ -242,7 +242,7 @@ func TestCreateClaimStatusFollowsPolicy(t *testing.T) {
 			created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
 				ItemID:     id,
 				SearcherID: "searcher-demo",
-				Session:    claim.Session{Answers: map[string]string{"color": "black"}},
+				Session:    claim.Session{Answers: map[string]string{"case_color": "blu"}},
 				Flags:      tc.flags,
 			})
 			if err != nil {
@@ -316,7 +316,7 @@ func TestReviewClaimByCustodianAndInstitution(t *testing.T) {
 	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
 		ItemID:     "item-review",
 		SearcherID: "searcher-demo",
-		Session:    claim.Session{Answers: map[string]string{"color": "black"}},
+		Session:    claim.Session{Answers: map[string]string{"case_color": "blu"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateClaim() error = %v", err)

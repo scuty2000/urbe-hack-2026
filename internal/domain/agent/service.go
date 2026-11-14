@@ -115,7 +115,12 @@ func (s *service) preflightChat(ctx context.Context, searcherID string, messages
 		}, true, nil
 	}
 	if evaluation.Decision == verification.DecisionMoreInfo {
-		return Reply{}, false, nil
+		// The server asks, so the model cannot turn an undecided case into an
+		// escalation or a forwarded claim.
+		return Reply{
+			Message:    moreInfoMessage,
+			Candidates: results,
+		}, true, nil
 	}
 
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{

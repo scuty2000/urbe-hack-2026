@@ -502,6 +502,30 @@ func TestPreflightNoPrivateAttributesClosesBeforeLLM(t *testing.T) {
 	}
 }
 
+func TestPreflightUndecidedAsksWithoutEscalating(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Com'è fatta la custodia?"},
+		{Role: "user", Content: "ha una custodia"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if reply.Done || reply.ClaimID != "" {
+		t.Fatalf("undecided ownership was forwarded: %+v", reply)
+	}
+	if claims.calls != 0 || len(llm.calls) != 0 {
+		t.Fatalf("claims=%d llm=%d, want a deterministic question", claims.calls, len(llm.calls))
+	}
+	if !strings.Contains(reply.Message, "Non basta ancora") {
+		t.Fatalf("message = %q, want another-detail question", reply.Message)
+	}
+}
+
 func TestScoreWrongPrivateDetailClosesWithoutClaim(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
@@ -556,6 +580,50 @@ func TestScoreNoPrivateAttributesClosesWithoutClaim(t *testing.T) {
 	}
 	if claims.calls != 0 || reply.ClaimID != "" {
 		t.Fatalf("claim was forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
+	}
+}
+
+func TestMockAgentClosesOnFeminineWrongPrivateDetail(t *testing.T) {
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Com'è fatta la custodia?"},
+		{Role: "user", Content: "ha una custodia gialla"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "non posso verificare") {
+		t.Fatalf("reply = %+v, want a terminal rejection", reply)
+	}
+	if reply.ClaimID != "" {
+		t.Fatalf("wrong private detail created a claim: %q", reply.ClaimID)
+	}
+}
+
+func TestEscalateIsBlockedWhileOwnershipIsUndecided(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+			`{"item_id":"item-phone","answers":{"color":"nero"}}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-3", "escalate", `{}`)}},
+		{Content: "Mi descriva un altro dettaglio della custodia."},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "è nero"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if reply.Done || reply.ClaimID != "" || claims.calls != 0 {
+		t.Fatalf("undecided ownership was forwarded: reply=%+v claims=%d", reply, claims.calls)
+	}
+	result := toolResultFor(t, llm.call(3), "escalate")
+	if !strings.Contains(result, "undecided") {
+		t.Fatalf("escalate was not blocked: %s", result)
 	}
 }
 

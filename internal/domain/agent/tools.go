@@ -79,6 +79,9 @@ type turnState struct {
 	used bool
 	// claimCreated prevents duplicate claims within a turn.
 	claimCreated bool
+	// ownershipPending is set when the engine cannot decide yet. Until the
+	// searcher answers again, the model may ask but must not escalate.
+	ownershipPending bool
 }
 
 func newTurnState(messages []Message) *turnState {
@@ -102,6 +105,7 @@ type toolOutcome struct {
 const (
 	terminalMismatchMessage   = "Non posso verificare che l'oggetto sia suo: i dettagli forniti non corrispondono a quelli registrati. La conversazione termina qui. Se ritiene che ci sia un errore, si rivolga al punto di raccolta."
 	terminalNoEvidenceMessage = "Non ci sono dettagli privati sufficienti per verificare la proprietà di questo oggetto. Non posso inoltrare la richiesta: la conversazione termina qui. Si rivolga al punto di raccolta."
+	moreInfoMessage           = "Non basta ancora per verificare la proprietà. Mi descriva un altro dettaglio che solo il proprietario conosce, ad esempio il colore di un accessorio, un segno particolare o un'incisione."
 )
 
 // toolDefinitions declares the tools offered to the model.
@@ -213,7 +217,7 @@ func (s *service) executeTool(ctx context.Context, searcherID string, call deeps
 	case ToolCreateClaim:
 		return s.toolCreateClaim(ctx, searcherID, call, state)
 	case ToolEscalate:
-		return s.toolEscalate()
+		return s.toolEscalate(state)
 	default:
 		return toolError("unknown tool")
 	}
@@ -514,8 +518,14 @@ func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, a
 		return ownershipEvaluation{}, err
 	}
 	confidence := clamp01(result.Confidence)
-	if privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys); answered > 0 {
+	privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys)
+	switch {
+	case answered > 0:
 		confidence = clamp01(privateConfidence)
+	case len(privateKeys) > 0:
+		// Missing private answers are not evidence of ownership, and the
+		// provider's average over unanswered questions must not be used.
+		confidence = 0
 	}
 	if verification.HasPrivateMismatch(answers, result.Answers, privateKeys) {
 		flags = append(flags, verification.FlagPrivateMismatch)
@@ -583,6 +593,10 @@ func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall, state *
 	if evaluation.Decision == verification.DecisionReject {
 		outcome.terminal = true
 		outcome.terminalMessage = terminalMismatchMessage
+		return outcome
+	}
+	if evaluation.Decision == verification.DecisionMoreInfo {
+		state.ownershipPending = true
 	}
 	return outcome
 }
@@ -648,6 +662,7 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 		}
 	}
 	if evaluation.Decision == verification.DecisionMoreInfo {
+		turn.ownershipPending = true
 		return toolError("not enough evidence; ask another question and do not create the claim")
 	}
 
@@ -673,6 +688,7 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 		}
 	}
 	if created.Status == claim.StatusMoreInfo {
+		turn.ownershipPending = true
 		return toolError("not enough evidence; ask another question")
 	}
 	band := created.ConfidenceBand
@@ -709,7 +725,10 @@ func answersFromUserText(answers map[string]string, userText string) map[string]
 	return filtered
 }
 
-func (s *service) toolEscalate() toolOutcome {
+func (s *service) toolEscalate(state *turnState) toolOutcome {
+	if state != nil && state.ownershipPending {
+		return toolError("ownership is still undecided; ask another detail instead of escalating")
+	}
 	return toolOutcome{
 		content:   mustJSON(map[string]any{"escalated": true}),
 		escalated: true,

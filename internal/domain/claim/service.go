@@ -102,8 +102,15 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		return Claim{}, fmt.Errorf("create claim %q: scoring: %w", itemID, err)
 	}
 	confidence := clampConfidence(result.Confidence)
-	if privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys); answered > 0 {
+	privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys)
+	switch {
+	case answered > 0:
 		confidence = clampConfidence(privateConfidence)
+	case len(privateKeys) > 0:
+		// No answered private attribute means no ownership evidence. The
+		// provider's average over unanswered questions must not raise the
+		// score or turn a "keep asking" case into a claim.
+		confidence = 0
 	}
 	if verification.HasPrivateMismatch(answers, result.Answers, privateKeys) {
 		flags = mergeStrings(flags, []string{verification.FlagPrivateMismatch})
