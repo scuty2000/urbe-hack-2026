@@ -16,5 +16,6 @@ webui/dist/
 
 # tooling
 .omo/
-.codegraph/
+.codegraph
+.idea/
 .DS_Store
