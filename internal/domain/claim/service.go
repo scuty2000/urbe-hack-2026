@@ -260,6 +260,19 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 	return claimFromRecord(claimRow), nil
 }
 
+// ExistingClaimError reports that the searcher already has an open claim on
+// the item. It wraps errs.ErrConflict and carries the claim id, so the agent
+// can point the searcher to it instead of failing.
+type ExistingClaimError struct {
+	ClaimID string
+}
+
+func (e *ExistingClaimError) Error() string {
+	return "claim " + e.ClaimID + " already exists for this item: " + errs.ErrConflict.Error()
+}
+
+func (e *ExistingClaimError) Unwrap() error { return errs.ErrConflict }
+
 // maxOpenClaimsPerItem caps the non-rejected claims on one item. It is a small
 // abuse guard, not a business limit: rejected claims never count.
 const maxOpenClaimsPerItem = 5
@@ -278,7 +291,7 @@ func (s *service) checkClaimLimits(ctx context.Context, itemID, searcherID strin
 		}
 		open++
 		if row.SearcherID == searcherID {
-			return fmt.Errorf("claim already exists for this item: %w", errs.ErrConflict)
+			return &ExistingClaimError{ClaimID: row.ID}
 		}
 	}
 	if open >= maxOpenClaimsPerItem {

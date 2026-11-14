@@ -814,8 +814,21 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 	if errors.Is(err, errs.ErrUnavailable) {
 		return toolOutcome{err: err, content: mustJSON(map[string]any{"error": "scoring is unavailable"})}
 	}
+	var existing *claim.ExistingClaimError
+	if errors.As(err, &existing) {
+		// The searcher already asked for this item: the turn ends on that
+		// claim, never on an invented "technical issue, I'll retry".
+		return s.existingClaimOutcome(ctx, searcherID, itemID, existing.ClaimID, evaluation)
+	}
+	if errors.Is(err, errs.ErrConflict) {
+		return toolOutcome{
+			content:         mustJSON(map[string]any{"error": "the item cannot be claimed now"}),
+			terminal:        true,
+			terminalMessage: "Al momento non è possibile registrare una richiesta per questo oggetto: ci sono già troppe richieste aperte oppure non è più in custodia. Riprova più tardi o rivolgiti al punto di custodia.",
+		}
+	}
 	if err != nil {
-		return toolError("claim could not be created")
+		return toolError("claim could not be created; do not retry and do not promise a retry")
 	}
 	turn.claimCreated = true
 	turn.seen[itemID] = true
@@ -848,6 +861,21 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 		claimID:         created.ID,
 		terminal:        true,
 		terminalMessage: s.claimMessage(ctx, itemID, created, evaluation),
+	}
+}
+
+// existingClaimOutcome ends the turn on the searcher's open claim for the item,
+// with the message matching its current status.
+func (s *service) existingClaimOutcome(ctx context.Context, searcherID, itemID, claimID string, evaluation ownershipEvaluation) toolOutcome {
+	current, err := s.deps.Claim.GetClaim(ctx, claimID, claim.Actor{ID: searcherID, Role: claim.ActorRoleSearcher})
+	if err != nil {
+		current = claim.Claim{ID: claimID, Status: claim.StatusUnderReview}
+	}
+	return toolOutcome{
+		content:         mustJSON(claimToolResult{ClaimID: current.ID, Status: current.Status, ReturnChannel: current.ReturnChannel}),
+		claimID:         current.ID,
+		terminal:        true,
+		terminalMessage: "Hai già una richiesta aperta per questo oggetto (codice " + current.ID + "). " + s.claimMessage(ctx, itemID, current, evaluation),
 	}
 }
 
