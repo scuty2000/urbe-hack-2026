@@ -42,11 +42,15 @@ scripts/demo-reset.sh
 scripts/demo-reset.sh --seed
 ```
 
-Verify the seed before opening the UI:
+Verify the seed before opening the UI. `/api/health` only reports dependencies;
+it does not prove the dataset was reset. Log in as the demo searcher and read
+the seeded claim instead:
 
 ```bash
-# expected: seeded phone in custody, seeded approved claim, four demo roles
-curl -sS http://localhost:3000/api/health | jq
+curl -sS -c /tmp/ritrova-cookies -H 'Content-Type: application/json' \
+  -d '{"userId":"searcher-demo"}' http://localhost:3000/api/auth/login >/dev/null
+curl -sS -b /tmp/ritrova-cookies http://localhost:3000/api/claims/claim-phone | jq
+# expected: the seeded approved claim for item-phone
 ```
 
 - [ ] Reset exits 0 and prints either the HTTP reset or the local seed path.
@@ -65,21 +69,27 @@ docker compose up --build -d api qdrant
 open http://localhost:3000/dashboard/
 ```
 
-Local path (two terminals):
+Local path (backend + Vite; the Go binary has no embedded UI unless it was built
+with `-tags webui`):
 
 ```bash
 scripts/dev-up.sh
-npm --prefix webui run dev   # http://localhost:5173/
+npm --prefix webui run dev   # open http://localhost:5173/
 ```
 
 - [ ] `/healthz` returns 200.
-- [ ] `/api/health` returns JSON and the UI shows the **fallback** badge when
-      optional providers are not configured.
-- [ ] Opening the four role homes works.
+- [ ] `/api/health` returns JSON, and the **fallback** badge on the searcher
+      chat screen says **modalità fallback** when optional providers are not
+      configured.
+- [ ] Opening the four role homes works (embedded `/dashboard/...` or the Vite
+      `:5173` equivalents).
 
 ## 3. Fallback rehearsal (5 minutes)
 
-Do this once with providers stopped/disabled, so a stage outage is boring:
+Do this once with providers stopped/disabled, so a stage outage is boring.
+Provider settings (`API_DEEPSEEK_*`, `API_D3_*`, `API_QDRANT_*`,
+`API_EMBEDDINGS_*`) are read only at startup: after changing any of them, stop
+and restart the API before testing.
 
 - [ ] Stop Qdrant (`docker compose stop qdrant`) or unset `API_QDRANT_URL`.
       Search still returns candidates; nothing 500s.
@@ -90,10 +100,10 @@ Do this once with providers stopped/disabled, so a stage outage is boring:
 - [ ] Keep the mock payment provider; fees settle without a payment key.
 - [ ] Restore the normal configuration before recording.
 
-The chat badge is honest about configuration: green means D3 and DeepSeek are
-configured; amber means at least one of them is not, and the local path is in
-use. Provider errors always fall back to SQLite, the local scorer and the mock
-agent rather than returning 500.
+The chat badge on the searcher screen is honest about configuration: green
+means D3 and DeepSeek are configured; amber means at least one of them is not,
+and the local path is in use. Provider errors always fall back to SQLite, the
+local scorer and the mock agent rather than returning 500.
 
 ## 4. Four-flow rehearsal
 
@@ -154,9 +164,23 @@ Use browser devtools at 375 px width on the finder and searcher screens:
 If the live demo fails:
 
 1. Switch to the recorded video.
-2. Or run locally: `go run ./cmd/webapi/ -c demo/config.yml` and open
+2. Or use the Docker stack (already verified):
+   `docker compose up --build -d api qdrant`, then open
    `http://localhost:3000/dashboard/`.
-3. Or use the seeded fast path: `http://localhost:3000/dashboard/searcher?claim=claim-phone`.
+3. Or rebuild the embedded UI and run it locally:
+
+   ```bash
+   npm --prefix webui run build
+   go run -tags webui ./cmd/webapi/ -c demo/config.yml
+   open http://localhost:3000/dashboard/
+   ```
+
+   Without `-tags webui` the binary serves the API only (no `/dashboard/`): in
+   that case use the Vite path instead (`scripts/dev-up.sh` +
+   `npm --prefix webui run dev`, open `http://localhost:5173/`).
+4. Or use the seeded fast path with either UI:
+   `http://localhost:3000/dashboard/searcher?claim=claim-phone` (embedded) or
+   `http://localhost:5173/searcher?claim=claim-phone` (Vite).
 
 ## 7. Public URL (human/account step)
 

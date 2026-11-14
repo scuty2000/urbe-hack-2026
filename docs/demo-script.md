@@ -157,9 +157,19 @@ monouso, zero dati personali esposti."
 
 ## If something goes wrong
 
-- **API or tunnel down:** use the recorded video. For a live recovery, run the
-  API locally with `go run ./cmd/webapi/ -c demo/config.yml` and open
-  `http://localhost:3000/dashboard/`.
+- **API or tunnel down:** use the recorded video. For a live recovery, start the
+  Docker stack (`docker compose up --build -d api qdrant`, open
+  `http://localhost:3000/dashboard/`) or rebuild the embedded UI and run it
+  locally:
+
+  ```bash
+  npm --prefix webui run build
+  go run -tags webui ./cmd/webapi/ -c demo/config.yml
+  ```
+
+  `go run ./cmd/webapi/` without `-tags webui` serves the API only and does not
+  mount `/dashboard/`; in that case use the Vite path (`scripts/dev-up.sh` plus
+  `npm --prefix webui run dev`, open `http://localhost:5173/`).
 - **Chat, claim or review stalls:** open `/dashboard/searcher?claim=claim-phone`;
   the seeded approved claim lets you generate the pass immediately. This is the
   intended fast path for a short recording.
