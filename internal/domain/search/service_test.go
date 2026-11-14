@@ -3,6 +3,7 @@ package search_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -119,13 +120,71 @@ func TestSearchFiltersByCategoryZoneAndTime(t *testing.T) {
 	}
 }
 
+func TestSearchUsesVectorHitsAndFiltersDisallowedItems(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+
+	embedder := &fakeEmbedder{}
+	vectors := &fakeVectors{searchPoints: []qdrant.ScoredPoint{
+		{ID: "phone-point", Score: 0.91, Payload: map[string]any{"item_id": "item-phone"}},
+		{ID: "umbrella-point", Score: 0.99, Payload: map[string]any{"item_id": "item-umbrella"}},
+	}}
+	svc := search.New(db, search.Deps{Embedder: embedder, Vectors: vectors})
+
+	got, err := svc.Search(context.Background(), search.Query{Text: "iphone"})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(got) != 1 || got[0].ItemID != "item-phone" || got[0].Score != 0.91 {
+		t.Fatalf("vector results = %+v, want only item-phone at 0.91", got)
+	}
+	if embedder.calls != 1 || vectors.searchCalls != 1 {
+		t.Fatalf("embed/search calls = %d/%d, want 1/1", embedder.calls, vectors.searchCalls)
+	}
+}
+
+func TestSearchFallsBackAndCoolsDownAfterQdrantFailure(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+
+	embedder := &fakeEmbedder{}
+	vectors := &fakeVectors{searchErr: errors.New("qdrant down")}
+	svc := search.New(db, search.Deps{Embedder: embedder, Vectors: vectors})
+	ctx := context.Background()
+
+	first, err := svc.Search(ctx, search.Query{Text: "iphone nero"})
+	if err != nil {
+		t.Fatalf("first Search() error = %v", err)
+	}
+	if len(first) == 0 || first[0].ItemID != "item-phone" {
+		t.Fatalf("fallback results = %+v, want item-phone", first)
+	}
+	if embedder.calls != 1 || vectors.searchCalls != 1 {
+		t.Fatalf("first calls = %d/%d, want 1/1", embedder.calls, vectors.searchCalls)
+	}
+
+	// The breaker suppresses the vector path for the cooldown window.
+	second, err := svc.Search(ctx, search.Query{Text: "iphone nero"})
+	if err != nil {
+		t.Fatalf("second Search() error = %v", err)
+	}
+	if len(second) == 0 || second[0].ItemID != "item-phone" {
+		t.Fatalf("second fallback results = %+v, want item-phone", second)
+	}
+	if embedder.calls != 1 || vectors.searchCalls != 1 {
+		t.Fatalf("second calls = %d/%d, want still 1/1 (cooldown)", embedder.calls, vectors.searchCalls)
+	}
+}
+
 type fakeEmbedder struct {
 	text   string
 	vector []float32
 	err    error
+	calls  int
 }
 
 func (f *fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
+	f.calls++
 	f.text = text
 	if f.err != nil {
 		return nil, f.err
@@ -137,8 +196,11 @@ func (f *fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) 
 }
 
 type fakeVectors struct {
-	point   qdrant.Point
-	deleted string
+	point        qdrant.Point
+	deleted      string
+	searchPoints []qdrant.ScoredPoint
+	searchErr    error
+	searchCalls  int
 }
 
 func (f *fakeVectors) Upsert(_ context.Context, point qdrant.Point) error {
@@ -147,7 +209,8 @@ func (f *fakeVectors) Upsert(_ context.Context, point qdrant.Point) error {
 }
 
 func (f *fakeVectors) Search(context.Context, []float32, qdrant.Filter, int) ([]qdrant.ScoredPoint, error) {
-	return nil, nil
+	f.searchCalls++
+	return f.searchPoints, f.searchErr
 }
 
 func (f *fakeVectors) Delete(_ context.Context, itemID string) error {

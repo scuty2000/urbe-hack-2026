@@ -31,6 +31,10 @@ const (
 	DefaultBatchSize = 32
 	// defaultTimeout is used when the caller passes a non-positive timeout.
 	defaultTimeout = 5 * time.Second
+	// maxTimeout is the hard ceiling for a single embedding request. A search
+	// must fall back to SQLite quickly, so a larger configured timeout is
+	// clamped instead of stalling the request.
+	maxTimeout = 5 * time.Second
 	// maxResponseBytes bounds the response body read from the embedding server.
 	maxResponseBytes = 64 << 20
 )
@@ -49,6 +53,9 @@ type Client struct {
 func New(url, model, key string, timeout time.Duration, batchSize int) *Client {
 	if timeout <= 0 {
 		timeout = defaultTimeout
+	}
+	if timeout > maxTimeout {
+		timeout = maxTimeout
 	}
 	if strings.TrimSpace(model) == "" {
 		model = DefaultModel

@@ -66,7 +66,7 @@ type WebAPIConfiguration struct {
 		URL       string        `conf:"default:http://www.lucascutigliani.it:8000/v1/embeddings,help:embeddings endpoint URL"`
 		Model     string        `conf:"default:nvidia/Nemotron-3.5-Embed-8B-BF16,help:embedding model name"`
 		Key       string        `conf:"help:embeddings API key"`
-		Timeout   time.Duration `conf:"default:10s,help:maximum duration of an embedding request"`
+		Timeout   time.Duration `conf:"default:5s,help:maximum duration of an embedding request"`
 		BatchSize int           `conf:"env:EMBEDDINGS_BATCH_SIZE,default:32,help:number of texts per embedding request"`
 	}
 

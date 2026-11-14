@@ -124,6 +124,10 @@ func Reset(ctx context.Context, db repository.Database, indexers ...Indexer) err
 	if indexer == nil {
 		return nil
 	}
+	// Indexing is optional and bounded: the DB reset already committed, so a
+	// slow vector store must not push the demo reset past the write timeout.
+	indexCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
 	for _, itemRow := range rows.items {
 		item, err := itemdomain.FromRecord(itemRow.item)
 		if err != nil {
@@ -132,7 +136,9 @@ func Reset(ctx context.Context, db repository.Database, indexers ...Indexer) err
 		if item.Status != itemdomain.StatusInCustody && item.Status != "transferred" {
 			continue
 		}
-		_ = indexer.IndexItem(ctx, item)
+		if err := indexer.IndexItem(indexCtx, item); err != nil {
+			break
+		}
 	}
 	return nil
 }

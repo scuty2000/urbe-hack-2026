@@ -99,8 +99,9 @@ func PointID(itemID string) string {
 }
 
 // EnsureCollection creates the collection with the expected vector size and
-// cosine distance. Qdrant answers 409 when the collection already exists; that
-// is success for startup wiring.
+// cosine distance. When Qdrant answers 409 the existing collection is fetched
+// and verified: an old collection with a different dimension would make every
+// upsert fail at runtime, so it is reported clearly at startup instead.
 func (c *Client) EnsureCollection(ctx context.Context) error {
 	body := map[string]any{
 		"vectors": map[string]any{
@@ -113,10 +114,71 @@ func (c *Client) EnsureCollection(ctx context.Context) error {
 		return err
 	}
 	if status == http.StatusConflict {
-		return nil
+		return c.verifyExistingCollection(ctx)
 	}
 	if err := statusError("EnsureCollection", status); err != nil {
 		return err
+	}
+	return nil
+}
+
+// verifyExistingCollection checks that an already-existing collection has the
+// dimension and distance expected by this client.
+func (c *Client) verifyExistingCollection(ctx context.Context) error {
+	status, data, err := c.doDecode(ctx, http.MethodGet, "/collections/"+c.collection, nil)
+	if err != nil {
+		return err
+	}
+	if err := statusError("EnsureCollection", status); err != nil {
+		return err
+	}
+
+	var decoded struct {
+		Result struct {
+			Config struct {
+				Params struct {
+					Vectors json.RawMessage `json:"vectors"`
+				} `json:"params"`
+			} `json:"config"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return fmt.Errorf("qdrant ensure collection: decoding collection info: %w: %w", errs.ErrUnavailable, err)
+	}
+
+	var vectors map[string]any
+	if err := json.Unmarshal(decoded.Result.Config.Params.Vectors, &vectors); err != nil {
+		return fmt.Errorf("qdrant ensure collection: decoding vector config: %w: %w", errs.ErrUnavailable, err)
+	}
+
+	// Unnamed collection: {"size":4096,"distance":"Cosine"}.
+	if _, ok := vectors["size"]; ok {
+		return c.checkVectorConfig("", vectors)
+	}
+	// Named vectors: {"name":{"size":4096,"distance":"Cosine"}}.
+	if len(vectors) == 0 {
+		return fmt.Errorf("qdrant ensure collection: collection %q has no vector config: %w", c.collection, errs.ErrConflict)
+	}
+	for name, raw := range vectors {
+		config, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("qdrant ensure collection: collection %q vector %q has an unexpected config: %w", c.collection, name, errs.ErrConflict)
+		}
+		if err := c.checkVectorConfig(name, config); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) checkVectorConfig(name string, config map[string]any) error {
+	size, _ := config["size"].(float64)
+	distance, _ := config["distance"].(string)
+	if size != float64(VectorSize) || !strings.EqualFold(distance, "Cosine") {
+		return fmt.Errorf(
+			"qdrant ensure collection: collection %q vector %q is size=%v distance=%q, want size=%d distance=Cosine: %w",
+			c.collection, name, config["size"], distance, VectorSize, errs.ErrConflict,
+		)
 	}
 	return nil
 }
@@ -217,11 +279,15 @@ func (c *Client) doDecode(ctx context.Context, method, path string, body any) (i
 		return 0, nil, fmt.Errorf("qdrant: endpoint is not configured: %w", errs.ErrUnavailable)
 	}
 
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return 0, nil, fmt.Errorf("qdrant: encoding request: %w", err)
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return 0, nil, fmt.Errorf("qdrant: encoding request: %w", err)
+		}
+		reader = bytes.NewReader(payload)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
 		return 0, nil, fmt.Errorf("qdrant: building request: %w", errs.ErrUnavailable)
 	}

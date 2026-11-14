@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,8 +13,15 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 )
 
-// maxCustodyBody bounds the small JSON bodies of the custody routes.
-const maxCustodyBody = 64 << 10
+const (
+	// maxCustodyBody bounds the small JSON bodies of the custody routes.
+	maxCustodyBody = 64 << 10
+	// indexTimeout bounds the best-effort search indexing after a custody
+	// accept. It is detached from the request cancellation so a client
+	// disconnect does not interrupt a useful index write, but it can never
+	// push the response past the server write timeout.
+	indexTimeout = 2 * time.Second
+)
 
 // PostCustodyAccept acknowledges the handover for the authenticated
 // intermediary. The actor and the current time are supplied by the HTTP layer,
@@ -38,13 +46,16 @@ func (h *WebAPIHandler) PostCustodyAccept(ctx *reqcontext.RequestContext) {
 	}
 
 	// Indexing is best-effort: a Qdrant/embeddings outage must never turn a
-	// successful custody acceptance into an error.
+	// successful custody acceptance into an error, and the bounded detached
+	// context keeps the response inside the server write timeout.
 	if h.Search != nil {
-		item, getErr := h.Items.GetItem(ctx.Request.Context(), accepted.ItemID,
+		indexCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx.Request.Context()), indexTimeout)
+		defer cancel()
+		item, getErr := h.Items.GetItem(indexCtx, accepted.ItemID,
 			itemdomain.Actor{ID: ctx.User.ID, Role: ctx.User.Role})
 		if getErr != nil {
 			ctx.Logger.Error("PostCustodyAccept load item for indexing", "err", getErr)
-		} else if indexErr := h.Search.IndexItem(ctx.Request.Context(), item); indexErr != nil {
+		} else if indexErr := h.Search.IndexItem(indexCtx, item); indexErr != nil {
 			ctx.Logger.Error("PostCustodyAccept index item", "err", indexErr)
 		}
 	}

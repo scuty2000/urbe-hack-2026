@@ -69,6 +69,9 @@ type Deps struct {
 	EmbeddingsKey       string
 	EmbeddingsTimeout   time.Duration
 	EmbeddingsBatchSize int
+
+	// Now is injectable for deterministic circuit-breaker tests.
+	Now func() time.Time
 }
 
 // vectorFilter returns the Qdrant filter shared by the service.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,15 +17,23 @@ import (
 
 func TestEnsureCollectionTreatsConflictAsAlreadyExists(t *testing.T) {
 	var (
-		method, path string
-		body         map[string]any
+		putBody  map[string]any
+		getCalls int
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		method, path = r.Method, r.URL.Path
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decoding collection body: %v", err)
+		switch r.Method {
+		case http.MethodPut:
+			if err := json.NewDecoder(r.Body).Decode(&putBody); err != nil {
+				t.Errorf("decoding collection body: %v", err)
+			}
+			w.WriteHeader(http.StatusConflict)
+		case http.MethodGet:
+			getCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"result":{"config":{"params":{"vectors":{"size":4096,"distance":"Cosine"}}}}}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
 		}
-		w.WriteHeader(http.StatusConflict)
 	}))
 	defer server.Close()
 
@@ -32,18 +41,39 @@ func TestEnsureCollectionTreatsConflictAsAlreadyExists(t *testing.T) {
 	if err := client.EnsureCollection(context.Background()); err != nil {
 		t.Fatalf("EnsureCollection() error = %v", err)
 	}
-	if method != http.MethodPut {
-		t.Fatalf("method = %s, want PUT", method)
+	if getCalls != 1 {
+		t.Fatalf("collection GET calls = %d, want 1", getCalls)
 	}
-	if path != "/collections/items" {
-		t.Fatalf("path = %s, want /collections/items", path)
-	}
-	vectors, ok := body["vectors"].(map[string]any)
+	vectors, ok := putBody["vectors"].(map[string]any)
 	if !ok {
-		t.Fatalf("vectors = %#v", body["vectors"])
+		t.Fatalf("vectors = %#v", putBody["vectors"])
 	}
 	if vectors["size"] != float64(qdrant.VectorSize) || vectors["distance"] != "Cosine" {
 		t.Fatalf("vectors = %#v, want size %d cosine", vectors, qdrant.VectorSize)
+	}
+}
+
+func TestEnsureCollectionRejectsMismatchedExistingCollection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			w.WriteHeader(http.StatusConflict)
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"result":{"config":{"params":{"vectors":{"size":1536,"distance":"Dot"}}}}}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	client := qdrant.New(server.URL, "items", "", time.Second)
+	err := client.EnsureCollection(context.Background())
+	if !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("EnsureCollection() error = %v, want ErrConflict", err)
+	}
+	if !strings.Contains(err.Error(), "1536") || !strings.Contains(err.Error(), "4096") {
+		t.Fatalf("error does not report the dimension mismatch: %v", err)
 	}
 }
 

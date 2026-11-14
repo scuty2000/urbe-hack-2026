@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
@@ -15,10 +16,20 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 )
 
+const (
+	// vectorCooldown is how long the vector path stays disabled after a
+	// failure. The first failed search may still wait for the clamped 5 s
+	// embedding timeout; subsequent searches go straight to SQLite.
+	vectorCooldown = 30 * time.Second
+)
+
 // service implements Service.
 type service struct {
 	db   repository.Database
 	deps Deps
+
+	mu               sync.Mutex
+	vectorRetryAfter time.Time
 }
 
 // New returns a search service. When Deps carries URLs instead of clients, the
@@ -47,16 +58,47 @@ func New(db repository.Database, deps Deps) Service {
 
 // Search tries the vector path when a query text and both clients are
 // available; every failure or empty vector result falls through to SQLite so
-// the demo never depends on Qdrant being up.
+// the demo never depends on Qdrant being up. After a vector failure the path
+// is skipped for vectorCooldown, so an outage does not stall every search.
 func (s *service) Search(ctx context.Context, query Query) ([]SearchResult, error) {
 	query = normalizeQuery(query)
 
-	if query.Text != "" && s.deps.Embedder != nil && s.deps.Vectors != nil {
-		if results, err := s.vectorSearch(ctx, query); err == nil && len(results) > 0 {
+	if query.Text != "" && s.deps.Embedder != nil && s.deps.Vectors != nil && s.vectorReady() {
+		results, err := s.vectorSearch(ctx, query)
+		if err == nil && len(results) > 0 {
+			s.recordVectorSuccess()
 			return results, nil
+		}
+		if err != nil {
+			s.recordVectorFailure()
 		}
 	}
 	return s.fallbackSearch(ctx, query)
+}
+
+func (s *service) now() time.Time {
+	if s.deps.Now != nil {
+		return s.deps.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func (s *service) vectorReady() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.vectorRetryAfter.IsZero() || !s.now().Before(s.vectorRetryAfter)
+}
+
+func (s *service) recordVectorFailure() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.vectorRetryAfter = s.now().Add(vectorCooldown)
+}
+
+func (s *service) recordVectorSuccess() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.vectorRetryAfter = time.Time{}
 }
 
 func (s *service) vectorSearch(ctx context.Context, query Query) ([]SearchResult, error) {
