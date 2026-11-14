@@ -20,6 +20,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/testutil"
@@ -49,6 +50,7 @@ func newItemRouter(t *testing.T) (http.Handler, string) {
 			Storage: storage.NewLocal(dataDir, 1),
 		}),
 		CustodyService: custodydomain.New(db),
+		SearchService:  search.New(db, search.Deps{}),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)

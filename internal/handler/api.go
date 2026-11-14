@@ -10,12 +10,13 @@ a standard http.Server.
 Example:
 
 	apirouter, err := handler.New(handler.Config{
-		Logger:        logger,
+		Logger:         logger,
 		NameService:    nameService,
 		HealthService:  healthService,
 		AuthService:    authService,
 		ItemService:    itemService,
 		CustodyService: custodyService,
+		SearchService:  searchService,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating the API server instance: %w", err)
@@ -32,6 +33,7 @@ See cmd/webapi/main.go for a full usage example.
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -44,6 +46,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
 )
 
@@ -71,6 +74,16 @@ type Config struct {
 
 	// CustodyService is the domain service for custody transitions.
 	CustodyService custodydomain.Service
+
+	// SearchService is the hybrid search and index service.
+	SearchService search.Service
+
+	// DemoReset replaces the demo dataset. It is optional; without it
+	// POST /api/demo/reset returns 503.
+	DemoReset func(context.Context) error
+
+	// DemoResetSecret is the shared secret required by the demo reset route.
+	DemoResetSecret string
 }
 
 // Router is the public interface for the HTTP handler layer.
@@ -103,6 +116,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.CustodyService == nil {
 		return nil, errors.New("custody service is required")
 	}
+	if cfg.SearchService == nil {
+		return nil, errors.New("search service is required")
+	}
 
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -118,22 +134,28 @@ func New(cfg Config) (Router, error) {
 	engine.Use(middleware.RequestContextLogger(cfg.Logger))
 
 	return &_router{
-		engine:         engine,
-		baseLogger:     cfg.Logger,
-		nameService:    cfg.NameService,
-		healthService:  cfg.HealthService,
-		authService:    cfg.AuthService,
-		itemService:    cfg.ItemService,
-		custodyService: cfg.CustodyService,
+		engine:          engine,
+		baseLogger:      cfg.Logger,
+		nameService:     cfg.NameService,
+		healthService:   cfg.HealthService,
+		authService:     cfg.AuthService,
+		itemService:     cfg.ItemService,
+		custodyService:  cfg.CustodyService,
+		searchService:   cfg.SearchService,
+		demoReset:       cfg.DemoReset,
+		demoResetSecret: cfg.DemoResetSecret,
 	}, nil
 }
 
 type _router struct {
-	engine         *gin.Engine
-	baseLogger     *slog.Logger
-	nameService    nameservice.ServiceName
-	healthService  health.HealthService
-	authService    auth.Service
-	itemService    itemdomain.Service
-	custodyService custodydomain.Service
+	engine          *gin.Engine
+	baseLogger      *slog.Logger
+	nameService     nameservice.ServiceName
+	healthService   health.HealthService
+	authService     auth.Service
+	itemService     itemdomain.Service
+	custodyService  custodydomain.Service
+	searchService   search.Service
+	demoReset       func(context.Context) error
+	demoResetSecret string
 }

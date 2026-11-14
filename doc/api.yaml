@@ -34,6 +34,8 @@ tags:
     description: Handover acceptance/refusal and custody deadlines
   - name: Institution
     description: Institution operator endpoints (demo tick)
+  - name: Demo
+    description: Deterministic demo dataset reset
   - name: Uploads
     description: Authenticated access to item photos
 
@@ -532,6 +534,68 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+# ─── /api/demo/reset ─────────────────────────────────────────────────────────
+
+  /api/demo/reset:
+    post:
+      tags: [Demo]
+      operationId: resetDemo
+      summary: Reset the demo dataset
+      description: |
+        Replaces the registry data with the deterministic demo seed: six users,
+        two intermediaries, the active PA tariff and the four demo items
+        (`item-phone` in custody, `item-wallet` transferred, `item-umbrella`
+        and `item-document` pending). Users and sessions are preserved, so the
+        current admin session stays valid.
+
+        The route is restricted to the `admin` role and requires the shared
+        secret configured through `API_DEMO_RESET_SECRET`, either in the
+        `X-Demo-Reset-Secret` header or in the JSON body as `{"secret":"..."}`.
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: X-Demo-Reset-Secret
+          in: header
+          required: false
+          description: Shared demo reset secret (alternative to the JSON body)
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DemoResetRequest"
+      responses:
+        "200":
+          description: Demo dataset reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoResetResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Caller is not an admin or supplied the wrong secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "forbidden"
+        "503":
+          description: Demo reset is not configured on this server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "demo reset is not configured"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
 # ─── /api/uploads/{filename} ─────────────────────────────────────────────────
 
   /api/uploads/{filename}:
@@ -831,6 +895,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Item"
+
+    DemoResetRequest:
+      type: object
+      properties:
+        secret:
+          type: string
+          description: Shared secret; the X-Demo-Reset-Secret header wins if present.
+          example: "change-me"
+
+    DemoResetResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [reset]
 
     Error:
       type: object

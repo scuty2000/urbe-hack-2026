@@ -40,13 +40,22 @@ type IntermediaryRepository interface {
 // ItemFilter narrows SearchItems. Empty fields mean "no constraint"; Limit
 // defaults to 50 and is capped at 200.
 type ItemFilter struct {
-	Status        string
+	// Status is a single-status convenience filter kept for existing callers.
+	// Statuses takes precedence when both are set.
+	Status string
+	// Statuses restricts the result to any of the listed statuses. Search uses
+	// it to keep pending_custody and other non-public states out of results.
+	Statuses      []string
 	Category      string
 	Zone          string
 	CustodianID   string
 	LegalFinderID string
+	// FoundAfter and FoundBefore are inclusive bounds on found_at.
+	FoundAfter  *time.Time
+	FoundBefore *time.Time
 	// Query matches free text against category, brand, model, color,
-	// condition, found_zone and the private profile (SQLite fallback search).
+	// condition, found_zone and found_notes. Private profile data is
+	// deliberately excluded so a search can never confirm private details.
 	Query string
 	Limit int
 }

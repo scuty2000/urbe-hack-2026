@@ -14,7 +14,16 @@ import (
 // Handler registers all route and returns the http.Handler for the API.
 // Call this method exactly once after New().
 func (rt *_router) Handler() http.Handler {
-	h := routes.New(rt.nameService, rt.healthService, rt.authService, rt.itemService, rt.custodyService)
+	h := routes.New(
+		rt.nameService,
+		rt.healthService,
+		rt.authService,
+		rt.itemService,
+		rt.custodyService,
+		rt.searchService,
+		rt.demoReset,
+		rt.demoResetSecret,
+	)
 
 	rt.engine.GET("/names/:id", rt.wrap(h.GetNameByID))
 	rt.engine.POST("/names", rt.wrap(h.PostNewName))
@@ -50,6 +59,9 @@ func (rt *_router) Handler() http.Handler {
 	api.GET("/uploads/:filename",
 		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary, auth.RoleInstitution),
 		rt.wrap(h.GetUpload))
+	api.POST("/demo/reset",
+		middleware.RequireRole(rt.authService, auth.RoleAdmin),
+		rt.wrap(h.PostDemoReset))
 
 	return rt.engine
 }

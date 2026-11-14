@@ -1,11 +1,14 @@
 package routes
 
 import (
+	"context"
+
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 )
 
@@ -33,6 +36,15 @@ type WebAPIHandler struct {
 
 	// Custody is the domain service for accept/refuse and pickup deadlines.
 	Custody custodydomain.Service
+
+	// Search is the hybrid search and index service.
+	Search search.Service
+
+	// DemoReset replaces the demo dataset. Nil disables the reset route.
+	DemoReset func(context.Context) error
+
+	// DemoResetSecret is the shared secret required by the reset route.
+	DemoResetSecret string
 }
 
 // New creates a WebAPIHandler with the given domain services.
@@ -42,12 +54,18 @@ func New(
 	authService auth.Service,
 	items itemdomain.Service,
 	custodyService custodydomain.Service,
+	searchService search.Service,
+	demoReset func(context.Context) error,
+	demoResetSecret string,
 ) *WebAPIHandler {
 	return &WebAPIHandler{
-		Names:   names,
-		Health:  health,
-		Auth:    authService,
-		Items:   items,
-		Custody: custodyService,
+		Names:           names,
+		Health:          health,
+		Auth:            authService,
+		Items:           items,
+		Custody:         custodyService,
+		Search:          searchService,
+		DemoReset:       demoReset,
+		DemoResetSecret: demoResetSecret,
 	}
 }

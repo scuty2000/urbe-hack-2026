@@ -16,6 +16,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/dto"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/testutil"
@@ -72,6 +73,7 @@ func newAuthRouter(t *testing.T) http.Handler {
 		AuthService:    auth.New(db),
 		ItemService:    itemdomain.New(db, itemdomain.Deps{}),
 		CustodyService: custodydomain.New(db),
+		SearchService:  search.New(db, search.Deps{}),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)

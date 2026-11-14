@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/dto"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
@@ -35,6 +36,19 @@ func (h *WebAPIHandler) PostCustodyAccept(ctx *reqcontext.RequestContext) {
 		ctx.Logger.Error("PostCustodyAccept days left", "err", err)
 		daysLeft = 0
 	}
+
+	// Indexing is best-effort: a Qdrant/embeddings outage must never turn a
+	// successful custody acceptance into an error.
+	if h.Search != nil {
+		item, getErr := h.Items.GetItem(ctx.Request.Context(), accepted.ItemID,
+			itemdomain.Actor{ID: ctx.User.ID, Role: ctx.User.Role})
+		if getErr != nil {
+			ctx.Logger.Error("PostCustodyAccept load item for indexing", "err", getErr)
+		} else if indexErr := h.Search.IndexItem(ctx.Request.Context(), item); indexErr != nil {
+			ctx.Logger.Error("PostCustodyAccept index item", "err", indexErr)
+		}
+	}
+
 	ctx.JSON(http.StatusOK, dto.ToCustodyResponse(accepted, daysLeft))
 }
 

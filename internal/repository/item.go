@@ -114,48 +114,6 @@ func (r *repo) ListItemsByCustodian(ctx context.Context, custodianID string) ([]
 	return items, nil
 }
 
-func (r *repo) SearchItems(ctx context.Context, filter ItemFilter) ([]record.ItemRecord, error) {
-	query := r.gormdb.WithContext(ctx).Model(&record.ItemRecord{})
-	if filter.Status != "" {
-		query = query.Where("status = ?", filter.Status)
-	}
-	if filter.Category != "" {
-		query = query.Where("category = ?", filter.Category)
-	}
-	if filter.Zone != "" {
-		query = query.Where("found_zone = ?", filter.Zone)
-	}
-	if filter.CustodianID != "" {
-		query = query.Where("custodian_id = ?", filter.CustodianID)
-	}
-	if filter.LegalFinderID != "" {
-		query = query.Where("legal_finder_id = ?", filter.LegalFinderID)
-	}
-	// Every free-text token must match at least one searchable column, which
-	// keeps the SQLite fallback useful without a vector index.
-	for _, token := range strings.Fields(filter.Query) {
-		like := "%" + token + "%"
-		query = query.Where(
-			"(category LIKE ? OR brand LIKE ? OR model LIKE ? OR color LIKE ? OR condition LIKE ? OR found_zone LIKE ? OR private_profile LIKE ?)",
-			like, like, like, like, like, like, like,
-		)
-	}
-
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = defaultItemLimit
-	}
-	if limit > maxItemLimit {
-		limit = maxItemLimit
-	}
-
-	var items []record.ItemRecord
-	if err := query.Order("created_at DESC, rowid DESC").Limit(limit).Find(&items).Error; err != nil {
-		return nil, wrapErr("SearchItems", err)
-	}
-	return items, nil
-}
-
 func (r *repo) ListPickupDue(ctx context.Context, now time.Time) ([]record.ItemRecord, error) {
 	var items []record.ItemRecord
 	err := r.gormdb.WithContext(ctx).

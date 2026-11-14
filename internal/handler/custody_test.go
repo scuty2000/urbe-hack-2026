@@ -3,6 +3,7 @@ package handler_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
@@ -22,12 +24,17 @@ import (
 
 // newCustodyRouter builds the real router with a temporary database. It also
 // returns the database so tests can seed custody rows with elapsed deadlines.
-func newCustodyRouter(t *testing.T) (http.Handler, repository.Database) {
+func newCustodyRouter(t *testing.T, searches ...search.Service) (http.Handler, repository.Database) {
 	t.Helper()
 
 	db := testutil.NewTestDB(t)
 	if err := auth.SeedDemoUsers(context.Background(), db); err != nil {
 		t.Fatalf("seeding demo users: %v", err)
+	}
+
+	searchService := search.New(db, search.Deps{})
+	if len(searches) > 0 && searches[0] != nil {
+		searchService = searches[0]
 	}
 
 	router, err := handler.New(handler.Config{
@@ -43,6 +50,7 @@ func newCustodyRouter(t *testing.T) (http.Handler, repository.Database) {
 		AuthService:    auth.New(db),
 		ItemService:    itemdomain.New(db, itemdomain.Deps{}),
 		CustodyService: custodydomain.New(db),
+		SearchService:  searchService,
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)
@@ -193,6 +201,48 @@ func TestCustodyHttpFlow(t *testing.T) {
 	// The tick is idempotent: a second run finds nothing new.
 	if again := decodeTick(t, doRequest(t, api, http.MethodPost, "/api/institution/tick", "", admin)); again.Updated != 0 {
 		t.Fatalf("second tick updated = %d, want 0", again.Updated)
+	}
+}
+
+// failingIndexSearch returns SearchResults normally but fails every index
+// write, which lets the accept route test the "indexing is best-effort" rule.
+type failingIndexSearch struct{}
+
+func (failingIndexSearch) Search(context.Context, search.Query) ([]search.SearchResult, error) {
+	return nil, nil
+}
+
+func (failingIndexSearch) IndexItem(context.Context, itemdomain.Item) error {
+	return errors.New("index unavailable")
+}
+
+func (failingIndexSearch) DeleteItem(context.Context, string) error { return nil }
+
+func TestCustodyAcceptSucceedsWhenIndexingFails(t *testing.T) {
+	api, _ := newCustodyRouter(t, failingIndexSearch{})
+
+	finder := loginAs(t, api, "finder-demo")
+	intermediary := loginAs(t, api, "bar-x")
+
+	created := postItemRequest(t, api, finder, itemPayload{
+		IntermediaryID: "bar-x",
+		Category:       "umbrella",
+		FoundAt:        "2026-11-13T18:30:00Z",
+		FoundZone:      "San Lorenzo",
+		RightsAssigned: true,
+	}, false)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("POST item status = %d (body %s)", created.Code, created.Body.String())
+	}
+	var createdBody map[string]any
+	if err := json.NewDecoder(created.Body).Decode(&createdBody); err != nil {
+		t.Fatalf("decoding item: %v", err)
+	}
+	itemID, _ := createdBody["id"].(string)
+
+	accepted := doRequest(t, api, http.MethodPost, "/api/items/"+itemID+"/custody/accept", "", intermediary)
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("accept status = %d, want 200 even when indexing fails (body %s)", accepted.Code, accepted.Body.String())
 	}
 }
 

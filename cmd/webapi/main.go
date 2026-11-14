@@ -44,11 +44,15 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/d3"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/embeddings"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/qdrant"
 	platformsqlite "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/sqlite"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/seed"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -210,6 +214,35 @@ func run() error {
 		SensitiveHours: cfg.Sensitive.CustodyHours,
 	})
 
+	// Vector search is optional: without Qdrant or embeddings the search
+	// service falls back to SQLite, so the demo always works.
+	embeddingsClient := embeddings.New(
+		cfg.Embeddings.URL,
+		cfg.Embeddings.Model,
+		cfg.Embeddings.Key,
+		cfg.Embeddings.Timeout,
+		cfg.Embeddings.BatchSize,
+	)
+	qdrantClient := qdrant.New(
+		cfg.Qdrant.URL,
+		cfg.Qdrant.Collection,
+		cfg.Qdrant.APIKey,
+		cfg.Qdrant.Timeout,
+	)
+	var vectors search.VectorStore
+	if cfg.Features.Qdrant && cfg.Qdrant.URL != "" {
+		vectors = qdrantClient
+		ensureCtx, cancel := context.WithTimeout(context.Background(), cfg.Qdrant.Timeout)
+		if err := qdrantClient.EnsureCollection(ensureCtx); err != nil {
+			logger.Warn("qdrant collection unavailable; search falls back to SQLite", slog.Any("err", err))
+		}
+		cancel()
+	}
+	searchService := search.New(db, search.Deps{
+		Embedder: embeddingsClient,
+		Vectors:  vectors,
+	})
+
 	// Make a channel to listen for an interrupt or terminate signal from the OS.
 	// Use a buffered channel because the signal package requires it.
 	shutdown := make(chan os.Signal, 1)
@@ -238,14 +271,17 @@ func run() error {
 
 	apirouter, err := handler.New(
 		handler.Config{
-			Logger:         logger,
-			CORS:           corsConfig,
-			NameService:    nameService,
-			HealthService:  healthService,
-			AuthService:    authService,
-			ItemService:    itemService,
-			CustodyService: custodyService,
-			TrustedProxies: cfg.Web.TrustedProxies,
+			Logger:          logger,
+			CORS:            corsConfig,
+			NameService:     nameService,
+			HealthService:   healthService,
+			AuthService:     authService,
+			ItemService:     itemService,
+			CustodyService:  custodyService,
+			SearchService:   searchService,
+			DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
+			DemoResetSecret: cfg.Demo.ResetSecret,
+			TrustedProxies:  cfg.Web.TrustedProxies,
 		},
 	)
 	if err != nil {
