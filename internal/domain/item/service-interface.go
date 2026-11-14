@@ -62,6 +62,10 @@ type Service interface {
 	// SavePhoto stores one uploaded image and returns its relative path.
 	SavePhoto(r io.Reader) (string, error)
 
+	// DeletePhoto removes a stored photo. It is used to roll back uploads when
+	// enrollment fails after the files were written.
+	DeletePhoto(path string) error
+
 	// OpenUpload returns the content type and bytes of a stored photo. The
 	// filename is sanitised by the storage adapter.
 	OpenUpload(filename string) (contentType string, data []byte, err error)

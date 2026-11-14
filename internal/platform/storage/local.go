@@ -114,6 +114,20 @@ func (l *Local) Read(path string) ([]byte, error) {
 	return data, nil
 }
 
+// Delete removes a stored upload. Deleting a missing file is not an error, so
+// rollback after a partially failed request is idempotent. Invalid paths are
+// rejected exactly like Read.
+func (l *Local) Delete(path string) error {
+	name, err := safeName(path)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(l.root, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("delete upload %q: %w", path, err)
+	}
+	return nil
+}
+
 // safeName validates a stored path and returns the flat filename inside the
 // uploads directory.
 func safeName(path string) (string, error) {

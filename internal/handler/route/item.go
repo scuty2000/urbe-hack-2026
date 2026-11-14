@@ -34,8 +34,16 @@ func (h *WebAPIHandler) PostItem(ctx *reqcontext.RequestContext) {
 	}
 
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxRequestBody)
-	if err := ctx.Request.ParseMultipartForm(maxMultipartMemory); err != nil {
-		ctx.Logger.Error("PostItem invalid multipart body", "err", err)
+	parseErr := ctx.Request.ParseMultipartForm(maxMultipartMemory)
+	// Multipart parts larger than maxMultipartMemory spill to os.TempDir();
+	// RemoveAll must run on every path, including parse errors.
+	defer func() {
+		if form := ctx.Request.MultipartForm; form != nil {
+			_ = form.RemoveAll()
+		}
+	}()
+	if parseErr != nil {
+		ctx.Logger.Error("PostItem invalid multipart body", "err", parseErr)
 		respondWithJSONError(ctx, http.StatusBadRequest, "body must be multipart/form-data with a payload field")
 		return
 	}
@@ -53,6 +61,15 @@ func (h *WebAPIHandler) PostItem(ctx *reqcontext.RequestContext) {
 		return
 	}
 
+	// Validate the domain invariants before writing any file: a rejected
+	// enrollment (for example missing rights assignment) must not leave
+	// orphan uploads on disk.
+	if err := itemdomain.ValidateCreateInput(input); err != nil {
+		ctx.Logger.Error("PostItem invalid input", "err", err)
+		respondWithJSONError(ctx, http.StatusBadRequest, "rights assignment and a valid intermediary are required")
+		return
+	}
+
 	photos, err := h.saveUploadedPhotos(ctx)
 	if err != nil {
 		ctx.Logger.Error("PostItem saving photos", "err", err)
@@ -65,11 +82,27 @@ func (h *WebAPIHandler) PostItem(ctx *reqcontext.RequestContext) {
 	}
 	input.Photos = photos
 
+	// Roll back the files if anything after this point fails.
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		for _, path := range photos {
+			if deleteErr := h.Items.DeletePhoto(path); deleteErr != nil {
+				ctx.Logger.Warn("PostItem cleaning up photo", "path", path, "err", deleteErr)
+			}
+		}
+	}()
+
 	created, err := h.Items.CreateItem(ctx.Request.Context(), input)
+	if err == nil {
+		committed = true
+	}
 	switch {
 	case errors.Is(err, errs.ErrInvalidInput):
 		ctx.Logger.Error("PostItem invalid input", "err", err)
-		respondWithJSONError(ctx, http.StatusBadRequest, "rights assignment, intermediary and category are required")
+		respondWithJSONError(ctx, http.StatusBadRequest, "rights assignment and a valid intermediary are required")
 		return
 	case errors.Is(err, errs.ErrConflict):
 		ctx.Logger.Error("PostItem conflict", "err", err)
@@ -87,8 +120,10 @@ func (h *WebAPIHandler) PostItem(ctx *reqcontext.RequestContext) {
 
 // createItemInput applies the role rules from the controller decisions:
 //   - finder: source finder_self, intermediary chosen by the finder;
-//   - intermediary: source finder_mediated, self as finder and legal finder;
-//   - institution: source operator (official intake, Task 11).
+//   - intermediary: source finder_mediated, self as finder and legal finder.
+//
+// Official operator intake (source=operator) is deliberately not exposed here;
+// it belongs to Task 11, but the domain branch stays available for it.
 func createItemInput(user *auth.User, payload dto.CreateItemPayload) (itemdomain.CreateItemInput, bool) {
 	input := itemdomain.CreateItemInput{
 		FinderID:       user.ID,
@@ -114,9 +149,6 @@ func createItemInput(user *auth.User, payload dto.CreateItemPayload) (itemdomain
 	case auth.RoleIntermediary:
 		input.Source = itemdomain.SourceFinderMediated
 		input.IntermediaryID = user.ID
-		input.LegalFinderID = user.ID
-	case auth.RoleInstitution:
-		input.Source = itemdomain.SourceOperator
 		input.LegalFinderID = user.ID
 	default:
 		return itemdomain.CreateItemInput{}, false

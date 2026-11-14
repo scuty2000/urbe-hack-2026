@@ -60,9 +60,12 @@ func (s *service) CreateItem(ctx context.Context, input CreateItemInput) (Item, 
 		return Item{}, fmt.Errorf("create item: %w", err)
 	}
 
-	// Let D3 fill fields the form left empty. When D3 is absent or down the
-	// catalog returns the form values unchanged, so this is always safe.
-	if input.Category == "" || input.Color == "" || input.Condition == "" {
+	// Let D3 confirm/populate the catalog. When D3 is configured we always ask
+	// it: the document signal can raise an item to the sensitive tier even when
+	// the form is complete. When D3 is absent or down the catalog returns the
+	// form values unchanged, so this is always safe.
+	var catalogResult CatalogResult
+	if s.deps.D3 != nil {
 		result, err := s.Catalog(ctx, imageInputs(input.Photos), CatalogForm{
 			Category:  input.Category,
 			Color:     input.Color,
@@ -71,6 +74,7 @@ func (s *service) CreateItem(ctx context.Context, input CreateItemInput) (Item, 
 		if err != nil {
 			return Item{}, fmt.Errorf("create item catalog: %w", err)
 		}
+		catalogResult = result
 		if input.Category == "" {
 			input.Category = result.Category
 		}
@@ -80,12 +84,29 @@ func (s *service) CreateItem(ctx context.Context, input CreateItemInput) (Item, 
 		if input.Condition == "" {
 			input.Condition = result.Condition
 		}
+
+		// Persist the catalog provenance and the document type alongside the
+		// private profile. Both are internal and never serialised by DTOs.
+		if input.PrivateProfile == nil {
+			input.PrivateProfile = map[string]any{}
+		}
+		if result.DocumentType != "" {
+			input.PrivateProfile["document_type"] = result.DocumentType
+		}
+		input.PrivateProfile["catalog_source"] = result.Source
 	}
 	if input.Category == "" {
 		input.Category = "other"
 	}
 
 	riskTier, sensitive := RiskForCategory(input.Category)
+	// A document detected by D3 is sensitive regardless of the category the
+	// finder picked (e.g. a passport in a book-shaped form). Form/category risk
+	// still applies when D3 is absent or down.
+	if s.deps.D3 != nil && (catalogResult.IsDocument || catalogResult.DocumentType != "") {
+		riskTier = RiskSensitive
+		sensitive = true
+	}
 
 	var lastErr error
 	for attempt := 0; attempt < publicCodeAttempts; attempt++ {
@@ -288,6 +309,17 @@ func (s *service) SavePhoto(r io.Reader) (string, error) {
 	return path, nil
 }
 
+// DeletePhoto rolls back one stored upload.
+func (s *service) DeletePhoto(path string) error {
+	if s.deps.Storage == nil {
+		return fmt.Errorf("delete photo: storage is not configured: %w", errs.ErrUnavailable)
+	}
+	if err := s.deps.Storage.Delete(path); err != nil {
+		return fmt.Errorf("delete photo %q: %w", path, err)
+	}
+	return nil
+}
+
 // OpenUpload returns a stored photo and its detected content type. The storage
 // adapter is responsible for rejecting path traversal.
 func (s *service) OpenUpload(filename string) (string, []byte, error) {
@@ -327,6 +359,14 @@ func normalizeInput(input CreateItemInput) CreateItemInput {
 		input.PrivateProfile = map[string]any{}
 	}
 	return input
+}
+
+// ValidateCreateInput normalizes the enrollment command and enforces its
+// domain invariants without touching the database or writing any photo. The
+// HTTP layer calls it before saving uploads so a rejected enrollment leaves no
+// orphan files.
+func ValidateCreateInput(input CreateItemInput) error {
+	return validateInput(normalizeInput(input))
 }
 
 // validateInput enforces the enrollment invariants that do not depend on the

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,6 +357,55 @@ func TestCatalogUsesD3Answers(t *testing.T) {
 	}
 	if cataloger.calls != 2 {
 		t.Fatalf("catalog calls = %d, want 2 (base + document type)", cataloger.calls)
+	}
+}
+
+func TestCreateItemDocumentSignalFloorsRiskToSensitive(t *testing.T) {
+	cataloger := &fakeCataloger{responses: []map[string]item.Answer{
+		{
+			"category":    {Type: "choice", Choice: "book"},
+			"color":       {Type: "choice", Choice: "black"},
+			"condition":   {Type: "choice", Choice: "good"},
+			"is_document": {Type: "noul", Noul: 0.9},
+		},
+		{
+			"document_type": {Type: "choice", Choice: "passport"},
+		},
+	}}
+	svc, db := newService(t, item.Deps{D3: cataloger})
+
+	in := baseInput()
+	in.Category = "book"
+	in.Color = "black"
+	in.Condition = "good"
+
+	created, err := svc.CreateItem(context.Background(), in)
+	if err != nil {
+		t.Fatalf("CreateItem() error = %v", err)
+	}
+	if cataloger.calls != 2 {
+		t.Fatalf("catalog calls = %d, want 2 (base + document type)", cataloger.calls)
+	}
+	if created.RiskTier != item.RiskSensitive || !created.Sensitive {
+		t.Fatalf("risk = %q sensitive=%v, want sensitive/true", created.RiskTier, created.Sensitive)
+	}
+	if got := created.PrivateProfile["document_type"]; got != "passport" {
+		t.Fatalf("document_type = %v, want passport", got)
+	}
+	if got := created.PrivateProfile["catalog_source"]; got != item.CatalogSourceD3 {
+		t.Fatalf("catalog_source = %v, want d3", got)
+	}
+
+	row, err := db.GetItemByID(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetItemByID() error = %v", err)
+	}
+	if !strings.Contains(row.PrivateProfile, `"document_type":"passport"`) ||
+		!strings.Contains(row.PrivateProfile, `"catalog_source":"d3"`) {
+		t.Fatalf("persisted private profile = %s, want document_type and catalog_source", row.PrivateProfile)
+	}
+	if row.RiskTier != item.RiskSensitive || !row.Sensitive {
+		t.Fatalf("persisted risk = %q sensitive=%v, want sensitive/true", row.RiskTier, row.Sensitive)
 	}
 }
 

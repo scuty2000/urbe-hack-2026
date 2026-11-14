@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -21,7 +24,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/testutil"
 )
 
-func newItemRouter(t *testing.T) http.Handler {
+func newItemRouter(t *testing.T) (http.Handler, string) {
 	t.Helper()
 
 	db := testutil.NewTestDB(t)
@@ -29,6 +32,7 @@ func newItemRouter(t *testing.T) http.Handler {
 		t.Fatalf("seeding demo users: %v", err)
 	}
 
+	dataDir := t.TempDir()
 	router, err := handler.New(handler.Config{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		CORS: cors.Config{
@@ -41,13 +45,29 @@ func newItemRouter(t *testing.T) http.Handler {
 		HealthService: stubHealthService{},
 		AuthService:   auth.New(db),
 		ItemService: itemdomain.New(db, itemdomain.Deps{
-			Storage: storage.NewLocal(t.TempDir(), 1),
+			Storage: storage.NewLocal(dataDir, 1),
 		}),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)
 	}
-	return router.Handler()
+	return router.Handler(), dataDir
+}
+
+// assertUploadsEmpty verifies that no files were left in <dataDir>/uploads.
+func assertUploadsEmpty(t *testing.T, dataDir string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(filepath.Join(dataDir, "uploads"))
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		t.Fatalf("reading uploads directory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("uploads directory has %d orphan files", len(entries))
+	}
 }
 
 func loginAs(t *testing.T, api http.Handler, userID string) *http.Cookie {
@@ -116,7 +136,7 @@ func postItemRequest(t *testing.T, api http.Handler, cookie *http.Cookie, payloa
 }
 
 func TestItemEnrollmentHttpFlow(t *testing.T) {
-	api := newItemRouter(t)
+	api, _ := newItemRouter(t)
 
 	finder := loginAs(t, api, "finder-demo")
 	intermediary := loginAs(t, api, "bar-x")
@@ -224,16 +244,28 @@ func TestItemEnrollmentHttpFlow(t *testing.T) {
 }
 
 func TestItemEnrollmentRequiresRightsAndAuth(t *testing.T) {
-	api := newItemRouter(t)
+	api, dataDir := newItemRouter(t)
 	finder := loginAs(t, api, "finder-demo")
 
 	recorder := postItemRequest(t, api, finder, itemPayload{
 		IntermediaryID: "bar-x",
 		Category:       "wallet",
 		RightsAssigned: false,
-	}, false)
+	}, true)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 without rights assignment (body %s)", recorder.Code, recorder.Body.String())
+	}
+	// Validation runs before saving, so the rejected photo must not be on disk.
+	assertUploadsEmpty(t, dataDir)
+
+	institution := loginAs(t, api, "institution-demo")
+	recorder = postItemRequest(t, api, institution, itemPayload{
+		IntermediaryID: "bar-x",
+		Category:       "wallet",
+		RightsAssigned: true,
+	}, false)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("institution POST status = %d, want 403 (body %s)", recorder.Code, recorder.Body.String())
 	}
 
 	unauthenticated := httptest.NewRequest(http.MethodPost, "/api/items", nil)

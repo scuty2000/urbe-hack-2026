@@ -104,6 +104,36 @@ func TestLocalSaveRejectsDisallowedAndOversizedFiles(t *testing.T) {
 	})
 }
 
+func TestLocalDeleteRemovesFileAndIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store := storage.NewLocal(dir, 1)
+
+	path, err := store.Save(bytes.NewReader(jpegBytes()))
+	if err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if err := store.Delete(path); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if _, err := store.Read(path); !errors.Is(err, errs.ErrNotFound) {
+		t.Fatalf("Read() after delete err = %v, want ErrNotFound", err)
+	}
+	if err := store.Delete(path); err != nil {
+		t.Fatalf("Delete() second call error = %v, want nil", err)
+	}
+}
+
+func TestLocalDeleteRejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	store := storage.NewLocal(t.TempDir(), 1)
+	if err := store.Delete("../secret.txt"); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("err = %v, want ErrInvalidInput", err)
+	}
+}
+
 func TestLocalReadRejectsTraversal(t *testing.T) {
 	t.Parallel()
 

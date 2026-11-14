@@ -30,7 +30,7 @@ func (rt *_router) Handler() http.Handler {
 	api.GET("/auth/me", middleware.RequireAuth(rt.authService), rt.wrap(h.GetMe))
 
 	api.POST("/items",
-		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary, auth.RoleInstitution),
+		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary),
 		rt.wrap(h.PostItem))
 	api.GET("/items",
 		middleware.RequireRole(rt.authService, auth.RoleIntermediary),

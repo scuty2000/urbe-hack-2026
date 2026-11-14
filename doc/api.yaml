@@ -296,8 +296,9 @@ paths:
           becomes the legal finder.
         * **intermediary** — `source=finder_mediated`; the caller is finder,
           intermediary and legal finder.
-        * **institution** — `source=operator` (official intake); the caller is
-          the legal finder.
+
+        Official operator intake (`source=operator`, institution role) is
+        intentionally not exposed here; it belongs to the PA intake flow.
       security:
         - cookieAuth: []
       requestBody:
@@ -532,7 +533,7 @@ components:
           type: string
           description: |
             Intermediary chosen by a finder. Required for the finder role and
-            ignored for intermediaries and institutions.
+            ignored for intermediaries.
           example: "bar-x"
         category:
           type: string

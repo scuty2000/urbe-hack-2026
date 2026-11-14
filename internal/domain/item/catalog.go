@@ -76,10 +76,12 @@ type Cataloger interface {
 }
 
 // Storage is the upload port. Save writes one photo and returns its relative
-// path; Read returns the bytes of a previously stored relative path.
+// path; Read returns the bytes of a previously stored relative path; Delete
+// removes a photo whose enrollment did not complete.
 type Storage interface {
 	Save(r io.Reader) (string, error)
 	Read(path string) ([]byte, error)
+	Delete(path string) error
 }
 
 const catalogState = "Classify the lost item shown in the photos. Only answer the requested questions."
