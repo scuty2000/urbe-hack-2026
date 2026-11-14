@@ -53,6 +53,7 @@ func newFeeRouter(t *testing.T) (http.Handler, repository.Database) {
 		PassService:        passdomain.New(db, passdomain.Deps{PassSecret: "test-secret", Fees: fees}),
 		FeeService:         fees,
 		RewardService:      rewards,
+		PlatformService:    newPlatformService(db),
 		AgentService:       agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {

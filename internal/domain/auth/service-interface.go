@@ -1,6 +1,16 @@
 package auth
 
-import "context"
+import (
+	"context"
+
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
+)
+
+// Deps are the optional auth-service dependencies.
+type Deps struct {
+	// Auditor receives the missing login audit hook. Nil disables it.
+	Auditor platform.Auditor
+}
 
 // Service defines the authentication operations available to the HTTP layer.
 // Tokens are opaque to the caller: the service creates them, validates them and

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 )
@@ -22,6 +23,9 @@ type Deps struct {
 	Engine Engine
 	// Now is injectable for deterministic tests; production uses time.Now.
 	Now func() time.Time
+	// Notifier receives the best-effort notifications after a claim is
+	// committed. Nil disables them.
+	Notifier platform.Notifier
 }
 
 // Service defines the claim operations exposed to the HTTP layer and to the

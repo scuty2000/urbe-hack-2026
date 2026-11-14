@@ -49,6 +49,7 @@ import (
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
@@ -195,7 +196,8 @@ func run() error {
 
 	// Wire domain services
 	nameService := nameservice.New(db)
-	authService := auth.New(db)
+	platformService := platform.New(db)
+	authService := auth.New(db, auth.Deps{Auditor: platformService})
 	healthService := health.NewHealthService(dbconn, health.Checks{
 		QdrantURL:         cfg.Qdrant.URL,
 		QdrantAPIKey:      cfg.Qdrant.APIKey,
@@ -218,11 +220,13 @@ func run() error {
 	custodyService := custodydomain.New(db, custodydomain.Deps{
 		MaxDays:        cfg.Civic.CustodyDays,
 		SensitiveHours: cfg.Sensitive.CustodyHours,
+		Notifier:       platformService,
 	})
 	// Claims use D3 when configured and the deterministic local scorer
 	// otherwise; the verification engine itself falls back on outage.
 	claimService := claimdomain.New(db, claimdomain.Deps{
-		Engine: claimdomain.D3Engine(cataloger),
+		Engine:   claimdomain.D3Engine(cataloger),
+		Notifier: platformService,
 	})
 	// PA fees use the seeded active tariff; the configured values are a
 	// fallback for a fresh environment without tariff rows.
@@ -232,6 +236,7 @@ func run() error {
 			FixedFeeCents:  int64(cfg.PA.FixedFeeCents),
 			Currency:       cfg.PA.Currency,
 		},
+		Notifier: platformService,
 	})
 	rewardService := rewarddomain.New(db)
 
@@ -241,6 +246,7 @@ func run() error {
 		PassSecret: cfg.Auth.PassSecret,
 		PassTTL:    cfg.Auth.PassTTL,
 		Fees:       feeService,
+		Notifier:   platformService,
 	})
 
 	// Vector search is optional: without Qdrant or embeddings the search
@@ -293,12 +299,13 @@ func run() error {
 	// The institution service owns the PA pickup queue, the transfer into PA
 	// custody, official operator intake, claim review and the unclaimed flow.
 	institutionService := institutiondomain.New(db, institutiondomain.Deps{
-		Items:   itemService,
-		Custody: custodyService,
-		Claim:   claimService,
-		Pass:    passService,
-		Search:  searchService,
-		Fee:     feeService,
+		Items:    itemService,
+		Custody:  custodyService,
+		Claim:    claimService,
+		Pass:     passService,
+		Search:   searchService,
+		Fee:      feeService,
+		Notifier: platformService,
 	})
 
 	// Make a channel to listen for an interrupt or terminate signal from the OS.
@@ -342,6 +349,7 @@ func run() error {
 			PassService:        passService,
 			FeeService:         feeService,
 			RewardService:      rewardService,
+			PlatformService:    platformService,
 			AgentService:       agentService,
 			DemoReset:          func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
 			DemoResetSecret:    cfg.Demo.ResetSecret,

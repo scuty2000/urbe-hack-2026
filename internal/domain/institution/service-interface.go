@@ -9,6 +9,7 @@ import (
 	feedomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/fee"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 )
@@ -33,6 +34,9 @@ type Deps struct {
 	Search search.Service
 	// Fee is reserved for the PA fee surface that shares this operator role.
 	Fee feedomain.Service
+	// Notifier receives best-effort notifications after transfer/intake
+	// commits. Nil disables them.
+	Notifier platform.Notifier
 	// Now is injectable for deterministic tests.
 	Now func() time.Time
 }

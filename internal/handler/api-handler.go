@@ -29,6 +29,7 @@ func (rt *_router) Handler() http.Handler {
 		rt.demoResetSecret,
 		rt.feeService,
 		rt.rewardService,
+		rt.platformService,
 	)
 
 	rt.engine.GET("/names/:id", rt.wrap(h.GetNameByID))
@@ -43,6 +44,13 @@ func (rt *_router) Handler() http.Handler {
 	api.POST("/auth/login", rt.wrap(h.PostLogin))
 	api.POST("/auth/logout", rt.wrap(h.PostLogout))
 	api.GET("/auth/me", middleware.RequireAuth(rt.authService), rt.wrap(h.GetMe))
+
+	api.GET("/notifications",
+		middleware.RequireAuth(rt.authService),
+		rt.wrap(h.GetNotifications))
+	api.POST("/notifications/:id/read",
+		middleware.RequireAuth(rt.authService),
+		rt.wrap(h.PostNotificationRead))
 
 	api.POST("/claims",
 		middleware.RequireRole(rt.authService, auth.RoleSearcher),
@@ -86,6 +94,9 @@ func (rt *_router) Handler() http.Handler {
 	api.GET("/items/:id",
 		middleware.RequireAnyRole(rt.authService, auth.RoleIntermediary, auth.RoleInstitution),
 		rt.wrap(h.GetItem))
+	api.GET("/items/:id/timeline",
+		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary, auth.RoleInstitution, auth.RoleAdmin),
+		rt.wrap(h.GetItemTimeline))
 	api.POST("/items/:id/custody/accept",
 		middleware.RequireRole(rt.authService, auth.RoleIntermediary),
 		rt.wrap(h.PostCustodyAccept))

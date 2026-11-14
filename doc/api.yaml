@@ -28,6 +28,10 @@ tags:
     description: CRUD operations on the `/names` resource
   - name: Auth
     description: Demo login, logout and current-session endpoints
+  - name: Notifications
+    description: Authenticated in-app inbox (own notifications only)
+  - name: Timeline
+    description: Safe custody-event timeline of an item
   - name: Items
     description: Item enrollment and custodian read endpoints
   - name: Claims
@@ -290,6 +294,67 @@ paths:
                 $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+# ─── /api/notifications ──────────────────────────────────────────────────────
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List my notifications
+      description: |
+        Returns the authenticated user's own notifications, newest first, capped
+        at 50. The payload contains only identifiers, statuses and amounts: the
+        private profile, document fields, exact coordinates, tokens and expected
+        verification values are never stored in a notification.
+
+        Notification types: `match`, `custody_accepted`, `pickup_due`,
+        `pass_issued`, `handover`, `transfer`, `sensitive`, `fee_paid`.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: The user's notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/notifications/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/notificationId"
+
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark a notification read
+      description: |
+        Marks one of the authenticated user's notifications as read. Another
+        user's notification is `403`; an unknown id is `404`. The operation is
+        idempotent.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Notification marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationRead"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
 # ─── /api/claims ──────────────────────────────────────────────────────────────
 
@@ -895,6 +960,42 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+# ─── /api/items/{id}/timeline ────────────────────────────────────────────────
+
+  /api/items/{id}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    get:
+      tags: [Timeline]
+      operationId: getItemTimeline
+      summary: Get an item timeline
+      description: |
+        Returns the item's custody events in chronological order. Available to
+        the finder and intermediary connected to the item, and to institution
+        and admin operators; searchers receive `403`.
+
+        The response exposes only the event type, actor (role or safe
+        operational alias), timestamp, notes and an evidence reference. It never
+        contains the private profile, document contents or exact coordinates.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: The safe custody timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemTimeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
 # ─── /api/items/{id}/custody ─────────────────────────────────────────────────
 
   /api/items/{id}/custody/accept:
@@ -1481,6 +1582,116 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    Notification:
+      type: object
+      required:
+        - id
+        - type
+        - payload
+        - read
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - match
+            - custody_accepted
+            - pickup_due
+            - pass_issued
+            - handover
+            - transfer
+            - sensitive
+            - fee_paid
+        payload:
+          type: object
+          additionalProperties: true
+          description: |
+            Sanitised payload: identifiers, statuses and amounts only. It never
+            contains the private profile, document fields, exact coordinates,
+            tokens or expected verification values.
+        read:
+          type: boolean
+        readAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      required:
+        - notifications
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+
+    NotificationRead:
+      type: object
+      required:
+        - id
+        - read
+      properties:
+        id:
+          type: string
+          format: uuid
+        read:
+          type: boolean
+          example: true
+
+    TimelineEvent:
+      type: object
+      required:
+        - id
+        - type
+        - actor
+        - timestamp
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          description: Custody event type (e.g. rights_assigned, accepted, handover)
+          example: "accepted"
+        actor:
+          type: string
+          description: |
+            Resolved actor role for user accounts (finder, searcher) or the safe
+            operational alias (intermediary id, institution id, system).
+          example: "intermediary"
+        actorRole:
+          type: string
+          enum: [finder, searcher, intermediary, institution, admin]
+        timestamp:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          description: Operational note without private profile data.
+        evidenceRef:
+          type: string
+          description: Reference to evidence, never the evidence contents.
+
+    ItemTimeline:
+      type: object
+      required:
+        - itemId
+        - events
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimelineEvent"
 
     ItemPayload:
       type: object
@@ -2290,6 +2501,15 @@ components:
       in: path
       required: true
       description: UUID of the fee
+      schema:
+        type: string
+        format: uuid
+
+    notificationId:
+      name: id
+      in: path
+      required: true
+      description: UUID of the notification
       schema:
         type: string
         format: uuid

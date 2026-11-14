@@ -5,6 +5,7 @@ import (
 	"time"
 
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 )
 
 // Deps are the policy knobs of the custody service. Zero values fall back to
@@ -17,6 +18,9 @@ type Deps struct {
 	// Now is injectable for deterministic tests of Refuse; the other
 	// transitions take the current time as an argument.
 	Now func() time.Time
+	// Notifier receives best-effort notifications after a transition commits.
+	// Nil disables them.
+	Notifier platform.Notifier
 }
 
 // Service defines the custody transitions exposed to the HTTP layer.

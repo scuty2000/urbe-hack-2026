@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
@@ -201,7 +202,28 @@ func (s *service) Issue(ctx context.Context, claimID, actorID string, now time.T
 	if err != nil {
 		return Pass{}, err
 	}
+
+	// The pass is committed; notification failures must not fail the issue.
+	s.notifyPassIssued(ctx, issued)
+
 	return issued, nil
+}
+
+// notifyPassIssued tells the holding custodian that a pickup pass exists.
+func (s *service) notifyPassIssued(ctx context.Context, issued Pass) {
+	if s.deps.Notifier == nil {
+		return
+	}
+	payload := map[string]any{
+		"passId":        issued.ID,
+		"claimId":       issued.ClaimID,
+		"itemId":        issued.ItemID,
+		"status":        issued.Status,
+		"returnChannel": issued.ReturnChannel,
+		"expiresAt":     issued.ExpiresAt.UTC().Format(time.RFC3339),
+	}
+	platform.TryNotifyAccount(ctx, s.deps.Notifier, "pass.issued", issued.CustodianID,
+		platform.NotificationPassIssued, payload)
 }
 
 // Validate verifies the signature, the stored hash, the lifecycle state, the
@@ -388,6 +410,7 @@ func (s *service) Redeem(
 	}
 
 	var updated itemdomain.Item
+	var redeemedPassID, redeemedClaimID string
 	err = s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
 		row, err := tx.GetPassByTokenHash(ctx, hashToken(token))
 		if errors.Is(err, errs.ErrNotFound) {
@@ -445,6 +468,8 @@ func (s *service) Redeem(
 		if err != nil {
 			return fmt.Errorf("redeem pass: %w", err)
 		}
+		redeemedPassID = row.ID
+		redeemedClaimID = claim.ID
 		if claim.Status != claimStatusApproved {
 			return reasonError(ReasonClaimNotApproved, errs.ErrConflict)
 		}
@@ -514,7 +539,50 @@ func (s *service) Redeem(
 	if err != nil {
 		return itemdomain.Item{}, err
 	}
+
+	// The handover is committed; the timeline notification is best-effort.
+	s.notifyHandover(ctx, updated, redeemedPassID, redeemedClaimID)
+
 	return updated, nil
+}
+
+// notifyHandover tells the finder and the intermediary that the item was
+// handed over with a pass. The finder is resolved from the rights-assignment
+// event; a finder without an account is skipped.
+func (s *service) notifyHandover(ctx context.Context, item itemdomain.Item, passID, claimID string) {
+	if s.deps.Notifier == nil {
+		return
+	}
+	payload := map[string]any{
+		"passId":  passID,
+		"claimId": claimID,
+		"itemId":  item.ID,
+		"status":  item.Status,
+	}
+
+	seen := map[string]bool{}
+	for _, recipient := range []string{item.CustodianID, item.LegalFinderID} {
+		if recipient == "" || seen[recipient] {
+			continue
+		}
+		seen[recipient] = true
+		platform.TryNotifyAccount(ctx, s.deps.Notifier, "pass.handover", recipient,
+			platform.NotificationHandover, payload)
+	}
+
+	events, err := s.db.ListCustodyEvents(ctx, item.ID)
+	if err != nil {
+		return
+	}
+	for _, event := range events {
+		if event.Type != itemdomain.EventRightsAssigned || seen[event.ActorID] || event.ActorID == "" {
+			continue
+		}
+		seen[event.ActorID] = true
+		platform.TryNotifyAccount(ctx, s.deps.Notifier, "pass.handover", event.ActorID,
+			platform.NotificationHandover, payload)
+		break
+	}
 }
 
 // RevokePassesByItem revokes every open pass for an item, e.g. when the

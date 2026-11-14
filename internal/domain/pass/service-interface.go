@@ -5,6 +5,7 @@ import (
 	"time"
 
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 )
 
@@ -26,6 +27,9 @@ type Deps struct {
 	Now func() time.Time
 	// Fees defaults to a repository-backed checker when nil.
 	Fees FeeChecker
+	// Notifier receives best-effort notifications after issue/redeem commits.
+	// Nil disables them.
+	Notifier platform.Notifier
 }
 
 // Service defines the pickup-pass operations exposed to the HTTP layer and to

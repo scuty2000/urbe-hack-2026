@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 )
 
@@ -14,6 +15,8 @@ import (
 type Deps struct {
 	Now    func() time.Time
 	Tariff Tariff
+	// Notifier receives the best-effort fee-paid notification. Nil disables it.
+	Notifier platform.Notifier
 }
 
 // Service defines the fee and mock-payment operations exposed to the HTTP

@@ -20,6 +20,7 @@ Example:
 		ClaimService:   claimService,
 		PassService:    passService,
 		AgentService:   agentService,
+		PlatformService: platformService,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating the API server instance: %w", err)
@@ -54,6 +55,7 @@ import (
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/middleware"
@@ -101,6 +103,9 @@ type Config struct {
 
 	// RewardService records reward notices.
 	RewardService rewarddomain.Service
+
+	// PlatformService owns notifications, audit and the item timeline.
+	PlatformService platform.Service
 
 	// AgentService is the searcher conversational orchestrator.
 	AgentService agentdomain.Service
@@ -161,6 +166,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.RewardService == nil {
 		return nil, errors.New("reward service is required")
 	}
+	if cfg.PlatformService == nil {
+		return nil, errors.New("platform service is required")
+	}
 	if cfg.AgentService == nil {
 		return nil, errors.New("agent service is required")
 	}
@@ -192,6 +200,7 @@ func New(cfg Config) (Router, error) {
 		passService:        cfg.PassService,
 		feeService:         cfg.FeeService,
 		rewardService:      cfg.RewardService,
+		platformService:    cfg.PlatformService,
 		agentService:       cfg.AgentService,
 		demoReset:          cfg.DemoReset,
 		demoResetSecret:    cfg.DemoResetSecret,
@@ -212,6 +221,7 @@ type _router struct {
 	passService        passdomain.Service
 	feeService         feedomain.Service
 	rewardService      rewarddomain.Service
+	platformService    platform.Service
 	agentService       agentdomain.Service
 	demoReset          func(context.Context) error
 	demoResetSecret    string

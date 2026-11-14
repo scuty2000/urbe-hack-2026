@@ -32,6 +32,14 @@ func (r *repo) ListNotificationsByUser(ctx context.Context, userID string) ([]re
 	return notifications, nil
 }
 
+func (r *repo) GetNotificationByID(ctx context.Context, id string) (record.NotificationRecord, error) {
+	var notification record.NotificationRecord
+	if err := r.gormdb.WithContext(ctx).Where("id = ?", id).First(&notification).Error; err != nil {
+		return notification, wrapErr("GetNotificationByID", err)
+	}
+	return notification, nil
+}
+
 func (r *repo) MarkNotificationRead(ctx context.Context, id string, readAt time.Time) error {
 	res := r.gormdb.WithContext(ctx).
 		Model(&record.NotificationRecord{}).

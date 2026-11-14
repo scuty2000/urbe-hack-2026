@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
@@ -225,7 +226,44 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		return Claim{}, err
 	}
 
+	// Notifications are best-effort and run after the claim is committed: a
+	// notification failure must never fail a successful claim.
+	s.notifyClaimCreated(ctx, item, claimRow)
+
 	return claimFromRecord(claimRow), nil
+}
+
+// notifyClaimCreated tells the item's custodian/legal finder that a claim
+// matched, and the searcher that the claim was recorded. Recipients without an
+// account are skipped by the platform notifier.
+func (s *service) notifyClaimCreated(ctx context.Context, item itemdomain.Item, row record.ClaimRecord) {
+	if s.deps.Notifier == nil {
+		return
+	}
+	payload := map[string]any{
+		"itemId":  item.ID,
+		"claimId": row.ID,
+		"status":  row.Status,
+	}
+	seen := map[string]bool{}
+	for _, recipient := range []string{item.CustodianID, item.LegalFinderID} {
+		if recipient == "" || seen[recipient] {
+			continue
+		}
+		seen[recipient] = true
+		platform.TryNotifyAccount(ctx, s.deps.Notifier, "claim.created", recipient, platform.NotificationMatch, payload)
+	}
+
+	if row.SearcherID == "" || seen[row.SearcherID] {
+		return
+	}
+	searcherPayload := map[string]any{
+		"itemId":  item.ID,
+		"claimId": row.ID,
+		"status":  row.Status,
+		"role":    ActorRoleSearcher,
+	}
+	platform.TryNotifyAccount(ctx, s.deps.Notifier, "claim.created", row.SearcherID, platform.NotificationMatch, searcherPayload)
 }
 
 // GetClaim returns the role-safe claim. Only the custodian and the institution

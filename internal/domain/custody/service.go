@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
@@ -170,7 +172,82 @@ func (s *service) Accept(ctx context.Context, itemID, actorID string, now time.T
 	if err != nil {
 		return Custody{}, err
 	}
+
+	// Best-effort notifications after the custody transition is committed.
+	s.notifyCustodyAccepted(ctx, accepted.ItemID, accepted.DueAt)
+
 	return accepted, nil
+}
+
+// notifyCustodyAccepted tells the intermediary and the finder that the
+// handover was acknowledged. The finder is resolved from the rights-assignment
+// event; a finder without an account is skipped by the platform notifier.
+func (s *service) notifyCustodyAccepted(ctx context.Context, itemID string, dueAt *time.Time) {
+	if s.deps.Notifier == nil {
+		return
+	}
+	row, err := s.db.GetItemByID(ctx, itemID)
+	if err != nil {
+		slog.Default().Warn("custody accepted notification skipped",
+			slog.String("item", itemID), slog.Any("err", err))
+		return
+	}
+
+	payload := map[string]any{
+		"itemId": itemID,
+		"status": itemdomain.StatusInCustody,
+	}
+	if dueAt != nil {
+		payload["dueAt"] = dueAt.UTC().Format(time.RFC3339)
+	}
+
+	seen := map[string]bool{}
+	for _, recipient := range []string{row.CustodianID, row.LegalFinderID} {
+		if recipient == "" || seen[recipient] {
+			continue
+		}
+		seen[recipient] = true
+		platform.TryNotifyAccount(ctx, s.deps.Notifier, "custody.accepted", recipient,
+			platform.NotificationCustodyAccepted, payload)
+	}
+
+	events, err := s.db.ListCustodyEvents(ctx, itemID)
+	if err != nil {
+		return
+	}
+	for _, event := range events {
+		if event.Type != itemdomain.EventRightsAssigned || seen[event.ActorID] || event.ActorID == "" {
+			continue
+		}
+		seen[event.ActorID] = true
+		platform.TryNotifyAccount(ctx, s.deps.Notifier, "custody.accepted", event.ActorID,
+			platform.NotificationCustodyAccepted, payload)
+		break
+	}
+}
+
+// notifyPickupDue tells the holding intermediary and the institution inbox that
+// an item reached its pickup deadline.
+func (s *service) notifyPickupDue(ctx context.Context, row record.ItemRecord) {
+	if s.deps.Notifier == nil {
+		return
+	}
+	payload := map[string]any{
+		"itemId":    row.ID,
+		"status":    row.Status,
+		"sensitive": row.Sensitive,
+	}
+	seen := map[string]bool{}
+	for _, recipient := range []string{row.CustodianID, row.LegalFinderID} {
+		if recipient == "" || seen[recipient] {
+			continue
+		}
+		seen[recipient] = true
+		platform.TryNotifyAccount(ctx, s.deps.Notifier, "custody.pickup_due", recipient,
+			platform.NotificationPickupDue, payload)
+	}
+	platform.TryNotifyRole(ctx, s.deps.Notifier, "custody.pickup_due", platform.RoleInstitution,
+		platform.NotificationPickupDue, payload)
 }
 
 // Refuse rejects the handover for the legal finder and closes the custody row.
@@ -317,6 +394,9 @@ func (s *service) MarkPickupDue(ctx context.Context, now time.Time) ([]itemdomai
 			return nil, fmt.Errorf("mark pickup due %q: %w", row.ID, err)
 		}
 		due = append(due, updated)
+
+		// Notifications are best-effort and run after the guarded transition.
+		s.notifyPickupDue(ctx, row)
 	}
 	return due, nil
 }

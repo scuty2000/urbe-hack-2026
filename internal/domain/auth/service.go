@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
@@ -49,16 +50,25 @@ var demoUsers = []demoUser{
 
 // service is the concrete implementation of Service.
 type service struct {
-	db repository.Database
+	db   repository.Database
+	deps Deps
 }
 
 // New returns a Service backed by the provided repository.
-func New(db repository.Database) Service {
-	return newService(db)
+func New(db repository.Database, options ...Deps) Service {
+	deps := Deps{}
+	if len(options) > 0 {
+		deps = options[0]
+	}
+	return newServiceWithDeps(db, deps)
 }
 
 func newService(db repository.Database) *service {
-	return &service{db: db}
+	return newServiceWithDeps(db, Deps{})
+}
+
+func newServiceWithDeps(db repository.Database, deps Deps) *service {
+	return &service{db: db, deps: deps}
 }
 
 // Login creates a random session token for the user, stores only its SHA-256
@@ -84,6 +94,11 @@ func (s *service) Login(ctx context.Context, userID string) (string, User, error
 	if err := s.db.CreateSession(ctx, session); err != nil {
 		return "", User{}, fmt.Errorf("login user %q: %w", userID, err)
 	}
+
+	// Login is the one audited action that no domain transaction owns. The
+	// hook is best-effort: a failed audit must not block the session.
+	platform.TryAudit(ctx, s.deps.Auditor, "auth.login", userID, "login", "user", userID,
+		map[string]any{"role": row.Role})
 
 	return token, userFromRecord(row), nil
 }

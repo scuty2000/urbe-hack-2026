@@ -13,6 +13,7 @@ import (
 	"github.com/gofrs/uuid"
 	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
@@ -163,6 +164,7 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 	}
 
 	var transferred itemdomain.Item
+	var previousCustodianID string
 	err = s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
 		row, err := tx.GetItemByID(ctx, itemID)
 		if err != nil {
@@ -183,6 +185,7 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 		if custodyRow.CustodianType != itemdomain.CustodyModeIntermediary {
 			return fmt.Errorf("transfer item %q: current custody is %q: %w", itemID, custodyRow.CustodianType, errs.ErrConflict)
 		}
+		previousCustodianID = custodyRow.CustodianID
 
 		// The guarded transition is the race-proof gate: exactly one concurrent
 		// transfer can move the item out of the pickup status.
@@ -295,12 +298,30 @@ func (s *service) Transfer(ctx context.Context, itemID, actorID string, now time
 		return itemdomain.Item{}, err
 	}
 
+	// The transfer is committed; the intermediary notification is
+	// best-effort.
+	s.notifyTransfer(ctx, transferred, previousCustodianID)
+
 	// Indexing is best-effort: the transfer is already committed and a Qdrant
 	// outage must not turn a successful handover into an HTTP error.
 	if s.deps.Search != nil {
 		_ = s.deps.Search.IndexItem(ctx, transferred)
 	}
 	return transferred, nil
+}
+
+// notifyTransfer tells the intermediary that its item moved to the PA.
+func (s *service) notifyTransfer(ctx context.Context, item itemdomain.Item, previousCustodianID string) {
+	if s.deps.Notifier == nil {
+		return
+	}
+	payload := map[string]any{
+		"itemId":        item.ID,
+		"status":        item.Status,
+		"institutionId": item.CustodianID,
+	}
+	platform.TryNotifyAccount(ctx, s.deps.Notifier, "item.transferred", previousCustodianID,
+		platform.NotificationTransfer, payload)
 }
 
 // CreateOfficialItem enrolls an item that was handed directly to the PA. It
@@ -491,6 +512,10 @@ func (s *service) CreateOfficialItem(ctx context.Context, input CreateOfficialIt
 		return itemdomain.Item{}, fmt.Errorf("create official item after %d attempts: %w", publicCodeAttempts, lastErr)
 	}
 
+	// The sensitive item is committed; the institution inbox notification is
+	// best-effort.
+	s.notifySensitiveIntake(ctx, accepted)
+
 	// The item is committed; indexing is best effort and bounded so a vector
 	// outage can never fail the intake.
 	if s.deps.Search != nil {
@@ -499,6 +524,21 @@ func (s *service) CreateOfficialItem(ctx context.Context, input CreateOfficialIt
 		_ = s.deps.Search.IndexItem(indexCtx, accepted)
 	}
 	return accepted, nil
+}
+
+// notifySensitiveIntake raises the urgent inbox entry for documents, keys and
+// other sensitive items received by the PA.
+func (s *service) notifySensitiveIntake(ctx context.Context, item itemdomain.Item) {
+	if s.deps.Notifier == nil || !item.Sensitive {
+		return
+	}
+	payload := map[string]any{
+		"itemId":    item.ID,
+		"status":    item.Status,
+		"sensitive": true,
+	}
+	platform.TryNotifyRole(ctx, s.deps.Notifier, "item.sensitive_intake", platform.RoleInstitution,
+		platform.NotificationSensitive, payload)
 }
 
 // ReviewClaim delegates the policy and the persistence to the claim domain;

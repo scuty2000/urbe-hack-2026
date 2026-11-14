@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
@@ -92,6 +93,8 @@ func (s *service) pay(ctx context.Context, feeID, searcherID string) (Payment, e
 	now := s.now()
 
 	var paid Payment
+	var paidItemID, paidCurrency string
+	var paidAmountCents int64
 	err := s.db.RunInTransaction(ctx, func(ctx context.Context, tx repository.Repository) error {
 		row, err := tx.GetFeeByID(ctx, feeID)
 		if err != nil {
@@ -178,12 +181,37 @@ func (s *service) pay(ctx context.Context, feeID, searcherID string) (Payment, e
 		}
 
 		paid = paymentFromRecord(paymentRow)
+		paidItemID = row.ItemID
+		paidAmountCents = row.AmountCents
+		paidCurrency = row.Currency
 		return nil
 	})
 	if err != nil {
 		return Payment{}, err
 	}
+
+	// The payment is committed; the institution inbox notification is
+	// best-effort.
+	s.notifyFeePaid(ctx, paid, paidItemID, paidAmountCents, paidCurrency)
+
 	return paid, nil
+}
+
+// notifyFeePaid tells the institution about a settled PA fee.
+func (s *service) notifyFeePaid(ctx context.Context, payment Payment, itemID string, amountCents int64, currency string) {
+	if s.deps.Notifier == nil {
+		return
+	}
+	payload := map[string]any{
+		"feeId":       payment.FeeID,
+		"paymentId":   payment.ID,
+		"itemId":      itemID,
+		"amountCents": amountCents,
+		"currency":    currency,
+		"status":      StatusPaid,
+	}
+	platform.TryNotifyRole(ctx, s.deps.Notifier, "fee.paid", platform.RoleInstitution,
+		platform.NotificationFeePaid, payload)
 }
 
 // IsPaid reports whether the item's pickup is free or settled. A transferred

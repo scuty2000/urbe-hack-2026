@@ -64,12 +64,13 @@ func newInstitutionRouter(t *testing.T) (http.Handler, repository.Database) {
 			Pass:    passService,
 			Search:  searchService,
 		}),
-		SearchService: searchService,
-		ClaimService:  claimService,
-		PassService:   passService,
-		FeeService:    newFeeService(db),
-		RewardService: newRewardService(db),
-		AgentService:  agent.New(db, agent.Deps{DeepSeekKey: ""}),
+		SearchService:   searchService,
+		ClaimService:    claimService,
+		PassService:     passService,
+		FeeService:      newFeeService(db),
+		RewardService:   newRewardService(db),
+		PlatformService: newPlatformService(db),
+		AgentService:    agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)

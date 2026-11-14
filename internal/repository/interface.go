@@ -189,6 +189,7 @@ type NotificationRepository interface {
 	CreateNotification(ctx context.Context, notification record.NotificationRecord) error
 	// ListNotificationsByUser returns newest first.
 	ListNotificationsByUser(ctx context.Context, userID string) ([]record.NotificationRecord, error)
+	GetNotificationByID(ctx context.Context, id string) (record.NotificationRecord, error)
 	MarkNotificationRead(ctx context.Context, id string, readAt time.Time) error
 }
 

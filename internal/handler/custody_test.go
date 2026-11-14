@@ -59,6 +59,7 @@ func newCustodyRouter(t *testing.T, searches ...search.Service) (http.Handler, r
 		PassService:        passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
 		FeeService:         newFeeService(db),
 		RewardService:      newRewardService(db),
+		PlatformService:    newPlatformService(db),
 		AgentService:       agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {

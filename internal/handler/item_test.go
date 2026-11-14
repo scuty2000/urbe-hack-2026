@@ -59,6 +59,7 @@ func newItemRouter(t *testing.T) (http.Handler, string) {
 		PassService:        passdomain.New(db, passdomain.Deps{PassSecret: "test-secret"}),
 		FeeService:         newFeeService(db),
 		RewardService:      newRewardService(db),
+		PlatformService:    newPlatformService(db),
 		AgentService:       agent.New(db, agent.Deps{DeepSeekKey: ""}),
 	})
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
 	passdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/pass"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/platform"
 	rewarddomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/reward"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
@@ -61,6 +62,9 @@ type WebAPIHandler struct {
 	// Rewards records the legal finder's reward notice.
 	Rewards rewarddomain.Service
 
+	// Platform owns notifications, audit and the item timeline.
+	Platform platform.Service
+
 	// Agent is the searcher conversational orchestrator.
 	Agent agentdomain.Service
 
@@ -90,6 +94,7 @@ func New(
 	demoResetSecret string,
 	feeService feedomain.Service,
 	rewardService rewarddomain.Service,
+	platformService platform.Service,
 ) *WebAPIHandler {
 	return &WebAPIHandler{
 		Names:           names,
@@ -104,6 +109,7 @@ func New(
 		Agent:           agentService,
 		Fees:            feeService,
 		Rewards:         rewardService,
+		Platform:        platformService,
 		DemoReset:       demoReset,
 		DemoResetSecret: demoResetSecret,
 		chatLimiter:     newChatLimiter(chatRateLimit, chatRateWindow),
