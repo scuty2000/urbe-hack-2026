@@ -95,6 +95,7 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		IdentityMatch: identityMatch,
 		Evidence:      evidence,
 		RiskTier:      riskTierOf(item),
+		Context:       verification.ContextFor(item, input.Session.Statement),
 	}
 
 	result, err := s.deps.Engine.Score(ctx, state, questions)
@@ -102,11 +103,12 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		return Claim{}, fmt.Errorf("create claim %q: scoring: %w", itemID, err)
 	}
 	confidence := clampConfidence(result.Confidence)
-	privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys)
+	evidenceKeys := verification.EvidenceKeys(expected, privateKeys)
+	privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, evidenceKeys)
 	switch {
 	case answered > 0:
 		confidence = clampConfidence(privateConfidence)
-	case len(privateKeys) > 0:
+	case len(evidenceKeys) > 0:
 		// No answered private attribute means no ownership evidence. The
 		// provider's average over unanswered questions must not raise the
 		// score or turn a "keep asking" case into a claim.
@@ -114,16 +116,20 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 	}
 	// One wrong detail is not a rejection: right and wrong details together go
 	// to a human, and only several wrong details with none right are rejected.
-	if flag := verification.PrivateEvidenceFlag(verification.PrivateEvidence(answers, result.Answers, privateKeys)); flag != "" {
+	// Matches count on every evidence key; contradictions only on private
+	// details, because brand and model are described loosely.
+	matches, _ := verification.PrivateEvidence(answers, result.Answers, evidenceKeys)
+	_, mismatches := verification.PrivateEvidence(answers, result.Answers, privateKeys)
+	confidence, matches, overallMatch := verification.WithOverall(result, confidence, matches)
+	if flag := verification.PrivateEvidenceFlag(matches, mismatches); flag != "" {
 		flags = mergeStrings(flags, []string{flag})
 	}
 	policy := verification.Decision(state.RiskTier, confidence, evidence, flags)
 	// Public listing attributes alone are not ownership evidence: an automatic
 	// approval must include at least one matching private attribute.
-	if policy.Decision == verification.DecisionAutoApprove && !hasPrivateMatch(result.Answers, privateKeys) {
-		policy.Decision = verification.DecisionMoreInfo
-		policy.Reasons = append(policy.Reasons, "no private attribute matched; more information required")
-	}
+	policy = verification.GuardAutoApproval(policy, state.RiskTier,
+		hasPrivateMatch(result.Answers, verification.ApprovalKeys(state.RiskTier, privateKeys, evidenceKeys)),
+		overallMatch, matches)
 	status := statusForDecision(policy.Decision)
 
 	now := s.now()
@@ -677,8 +683,11 @@ func questionSet(
 	// Ownership is decided by private evidence, not by the public listing
 	// attributes every searcher can see. Public attributes remain in the state
 	// as context for D3, but they are not questions.
-	questions := make(verification.Questions, len(private)+1)
-	for key := range private {
+	// Ownership is decided by what a searcher cannot see: the private
+	// attributes plus brand and model, which search results never show.
+	evidence := verification.EvidenceKeys(attributes, private)
+	questions := make(verification.Questions, len(evidence)+1)
+	for key := range evidence {
 		questions[key] = questionForValue(attributes[key])
 	}
 	if len(questions) == 0 {

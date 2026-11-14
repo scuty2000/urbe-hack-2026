@@ -112,6 +112,9 @@ type Session struct {
 	Answers   map[string]string
 	Evidence  []string
 	Flags     []string
+	// Statement is everything the searcher wrote in the chat. The judge reads
+	// it as context; it is never stored.
+	Statement string
 }
 
 // CreateClaimInput is the validated creation command. ReturnChannel is

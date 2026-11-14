@@ -2,6 +2,7 @@ package verification_test
 
 import (
 	"testing"
+	"time"
 
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
@@ -150,11 +151,11 @@ func TestDecisionThresholds(t *testing.T) {
 		confidence float64
 		want       string
 	}{
-		{"low at threshold", verification.RiskLow, 0.60, verification.DecisionAutoApprove},
+		{"low at threshold", verification.RiskLow, 0.55, verification.DecisionAutoApprove},
 		{"medium above threshold", verification.RiskMedium, 0.90, verification.DecisionAutoApprove},
-		{"medium below threshold", verification.RiskMedium, 0.55, verification.DecisionMoreInfo},
+		{"medium below threshold", verification.RiskMedium, 0.50, verification.DecisionMoreInfo},
 		{"high above threshold", verification.RiskHigh, 0.90, verification.DecisionReview},
-		{"high at threshold", verification.RiskHigh, 0.70, verification.DecisionReview},
+		{"high at threshold", verification.RiskHigh, 0.55, verification.DecisionReview},
 		{"high below threshold", verification.RiskHigh, 0.50, verification.DecisionMoreInfo},
 		{"sensitive always reviewed", verification.RiskSensitive, 0.99, verification.DecisionReview},
 	}
@@ -291,6 +292,56 @@ func TestLocalScoreToleratesApproximateAnswers(t *testing.T) {
 		got := verification.LocalScore(state, questions).Answers["detail"].Noul
 		if got < tc.min || got > tc.max {
 			t.Errorf("%s: probability = %v, want in [%v, %v]", tc.name, got, tc.min, tc.max)
+		}
+	}
+}
+
+func TestContextForKeepsSensitiveDescriptionsPrivate(t *testing.T) {
+	t.Parallel()
+
+	item := itemdomain.Item{
+		FoundZone:      "Testaccio",
+		FoundAt:        time.Date(2026, 11, 14, 11, 51, 0, 0, time.UTC),
+		RiskTier:       itemdomain.RiskLow,
+		PrivateProfile: map[string]any{"details": "lattina con adesivo verde", "case_color": "grigio"},
+	}
+	got := verification.ContextFor(item, "ero a Testaccio")
+	if got.FoundZone != "Testaccio" || got.FoundAt != "2026-11-14 11:51" ||
+		got.ItemDescription != "lattina con adesivo verde" || got.SearcherStatement != "ero a Testaccio" {
+		t.Fatalf("context = %+v", got)
+	}
+
+	item.Sensitive = true
+	if got := verification.ContextFor(item, "x"); got.ItemDescription != "" {
+		t.Fatalf("sensitive description sent to the judge: %q", got.ItemDescription)
+	}
+}
+
+func TestOverallAndApprovalGuard(t *testing.T) {
+	t.Parallel()
+
+	result := verification.D3Result{Overall: 0.82, HasOverall: true}
+	confidence, matches, overallMatch := verification.WithOverall(result, 0, 0)
+	if confidence != 0.82 || matches != 1 || !overallMatch {
+		t.Fatalf("WithOverall = %v, %d, %v", confidence, matches, overallMatch)
+	}
+
+	approve := verification.PolicyDecision{Decision: verification.DecisionAutoApprove}
+	cases := []struct {
+		name                        string
+		tier                        string
+		approvalMatch, overallMatch bool
+		matches                     int
+		want                        string
+	}{
+		{"private match approves", verification.RiskMedium, true, false, 1, verification.DecisionAutoApprove},
+		{"low risk approved on the overall estimate", verification.RiskLow, false, true, 1, verification.DecisionAutoApprove},
+		{"medium risk with evidence goes in person", verification.RiskMedium, false, true, 1, verification.DecisionReview},
+		{"no evidence asks again", verification.RiskMedium, false, false, 0, verification.DecisionMoreInfo},
+	}
+	for _, tc := range cases {
+		if got := verification.GuardAutoApproval(approve, tc.tier, tc.approvalMatch, tc.overallMatch, tc.matches).Decision; got != tc.want {
+			t.Errorf("%s: decision = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }

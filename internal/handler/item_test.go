@@ -60,7 +60,7 @@ func newItemRouter(t *testing.T) (http.Handler, string) {
 		FeeService:         newFeeService(db),
 		RewardService:      newRewardService(db),
 		PlatformService:    newPlatformService(db),
-		AgentService:       agent.New(db, agent.Deps{DeepSeekKey: ""}),
+		AgentService:       agent.New(db, agent.Deps{Offline: true}),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)

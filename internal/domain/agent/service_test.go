@@ -167,7 +167,7 @@ func assertNoPrivateLeak(t *testing.T, label, value string) {
 }
 
 func TestMockAgentDoesNotLeakPrivateData(t *testing.T) {
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+	svc := newSeededAgent(t, agent.Deps{Offline: true})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo",
 		[]agent.Message{{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"}})
@@ -195,7 +195,7 @@ func TestMockAgentDoesNotLeakPrivateData(t *testing.T) {
 }
 
 func TestMockAgentCreatesClaimFromDetails(t *testing.T) {
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+	svc := newSeededAgent(t, agent.Deps{Offline: true})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -430,7 +430,7 @@ func (f fakeItemReader) ItemForAgent(context.Context, string) (itemdomain.Item, 
 func TestPreflightSingleWrongPrivateDetailAsksAgain(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{}
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+	svc := newSeededAgent(t, agent.Deps{Offline: true, Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -456,7 +456,7 @@ func TestPreflightSingleWrongPrivateDetailAsksAgain(t *testing.T) {
 func TestPreflightSeveralWrongPrivateDetailsCloseBeforeLLM(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{}
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+	svc := newSeededAgent(t, agent.Deps{Offline: true, Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -479,7 +479,7 @@ func TestPreflightSeveralWrongPrivateDetailsCloseBeforeLLM(t *testing.T) {
 
 func TestPreflightMixedPrivateDetailsGoToHumanReview(t *testing.T) {
 	llm := &scriptedLLM{}
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+	svc := newSeededAgent(t, agent.Deps{Offline: true, Client: llm})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -497,7 +497,7 @@ func TestPreflightMixedPrivateDetailsGoToHumanReview(t *testing.T) {
 }
 
 func TestPreflightApproximateColourMatches(t *testing.T) {
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+	svc := newSeededAgent(t, agent.Deps{Offline: true})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -514,7 +514,7 @@ func TestPreflightApproximateColourMatches(t *testing.T) {
 
 func TestPreflightCorrectPrivateDetailCreatesClaimBeforeLLM(t *testing.T) {
 	llm := &scriptedLLM{}
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+	svc := newSeededAgent(t, agent.Deps{Offline: true, Client: llm})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -537,10 +537,10 @@ func TestPreflightNoPrivateAttributesGoesToHumanReview(t *testing.T) {
 	llm := &scriptedLLM{}
 	db := testutil.NewTestDB(t)
 	svc := agent.New(db, agent.Deps{
-		DeepSeekKey: "test-key",
-		Client:      llm,
-		Claim:       claims,
-		Search:      fakeSearch{result: search.SearchResult{ItemID: "watch-x", Category: "orologio", FoundZone: "Testaccio"}},
+		Offline: true,
+		Client:  llm,
+		Claim:   claims,
+		Search:  fakeSearch{result: search.SearchResult{ItemID: "watch-x", Category: "orologio", FoundZone: "Testaccio"}},
 		Items: fakeItemReader{item: itemdomain.Item{
 			ID: "watch-x", Category: "orologio", Status: itemdomain.StatusInCustody,
 			RiskTier:       itemdomain.RiskHigh,
@@ -571,7 +571,7 @@ func TestPreflightNoPrivateAttributesGoesToHumanReview(t *testing.T) {
 func TestPreflightUndecidedAsksWithoutEscalating(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{}
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+	svc := newSeededAgent(t, agent.Deps{Offline: true, Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -681,7 +681,7 @@ func TestScoreNoPrivateAttributesGoesToHumanReview(t *testing.T) {
 }
 
 func TestMockAgentAsksAgainOnFeminineWrongPrivateDetail(t *testing.T) {
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+	svc := newSeededAgent(t, agent.Deps{Offline: true})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -904,28 +904,66 @@ func TestEscalateStopsWithoutClaim(t *testing.T) {
 	}
 }
 
-func TestClientFailureFallsBackToMock(t *testing.T) {
+func TestClientFailureReturnsUnavailable(t *testing.T) {
 	llm := &scriptedLLM{err: errs.ErrUnavailable}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo",
 		[]agent.Message{{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"}})
-	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
+	// No local fallback: without DeepSeek the caller gets an error.
+	if !errors.Is(err, errs.ErrUnavailable) {
+		t.Fatalf("Chat() error = %v, want ErrUnavailable", err)
 	}
-	if len(reply.Candidates) == 0 {
-		t.Fatal("fallback must search and return candidates")
+	if reply.Message != "" || len(reply.Candidates) != 0 {
+		t.Fatalf("reply = %+v, want no locally generated answer", reply)
 	}
-	assertNoPrivateLeak(t, "fallback message", reply.Message)
+}
+
+func TestMissingDeepSeekReturnsUnavailable(t *testing.T) {
+	svc := newSeededAgent(t, agent.Deps{})
+
+	_, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "ho perso un iphone"}})
+	if !errors.Is(err, errs.ErrUnavailable) {
+		t.Fatalf("Chat() error = %v, want ErrUnavailable without a DeepSeek client", err)
+	}
+}
+
+func TestJudgeOutageAbortsTheTurn(t *testing.T) {
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
+			`{"item_id":"item-phone","answers":{"case_color":"blu"}}`)}},
+		{Content: "non dovrebbe arrivare qui"},
+	}}
+	claims := &recordingClaims{}
+	svc := newSeededAgent(t, agent.Deps{
+		DeepSeekKey: "test-key",
+		Client:      llm,
+		Claim:       claims,
+		Engine:      claim.DeepSeekEngine(nil),
+	})
+
+	_, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "iphone con custodia blu"}})
+	if !errors.Is(err, errs.ErrUnavailable) {
+		t.Fatalf("Chat() error = %v, want ErrUnavailable when the judge is down", err)
+	}
+	if claims.calls != 0 {
+		t.Fatalf("claim created without the judge: %d calls", claims.calls)
+	}
 }
 
 func TestToolLoopRoundCap(t *testing.T) {
-	steps := make([]deepseek.Completion, 0, 10)
-	for i := 0; i < 10; i++ {
+	steps := make([]deepseek.Completion, 0, 6)
+	for i := 0; i < 5; i++ {
 		steps = append(steps, deepseek.Completion{
 			ToolCalls: []deepseek.ToolCall{toolCall("call", "search_items", `{"query":"iphone"}`)},
 		})
 	}
+	// After the tool rounds the model is asked once more, without tools, for
+	// its own reply: there is no canned fallback sentence.
+	steps = append(steps, deepseek.Completion{Content: "Ho trovato un candidato: com'è fatta la custodia?"})
 	llm := &scriptedLLM{steps: steps}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, MaxToolRounds: 5})
 
@@ -934,11 +972,22 @@ func TestToolLoopRoundCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
-	if got := llm.callCount(); got != 5 {
-		t.Fatalf("LLM calls = %d, want the 5 round cap", got)
+	if got := llm.callCount(); got != 6 {
+		t.Fatalf("LLM calls = %d, want 5 tool rounds plus one wrap-up", got)
 	}
-	if strings.TrimSpace(reply.Message) == "" {
-		t.Fatal("round cap must still return a safe message")
+	if reply.Message != "Ho trovato un candidato: com'è fatta la custodia?" {
+		t.Fatalf("message = %q, want the model's own wrap-up", reply.Message)
+	}
+}
+
+func TestEmptyModelReplyIsAnErrorNotACannedSentence(t *testing.T) {
+	llm := &scriptedLLM{steps: []deepseek.Completion{{Content: ""}, {Content: ""}}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+
+	_, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "iphone"}})
+	if !errors.Is(err, errs.ErrUnavailable) {
+		t.Fatalf("Chat() error = %v, want ErrUnavailable for an empty model reply", err)
 	}
 }
 
@@ -971,7 +1020,7 @@ func TestFinalMessageRedactsPrivateDetails(t *testing.T) {
 }
 
 func TestRejectsTooManyMessages(t *testing.T) {
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+	svc := newSeededAgent(t, agent.Deps{Offline: true})
 	messages := make([]agent.Message, 0, 61)
 	for i := 0; i < 61; i++ {
 		messages = append(messages, agent.Message{Role: "user", Content: "ciao"})
@@ -1014,7 +1063,7 @@ func TestClaimOnLastToolRoundRepliesWithClaimOutcome(t *testing.T) {
 func TestPreflightUndecidedTooLongGoesToHumanReview(t *testing.T) {
 	claims := &recordingClaims{created: claim.Claim{ID: "claim-review", Status: claim.StatusUnderReview}}
 	llm := &scriptedLLM{}
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+	svc := newSeededAgent(t, agent.Deps{Offline: true, Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
@@ -1043,7 +1092,7 @@ func TestPreflightUndecidedTooLongGoesToHumanReview(t *testing.T) {
 }
 
 func TestMockAnswersRecognisesTransparentCase(t *testing.T) {
-	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+	svc := newSeededAgent(t, agent.Deps{Offline: true})
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
 		{Role: "assistant", Content: "Descrivi un dettaglio."},
@@ -1072,7 +1121,7 @@ func TestInPersonVerificationOnlyWithPartialEvidence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+			svc := newSeededAgent(t, agent.Deps{Offline: true})
 			messages := []agent.Message{
 				{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
 				{Role: "assistant", Content: "Descrivi un dettaglio."},
@@ -1101,5 +1150,85 @@ func TestInPersonVerificationOnlyWithPartialEvidence(t *testing.T) {
 				t.Fatalf("message = %q, want the no-pass in-person explanation", reply.Message)
 			}
 		})
+	}
+}
+
+// Regression (Red Bull can): a low-risk item described by brand and model is
+// recognised, even though no phone-like private attribute was answered.
+func TestLowRiskItemIsApprovedOnBrandAndModel(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-can", Status: claim.StatusApproved}}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"lattina red bull"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_answers",
+			`{"item_id":"can-x","answers":{"brand":"red bull","model":"zero zuccheri"}}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-3", "create_claim",
+			`{"item_id":"can-x","answers":{"brand":"red bull","model":"zero zuccheri"}}`)}},
+	}}
+	db := testutil.NewTestDB(t)
+	svc := agent.New(db, agent.Deps{
+		DeepSeekKey: "test-key",
+		Client:      llm,
+		Claim:       claims,
+		Search:      fakeSearch{result: search.SearchResult{ItemID: "can-x", Category: "bottiglia", FoundZone: "Testaccio"}},
+		Items: fakeItemReader{item: itemdomain.Item{
+			ID: "can-x", Category: "bottiglia", Brand: "Red Bull", Model: "Zero / senza zuccheri", Color: "grigio",
+			Status: itemdomain.StatusInCustody, RiskTier: itemdomain.RiskLow,
+			PrivateProfile: map[string]any{"case_color": "grigio", "has_case": false, "has_sticker": true},
+		}},
+	})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso una lattina di red bull zero zuccheri a Testaccio"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if result := toolResultFor(t, llm.call(2), "score_answers"); !strings.Contains(result, `"auto_approve"`) {
+		t.Fatalf("score result = %s, want auto_approve", result)
+	}
+	if !reply.Done || reply.ClaimID != "claim-can" || !strings.Contains(reply.Message, "riconosciuto") {
+		t.Fatalf("reply = %+v, want the recognised-item message", reply)
+	}
+}
+
+// Brand and model of a high-risk item are low-but-not-null evidence: no
+// automatic approval, but the searcher is sent to the custodian.
+func TestHighRiskBrandAndModelGoToInPersonVerification(t *testing.T) {
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "create_claim",
+			`{"item_id":"item-phone","answers":{"brand":"apple","model":"iphone 17"}}`)}},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un apple iphone 17"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || reply.ClaimID == "" {
+		t.Fatalf("reply = %+v, want a claim under review", reply)
+	}
+	if !strings.Contains(reply.Message, "Bar X") || !strings.Contains(reply.Message, "di persona") {
+		t.Fatalf("message = %q, want the custodian's pickup point", reply.Message)
+	}
+}
+
+// The keyword gate is test-only: with DeepSeek the model drives every turn.
+func TestProductionNeverUsesTheKeywordGate(t *testing.T) {
+	llm := &scriptedLLM{steps: []deepseek.Completion{{Content: "Mi descriva la custodia."}}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha una custodia blu"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if llm.callCount() != 1 || reply.Message != "Mi descriva la custodia." {
+		t.Fatalf("llm calls = %d reply = %+v, want the model to answer the turn", llm.callCount(), reply)
 	}
 }

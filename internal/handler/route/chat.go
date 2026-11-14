@@ -56,6 +56,11 @@ func (h *WebAPIHandler) PostChat(ctx *reqcontext.RequestContext) {
 			respondWithJSONError(ctx, http.StatusBadRequest, "invalid chat messages")
 			return
 		}
+		if errors.Is(err, errs.ErrUnavailable) {
+			ctx.Logger.Error("PostChat deepseek unavailable", "err", err)
+			respondWithJSONError(ctx, http.StatusServiceUnavailable, "l'assistente non è disponibile: DeepSeek non risponde, riprova più tardi")
+			return
+		}
 		ctx.Logger.Error("PostChat service error", "err", err)
 		respondWithJSONError(ctx, http.StatusInternalServerError, "internal server error")
 		return

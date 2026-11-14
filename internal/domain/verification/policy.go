@@ -8,17 +8,17 @@ const (
 	// autoApproveThreshold is the minimum confidence for low/medium risk items.
 	// It sits below the partial-match probability so an honest but approximate
 	// description ("custodia blu" for "blu scuro") is enough.
-	autoApproveThreshold = 0.60
+	autoApproveThreshold = 0.55
 	// highReviewThreshold is the minimum confidence for high risk items. A
 	// high-risk claim is never approved automatically: it reaches a human.
-	highReviewThreshold = 0.70
+	highReviewThreshold = 0.55
 )
 
 // Decision applies the deterministic policy: probabilities + risk tier +
 // evidence + flags. It never calls a model and never mutates state.
 //
-//   - low/medium with confidence >= 0.60 -> auto_approve;
-//   - high with confidence >= 0.70 -> review;
+//   - low/medium with confidence >= 0.55 -> auto_approve;
+//   - high with confidence >= 0.55 -> review;
 //   - sensitive always -> review;
 //   - everything below the threshold -> more_info;
 //   - rejection/review flags override the confidence.

@@ -56,6 +56,11 @@ type Deps struct {
 	// MaxToolRounds defaults to 5 and is capped at 5.
 	MaxToolRounds int
 
+	// Offline enables the deterministic keyword agent instead of DeepSeek.
+	// Tests only: production never sets it, so without DeepSeek the chat
+	// returns errs.ErrUnavailable instead of answering with local logic.
+	Offline bool
+
 	// Trace receives the model outputs, tool calls, ownership decisions and
 	// replies of every turn as JSONL. Nil disables tracing.
 	Trace *trace.Recorder

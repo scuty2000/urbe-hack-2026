@@ -204,7 +204,7 @@ func run() error {
 	nameService := nameservice.New(db)
 	platformService := platform.New(db)
 	authService := auth.New(db, auth.Deps{Auditor: platformService})
-	agentMode := "mock"
+	agentMode := "unavailable"
 	if cfg.Features.DeepSeek && strings.TrimSpace(cfg.DeepSeek.Key) != "" {
 		agentMode = "deepseek"
 	}

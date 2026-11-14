@@ -9,6 +9,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
 )
 
@@ -63,22 +64,53 @@ func TestDeepSeekEngineUsesJudgeScores(t *testing.T) {
 	}
 }
 
-func TestDeepSeekEngineFallsBackToLocalScorer(t *testing.T) {
-	judge := &fakeCompleter{err: errors.New("provider down")}
+func TestDeepSeekEngineReturnsUnavailable(t *testing.T) {
 	questions := verification.Questions{"case_color": itemdomain.Question{Type: "noul"}}
 	state := verification.State{
 		Item:     map[string]any{"case_color": "blu"},
 		Searcher: map[string]any{"case_color": "blu"},
 	}
+	for name, engine := range map[string]claim.Engine{
+		"provider down":  claim.DeepSeekEngine(&fakeCompleter{err: errors.New("provider down")}),
+		"not configured": claim.DeepSeekEngine(nil),
+		"garbage output": claim.DeepSeekEngine(&fakeCompleter{completion: deepseek.Completion{Content: "boh"}}),
+	} {
+		// No local fallback: no ownership decision without DeepSeek.
+		if _, err := engine.Score(context.Background(), state, questions); !errors.Is(err, errs.ErrUnavailable) {
+			t.Errorf("%s: Score() error = %v, want ErrUnavailable", name, err)
+		}
+	}
+}
 
-	result, err := claim.DeepSeekEngine(judge).Score(context.Background(), state, questions)
+func TestDeepSeekEngineGivesTheJudgeFullContextAndReadsOverall(t *testing.T) {
+	judge := &fakeCompleter{completion: deepseek.Completion{ToolCalls: []deepseek.ToolCall{{
+		Function: deepseek.FunctionCall{
+			Name:      "submit_ownership_scores",
+			Arguments: `{"scores":{"model":0.9},"ownership":0.82,"rationale":"compatibile"}`,
+		},
+	}}}}
+	state := verification.State{
+		Item:     map[string]any{"model": "Zero / senza zuccheri"},
+		Searcher: map[string]any{"model": "zero zuccheri"},
+		Context: verification.JudgeContext{
+			FoundZone:         "Testaccio",
+			FoundAt:           "2026-11-14 11:51",
+			ItemDescription:   "Lattina in alluminio argento con scritta ZERO ZUCCHERI",
+			SearcherStatement: "oggi a Testaccio ho perso una lattina di redbull zero zuccheri",
+		},
+	}
+
+	result, err := claim.DeepSeekEngine(judge).Score(context.Background(), state,
+		verification.Questions{"model": itemdomain.Question{Type: "noul"}})
 	if err != nil {
 		t.Fatalf("Score() error = %v", err)
 	}
-	if result.ModelVersion != verification.ModelLocal || !strings.Contains(result.Rationale, "local fallback") {
-		t.Fatalf("result = %+v, want the local fallback", result)
+	for _, want := range []string{`"foundZone":"Testaccio"`, `"foundAt":"2026-11-14 11:51"`, "ZERO ZUCCHERI", "ho perso una lattina di redbull"} {
+		if !strings.Contains(judge.payload, want) {
+			t.Fatalf("judge payload misses %s: %s", want, judge.payload)
+		}
 	}
-	if got := verification.AnswerProbability(result.Answers["case_color"]); got < 0.9 {
-		t.Fatalf("case_color = %v, want a local exact match", got)
+	if !result.HasOverall || result.Overall != 0.82 {
+		t.Fatalf("overall = %v (has=%v), want 0.82", result.Overall, result.HasOverall)
 	}
 }

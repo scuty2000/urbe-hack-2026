@@ -77,7 +77,7 @@ func newWizardRouter(t *testing.T, fake *fakeWizard) http.Handler {
 		FeeService:         newFeeService(db),
 		RewardService:      newRewardService(db),
 		PlatformService:    newPlatformService(db),
-		AgentService:       agent.New(db, agent.Deps{DeepSeekKey: ""}),
+		AgentService:       agent.New(db, agent.Deps{Offline: true}),
 		WizardService:      fake,
 	})
 	if err != nil {

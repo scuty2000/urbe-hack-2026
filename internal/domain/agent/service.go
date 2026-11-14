@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -16,9 +17,10 @@ import (
 )
 
 const (
-	// fallbackMessage is returned when the provider produced no usable text.
-	// Nothing was forwarded, so it must not say so: the searcher can go on.
-	fallbackMessage = "Non sono riuscito a completare la verifica in questo passaggio. Mi descriva un altro dettaglio dell'oggetto per continuare."
+	// wrapUpInstruction asks the model for a plain reply when it produced no
+	// text or used up its tool rounds. There is no canned fallback sentence:
+	// the searcher always gets the model's own words, or an error.
+	wrapUpInstruction = "Hai esaurito gli strumenti per questo turno. Rispondi ora all'utente, in italiano e in modo breve, senza usare strumenti: digli a che punto è la verifica in base ai risultati ottenuti e fai una sola domanda utile per proseguire. Non rivelare valori attesi o dettagli privati."
 	// escalationMessage is returned when the model escalates.
 	escalationMessage = "Ho inoltrato la richiesta a un operatore. Riceverai aggiornamenti in questa conversazione."
 	// partialFailureMessage is returned when the provider fails after a tool
@@ -78,22 +80,27 @@ func (s *service) Chat(ctx context.Context, searcherID string, messages []Messag
 // route picks who answers the turn and reports it for the trace: the
 // deterministic ownership gate, the model or the mock.
 func (s *service) route(ctx context.Context, searcherID string, normalized []Message) (Reply, string, error) {
-	// The server, not the model, decides the ownership outcome once the
-	// searcher has supplied a detail.
-	if reply, handled, err := s.preflightChat(ctx, searcherID, normalized); err != nil {
-		return Reply{}, "preflight", err
-	} else if handled {
-		return reply, "preflight", nil
+	if s.deps.Offline {
+		// Tests only: the keyword gate and the keyword agent stand in for
+		// DeepSeek. Production never extracts answers with keywords: the
+		// conversation is always driven by the model, the decision by the
+		// judge and the policy.
+		if reply, handled, err := s.preflightChat(ctx, searcherID, normalized); err != nil {
+			return Reply{}, "offline", err
+		} else if handled {
+			return reply, "offline", nil
+		}
+		reply, err := s.mockChat(ctx, searcherID, normalized)
+		return reply, "offline", err
 	}
 
 	if s.deps.Client == nil {
-		reply, err := s.mockChat(ctx, searcherID, normalized)
-		return reply, "mock", err
+		return Reply{}, "llm", fmt.Errorf("agent chat: deepseek is not configured: %w", errs.ErrUnavailable)
 	}
+	// No local fallback: a DeepSeek failure is an error for the caller.
 	reply, err := s.llmChat(ctx, searcherID, normalized)
 	if err != nil {
-		reply, err = s.mockChat(ctx, searcherID, normalized)
-		return reply, "mock_fallback", err
+		return Reply{}, "llm", fmt.Errorf("agent chat: %w", err)
 	}
 	return reply, "llm", nil
 }
@@ -136,8 +143,9 @@ type candidateEvaluation struct {
 
 // bestCandidate scores the top candidates and returns the most favourable
 // one, so a detail that contradicts the first result does not close the
-// conversation when it fits the second. Search order breaks ties.
-func (s *service) bestCandidate(ctx context.Context, results []search.SearchResult, answers map[string]string) (candidateEvaluation, bool) {
+// conversation when it fits the second. Search order breaks ties. A scoring
+// outage is returned as an error: no decision is taken without the judge.
+func (s *service) bestCandidate(ctx context.Context, results []search.SearchResult, answers map[string]string, statement string) (candidateEvaluation, bool, error) {
 	best := candidateEvaluation{}
 	bestRank := -1
 	for index, result := range results {
@@ -148,7 +156,10 @@ func (s *service) bestCandidate(ctx context.Context, results []search.SearchResu
 		if err != nil {
 			continue
 		}
-		evaluation, err := s.evaluateOwnership(ctx, item, answers)
+		evaluation, err := s.evaluateOwnership(ctx, item, answers, statement)
+		if errors.Is(err, errs.ErrUnavailable) {
+			return candidateEvaluation{}, false, err
+		}
 		if err != nil {
 			continue
 		}
@@ -157,7 +168,7 @@ func (s *service) bestCandidate(ctx context.Context, results []search.SearchResu
 			bestRank = rank
 		}
 	}
-	return best, bestRank >= 0
+	return best, bestRank >= 0, nil
 }
 
 // decisionRank orders evaluations from least to most favourable: a rejection,
@@ -203,7 +214,10 @@ func (s *service) preflightChat(ctx context.Context, searcherID string, messages
 	if err != nil || len(results) == 0 {
 		return Reply{}, false, nil
 	}
-	best, ok := s.bestCandidate(ctx, results, answers)
+	best, ok, err := s.bestCandidate(ctx, results, answers, text)
+	if err != nil {
+		return Reply{}, false, err
+	}
 	if !ok {
 		return Reply{}, false, nil
 	}
@@ -232,9 +246,12 @@ func (s *service) preflightChat(ctx context.Context, searcherID string, messages
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
 		ItemID:     best.itemID,
 		SearcherID: searcherID,
-		Session:    claim.Session{Answers: answers},
+		Session:    claim.Session{Answers: answers, Statement: text},
 		Flags:      flags,
 	})
+	if errors.Is(err, errs.ErrUnavailable) {
+		return Reply{}, false, err
+	}
 	if err != nil {
 		return Reply{}, false, nil
 	}
@@ -309,21 +326,26 @@ func (s *service) llmChat(ctx context.Context, searcherID string, messages []Mes
 		if err != nil {
 			// Never restart the mock after a tool ran: a claim may already
 			// exist, and the mock would create a duplicate.
-			if turn.used {
+			// A claim already created in this turn is kept and reported;
+			// otherwise the provider failure is the caller's error.
+			if claimID != "" {
 				return Reply{
 					Message:    partialFailureMessage,
 					Candidates: candidates,
 					ClaimID:    claimID,
-					Done:       claimID != "" || escalated,
+					Done:       true,
 				}, nil
 			}
 			return Reply{}, err
 		}
 
 		if len(completion.ToolCalls) == 0 {
+			// The model answered in plain text: that is the reply.
 			message := s.redactMessage(ctx, completion.Content, turn)
 			if message == "" {
-				message = fallbackMessage
+				if message, err = s.wrapUp(ctx, conversation, turn); err != nil {
+					return Reply{}, err
+				}
 			}
 			return Reply{
 				Message:    message,
@@ -340,6 +362,9 @@ func (s *service) llmChat(ctx context.Context, searcherID string, messages []Mes
 		})
 		for _, call := range completion.ToolCalls {
 			outcome := s.executeTool(ctx, searcherID, call, turn)
+			if outcome.err != nil {
+				return Reply{}, outcome.err
+			}
 			if len(outcome.candidates) > 0 {
 				candidates = mergeCandidates(candidates, outcome.candidates)
 			}
@@ -374,7 +399,26 @@ func (s *service) llmChat(ctx context.Context, searcherID string, messages []Mes
 		}
 	}
 
-	return Reply{Message: fallbackMessage, Candidates: candidates, ClaimID: claimID, Done: claimID != "" || escalated}, nil
+	message, err := s.wrapUp(ctx, conversation, turn)
+	if err != nil {
+		return Reply{}, err
+	}
+	return Reply{Message: message, Candidates: candidates, ClaimID: claimID, Done: claimID != "" || escalated}, nil
+}
+
+// wrapUp asks the model for a final plain-text reply without tools. An empty
+// answer is a provider failure, never replaced by a canned sentence.
+func (s *service) wrapUp(ctx context.Context, conversation []deepseek.Message, turn *turnState) (string, error) {
+	conversation = append(trimConversation(conversation), deepseek.Message{Role: "system", Content: wrapUpInstruction})
+	completion, err := s.deps.Client.Complete(ctx, conversation, nil)
+	if err != nil {
+		return "", err
+	}
+	message := s.redactMessage(ctx, completion.Content, turn)
+	if message == "" {
+		return "", fmt.Errorf("agent chat: the model returned no reply: %w", errs.ErrUnavailable)
+	}
+	return message, nil
 }
 
 // trimConversation caps the provider conversation, keeping the system prompt

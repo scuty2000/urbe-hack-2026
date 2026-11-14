@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/trace"
 )
@@ -76,6 +78,11 @@ type turnState struct {
 	seen    map[string]bool
 	// userText is the lower-cased concatenation of the searcher's messages.
 	userText string
+	// statement is the same text as written, handed to the judge as context.
+	statement string
+	// undecidedLimit reports a conversation long enough that an undecided
+	// ownership check goes to human review instead of asking again.
+	undecidedLimit bool
 	// used reports whether any tool ran, so a provider failure never restarts
 	// the mock after side effects.
 	used bool
@@ -88,14 +95,19 @@ type turnState struct {
 
 func newTurnState(messages []Message) *turnState {
 	return &turnState{
-		allowed:  map[string]bool{},
-		seen:     map[string]bool{},
-		userText: strings.ToLower(userText(messages)),
+		allowed:        map[string]bool{},
+		seen:           map[string]bool{},
+		userText:       strings.ToLower(userText(messages)),
+		statement:      userText(messages),
+		undecidedLimit: undecidedLimitReached(messages),
 	}
 }
 
 // toolOutcome is the result of one tool call.
 type toolOutcome struct {
+	// err aborts the turn: the ownership judge is unavailable and no decision
+	// may be taken without it.
+	err             error
 	content         string
 	candidates      []search.SearchResult
 	claimID         string
@@ -146,7 +158,7 @@ func toolDefinitions() []deepseek.Tool {
 			Type: "function",
 			Function: deepseek.ToolFunction{
 				Name:        ToolScoreAnswers,
-				Description: "Valuta le risposte rispetto all'oggetto. Le chiavi sono gli attributi del profilo (es. case_color, has_crack, sticker, contents); i valori sono le parole scritte dall'utente, riportate alla lettera. Restituisce solo confidenza, decisione e motivazioni, mai i valori attesi.",
+				Description: "Valuta le risposte rispetto all'oggetto. Le chiavi sono i campi del profilo: brand, model e gli attributi (es. case_color, has_crack, sticker, contents); i valori sono le parole scritte dall'utente, riportate alla lettera. Restituisce solo confidenza, decisione e motivazioni, mai i valori attesi.",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -323,8 +335,8 @@ func sanitizeProfile(item itemdomain.Item) sanitizedProfile {
 	profile := sanitizedProfile{
 		ItemID:    item.ID,
 		Category:  safePublicText(item.Category),
-		Brand:     safePublicText(item.Brand),
-		Model:     safePublicText(item.Model),
+		Brand:     safeProductText(item.Brand),
+		Model:     safeProductText(item.Model),
 		Color:     safePublicText(item.Color),
 		Condition: safePublicText(item.Condition),
 	}
@@ -465,6 +477,27 @@ func safePublicText(value string) string {
 	return text
 }
 
+// safeProductText is safePublicText for brand and model. Product names are
+// routinely two capitalized words ("Red Bull", "Galaxy A54"), so the full-name
+// heuristic is skipped; e-mails, URLs and addresses are still rejected.
+func safeProductText(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" || len(text) > 80 {
+		return ""
+	}
+	lower := strings.ToLower(text)
+	if strings.ContainsAny(text, "@\n\r\t") {
+		return ""
+	}
+	if strings.Contains(lower, "http://") || strings.Contains(lower, "https://") || strings.Contains(lower, "www.") {
+		return ""
+	}
+	if containsAddressMarker(lower) {
+		return ""
+	}
+	return text
+}
+
 func containsAddressMarker(lower string) bool {
 	for _, token := range strings.Fields(lower) {
 		switch token {
@@ -505,13 +538,17 @@ type ownershipEvaluation struct {
 	Confidence  float64
 	Reasons     []string
 	PrivateKeys map[string]bool
-	Answers     map[string]itemdomain.Answer
+	// EvidenceKeys are the private keys plus brand and model.
+	EvidenceKeys map[string]bool
+	// Matched reports at least one answered evidence key that matched.
+	Matched bool
+	Answers map[string]itemdomain.Answer
 }
 
 // unverifiable reports an item without private attributes: the engine has
 // nothing to compare, so only a human can decide.
 func (e ownershipEvaluation) unverifiable() bool {
-	return len(e.PrivateKeys) == 0
+	return len(e.EvidenceKeys) == 0
 }
 
 // inPersonMinConfidence is the private confidence from which a claim under
@@ -527,7 +564,7 @@ func (e ownershipEvaluation) partialEvidence() bool {
 	if e.unverifiable() {
 		return false
 	}
-	return hasPrivateMatch(e.Answers, e.PrivateKeys) || e.Confidence >= inPersonMinConfidence
+	return e.Matched || e.Confidence >= inPersonMinConfidence
 }
 
 // claimFlags are the flags the agent adds to a claim. An unverifiable item is
@@ -542,8 +579,8 @@ func (e ownershipEvaluation) claimFlags() []string {
 // evaluateOwnership scores the searcher's answers and records the outcome in
 // the trace, including per-attribute probabilities, so a refusal can be
 // explained afterwards.
-func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, answers map[string]string) (ownershipEvaluation, error) {
-	evaluation, modelVersion, err := s.scoreOwnership(ctx, item, answers)
+func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, answers map[string]string, statement string) (ownershipEvaluation, error) {
+	evaluation, modelVersion, err := s.scoreOwnership(ctx, item, answers, statement)
 	s.deps.Trace.Record(ctx, trace.Event{
 		Kind:   trace.KindDecision,
 		Source: "agent",
@@ -554,6 +591,7 @@ func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, a
 			"riskTier":      riskTierOf(item),
 			"answers":       answers,
 			"privateKeys":   sortedKeys(evaluation.PrivateKeys),
+			"evidenceKeys":  sortedKeys(evaluation.EvidenceKeys),
 			"probabilities": evaluation.Answers,
 			"confidence":    evaluation.Confidence,
 			"decision":      evaluation.Decision,
@@ -563,25 +601,32 @@ func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, a
 	return evaluation, err
 }
 
-func (s *service) scoreOwnership(ctx context.Context, item itemdomain.Item, answers map[string]string) (ownershipEvaluation, string, error) {
+func (s *service) scoreOwnership(ctx context.Context, item itemdomain.Item, answers map[string]string, statement string) (ownershipEvaluation, string, error) {
 	attributes, privateKeys := scoringAttributes(item)
-	if len(privateKeys) == 0 {
+	// Brand and model are never shown to the searcher, so they are
+	// evidence too: a low-risk item is often described only by them.
+	evidenceKeys := verification.EvidenceKeys(attributes, privateKeys)
+	if len(evidenceKeys) == 0 {
 		// Nothing discriminative was recorded at enrollment. That is not the
 		// searcher's fault: the request goes to a human instead of being
 		// refused.
 		return ownershipEvaluation{
-			Decision:    verification.DecisionReview,
-			Reasons:     []string{"no private attributes available; a human must verify ownership"},
-			PrivateKeys: privateKeys,
+			Decision:     verification.DecisionReview,
+			Reasons:      []string{"no verifiable attributes available; a human must verify ownership"},
+			PrivateKeys:  privateKeys,
+			EvidenceKeys: evidenceKeys,
 		}, "", nil
 	}
 
-	questions := questionsFor(attributes, privateKeys)
+	questions := questionsFor(attributes, evidenceKeys)
 	verificationState := verification.State{
 		Item:          attributes,
 		Searcher:      stringAnswers(answers),
 		IdentityMatch: identityMatches(item.PrivateProfile, answers),
 		RiskTier:      riskTierOf(item),
+		// The judge also sees where and when the item was found, its
+		// description and everything the searcher wrote.
+		Context: verification.ContextFor(item, statement),
 	}
 	flags := []string{}
 	if hasIdentityMismatch(verificationState.IdentityMatch) {
@@ -590,39 +635,41 @@ func (s *service) scoreOwnership(ctx context.Context, item itemdomain.Item, answ
 
 	result, err := s.deps.Engine.Score(ctx, verificationState, questions)
 	if err != nil {
-		return ownershipEvaluation{PrivateKeys: privateKeys}, "", err
+		return ownershipEvaluation{PrivateKeys: privateKeys, EvidenceKeys: evidenceKeys}, "", err
 	}
-	confidence := clamp01(result.Confidence)
-	privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys)
-	if answered > 0 {
-		confidence = clamp01(privateConfidence)
-	} else {
-		// Missing private answers are not evidence of ownership, and the
-		// provider's average over unanswered questions must not be used.
-		confidence = 0
+	// Missing answers are not evidence of ownership: only answered evidence
+	// keys contribute, never the provider's average over unanswered questions.
+	confidence := 0.0
+	if evidenceConfidence, answered := verification.PrivateConfidence(answers, result.Answers, evidenceKeys); answered > 0 {
+		confidence = clamp01(evidenceConfidence)
 	}
-	// Mirror the claim service: one wrong detail is not a rejection.
-	matches, mismatches := verification.PrivateEvidence(answers, result.Answers, privateKeys)
+	// Mirror the claim service: matches count on every evidence key,
+	// contradictions only on private details, and one wrong detail is not a
+	// rejection.
+	matches, _ := verification.PrivateEvidence(answers, result.Answers, evidenceKeys)
+	_, mismatches := verification.PrivateEvidence(answers, result.Answers, privateKeys)
+	confidence, matches, overallMatch := verification.WithOverall(result, confidence, matches)
 	if flag := verification.PrivateEvidenceFlag(matches, mismatches); flag != "" {
 		flags = append(flags, flag)
 	}
 	policy := verification.Decision(verificationState.RiskTier, confidence, nil, flags)
-	// Mirror the claim service: an automatic approval needs at least one
-	// matching private attribute.
-	if policy.Decision == verification.DecisionAutoApprove && !hasPrivateMatch(result.Answers, privateKeys) {
-		policy.Decision = verification.DecisionMoreInfo
-		policy.Reasons = append(policy.Reasons, "no private attribute matched; more information required")
-	}
+	// Mirror the claim service: an automatic approval needs a matching private
+	// attribute, or any matching evidence for a low-risk item.
+	policy = verification.GuardAutoApproval(policy, verificationState.RiskTier,
+		hasPrivateMatch(result.Answers, verification.ApprovalKeys(verificationState.RiskTier, privateKeys, evidenceKeys)),
+		overallMatch, matches)
 	reasons := policy.Reasons
 	if reasons == nil {
 		reasons = []string{}
 	}
 	return ownershipEvaluation{
-		Decision:    policy.Decision,
-		Confidence:  confidence,
-		Reasons:     reasons,
-		PrivateKeys: privateKeys,
-		Answers:     result.Answers,
+		Decision:     policy.Decision,
+		Confidence:   confidence,
+		Reasons:      reasons,
+		PrivateKeys:  privateKeys,
+		EvidenceKeys: evidenceKeys,
+		Matched:      matches > 0,
+		Answers:      result.Answers,
 	}, result.ModelVersion, nil
 }
 
@@ -657,17 +704,23 @@ func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall, state *
 	if len(answers) == 0 {
 		return toolError("answers must come from the searcher's messages")
 	}
-	evaluation, err := s.evaluateOwnership(ctx, item, answers)
+	evaluation, err := s.evaluateOwnership(ctx, item, answers, state.statement)
 	if err != nil {
-		return toolError("scoring is unavailable")
+		return toolOutcome{err: err, content: mustJSON(map[string]any{"error": "scoring is unavailable"})}
 	}
 	reasons := evaluation.Reasons
 	if reasons == nil {
 		reasons = []string{}
 	}
+	decision := evaluation.Decision
+	if decision == verification.DecisionMoreInfo && state.undecidedLimit {
+		// Long undecided conversation: stop asking, a human will decide.
+		decision = verification.DecisionReview
+		reasons = append(reasons, "undecided for too long; create the claim for human review")
+	}
 	outcome := toolOutcome{content: mustJSON(scoreResult{
 		Confidence: evaluation.Confidence,
-		Decision:   evaluation.Decision,
+		Decision:   decision,
 		Reasons:    reasons,
 	})}
 	if evaluation.Decision == verification.DecisionReject {
@@ -675,7 +728,7 @@ func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall, state *
 		outcome.terminalMessage = terminalMismatchMessage
 		return outcome
 	}
-	if evaluation.Decision == verification.DecisionMoreInfo {
+	if decision == verification.DecisionMoreInfo {
 		state.ownershipPending = true
 	}
 	return outcome
@@ -719,10 +772,9 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 	if err != nil {
 		return toolError("item not found")
 	}
-	evaluation, err := s.evaluateOwnership(ctx, item, answers)
+	evaluation, err := s.evaluateOwnership(ctx, item, answers, turn.statement)
 	if err != nil {
-		// A scoring outage is not a refusal: the model can retry or ask again.
-		return toolError("scoring is unavailable; try again")
+		return toolOutcome{err: err, content: mustJSON(map[string]any{"error": "scoring is unavailable"})}
 	}
 	if evaluation.Decision == verification.DecisionReject {
 		return toolOutcome{
@@ -731,20 +783,30 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 			terminalMessage: terminalMismatchMessage,
 		}
 	}
+	flags := evaluation.claimFlags()
 	if evaluation.Decision == verification.DecisionMoreInfo {
-		turn.ownershipPending = true
-		return toolError("not enough evidence; ask another question and do not create the claim")
+		if !turn.undecidedLimit {
+			turn.ownershipPending = true
+			return toolError("not enough evidence; ask another question and do not create the claim")
+		}
+		// The searcher kept answering without a decision: a human decides
+		// instead of asking forever. missing_evidence forces review.
+		flags = append(flags, verification.FlagMissingEvidence)
 	}
 
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
 		ItemID:     itemID,
 		SearcherID: searcherID,
 		Session: claim.Session{
-			Answers: answers,
+			Answers:   answers,
+			Statement: turn.statement,
 		},
 		Evidence: args.Evidence,
-		Flags:    evaluation.claimFlags(),
+		Flags:    flags,
 	})
+	if errors.Is(err, errs.ErrUnavailable) {
+		return toolOutcome{err: err, content: mustJSON(map[string]any{"error": "scoring is unavailable"})}
+	}
 	if err != nil {
 		return toolError("claim could not be created")
 	}
@@ -829,7 +891,11 @@ func scoringAttributes(item itemdomain.Item) (map[string]any, map[string]bool) {
 		"category": true, "brand": true, "model": true, "color": true, "condition": true,
 	}
 	for key, value := range public {
-		if safe := safePublicText(value); safe != "" {
+		safe := safePublicText(value)
+		if key == "brand" || key == "model" {
+			safe = safeProductText(value)
+		}
+		if safe != "" {
 			attributes[key] = safe
 		}
 	}

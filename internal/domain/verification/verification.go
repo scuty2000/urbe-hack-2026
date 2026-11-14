@@ -70,6 +70,38 @@ const (
 	MismatchProbability = 0.25
 )
 
+// publicEvidenceKeys are listing attributes that are never shown to a
+// searcher (search results expose only category, zone and time), so knowing
+// them is ownership evidence: "una lattina di Red Bull zero zuccheri". Colour
+// is left out on purpose: it is too easy to guess to count on its own.
+var publicEvidenceKeys = []string{"brand", "model"}
+
+// EvidenceKeys returns the keys whose answers count as ownership evidence: the
+// private attributes plus the recorded brand and model.
+func EvidenceKeys(attributes map[string]any, privateKeys map[string]bool) map[string]bool {
+	keys := make(map[string]bool, len(privateKeys)+len(publicEvidenceKeys))
+	for key := range privateKeys {
+		keys[key] = true
+	}
+	for _, key := range publicEvidenceKeys {
+		if value, ok := attributes[key]; ok && strings.TrimSpace(toString(value)) != "" {
+			keys[key] = true
+		}
+	}
+	return keys
+}
+
+// ApprovalKeys returns the keys of which at least one must match before an
+// automatic approval. A low-risk item (a can, an umbrella) is approved on any
+// evidence; anything more valuable needs a private detail, otherwise it goes
+// to more_info or to in-person verification.
+func ApprovalKeys(riskTier string, privateKeys, evidenceKeys map[string]bool) map[string]bool {
+	if normalizeRisk(riskTier) == RiskLow {
+		return evidenceKeys
+	}
+	return privateKeys
+}
+
 // PrivateConfidence averages the probabilities of the private attributes the
 // searcher actually answered. Missing attributes are not mismatches: one
 // correct high-signal detail is ownership evidence.
@@ -160,6 +192,104 @@ type State struct {
 	IdentityMatch map[string]bool
 	Evidence      []string
 	RiskTier      string
+	// Context is what a human clerk would also look at. Only the DeepSeek
+	// judge receives it: RedactedState (the D3 payload) leaves it out.
+	Context JudgeContext
+}
+
+// JudgeContext is the judging material beyond the structured attributes:
+// where and when the item was found, its free-text description and everything
+// the searcher wrote. The statement is data to evaluate, never instructions.
+type JudgeContext struct {
+	FoundZone         string `json:"foundZone,omitempty"`
+	FoundAt           string `json:"foundAt,omitempty"`
+	ItemDescription   string `json:"itemDescription,omitempty"`
+	SearcherStatement string `json:"searcherStatement,omitempty"`
+}
+
+// maxContextText bounds each free-text field sent to the judge.
+const maxContextText = 1500
+
+// ContextFor builds the judge context of an item and a searcher statement.
+// The free-text description of a sensitive item (documents, cards) is never
+// included: it may quote personal data.
+func ContextFor(item itemdomain.Item, statement string) JudgeContext {
+	context := JudgeContext{
+		FoundZone:         strings.TrimSpace(item.FoundZone),
+		SearcherStatement: truncate(strings.TrimSpace(statement), maxContextText),
+	}
+	if !item.FoundAt.IsZero() {
+		context.FoundAt = item.FoundAt.UTC().Format("2006-01-02 15:04")
+	}
+	if !item.Sensitive && item.RiskTier != RiskSensitive {
+		parts := make([]string, 0, 2)
+		for _, key := range SortedKeys(freeTextQuestions(item.PrivateProfile)) {
+			if text, ok := item.PrivateProfile[key].(string); ok && strings.TrimSpace(text) != "" {
+				parts = append(parts, strings.TrimSpace(text))
+			}
+		}
+		context.ItemDescription = truncate(strings.Join(parts, " "), maxContextText)
+	}
+	return context
+}
+
+// freeTextQuestions lists the free-text keys of a profile as a question set,
+// only to reuse SortedKeys for a deterministic order.
+func freeTextQuestions(profile map[string]any) Questions {
+	keys := Questions{}
+	for key := range profile {
+		if IsFreeTextField(key) {
+			keys[key] = itemdomain.Question{}
+		}
+	}
+	return keys
+}
+
+func truncate(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
+}
+
+// WithOverall folds the judge's overall ownership estimate into the evidence
+// read from the single keys. The overall estimate uses everything the judge
+// saw (statement, description, zone), so it can only raise the confidence; it
+// counts as one matching piece of evidence when it is ownership-grade.
+func WithOverall(result D3Result, confidence float64, matches int) (float64, int, bool) {
+	if !result.HasOverall {
+		return confidence, matches, false
+	}
+	overall := clamp(result.Overall)
+	if overall > confidence {
+		confidence = overall
+	}
+	if overall >= MatchProbability {
+		return confidence, matches + 1, true
+	}
+	return confidence, matches, false
+}
+
+// GuardAutoApproval keeps an automatic approval only when a key that may
+// approve matched, or when the overall estimate vouches for a low-risk item.
+// Otherwise evidence without a private detail goes to in-person review, and
+// no evidence at all asks for more information.
+func GuardAutoApproval(policy PolicyDecision, riskTier string, approvalMatch, overallMatch bool, matches int) PolicyDecision {
+	if policy.Decision != DecisionAutoApprove || approvalMatch {
+		return policy
+	}
+	if overallMatch && normalizeRisk(riskTier) == RiskLow {
+		return policy
+	}
+	if matches > 0 {
+		policy.Decision = DecisionReview
+		policy.Reasons = append(policy.Reasons, "evidence without a private detail; verify in person")
+		return policy
+	}
+	policy.Decision = DecisionMoreInfo
+	policy.Reasons = append(policy.Reasons, "no private attribute matched; more information required")
+	return policy
 }
 
 // Questions is the D3 question set keyed by attribute. The value type is the
@@ -174,6 +304,10 @@ type D3Result struct {
 	Confidence   float64
 	Rationale    string
 	ModelVersion string
+	// Overall is the judge's estimate that the searcher owns the item, from
+	// everything it saw. HasOverall is false for engines that do not give one.
+	Overall    float64
+	HasOverall bool
 }
 
 // PolicyDecision is the deterministic outcome of a verification session.

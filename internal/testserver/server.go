@@ -98,9 +98,11 @@ func NewServer(t *testing.T) *Server {
 		Notifier: platformService,
 	})
 	agentService := agentdomain.New(db, agentdomain.Deps{
-		Search:      searchService,
-		Claim:       claimService,
-		DeepSeekKey: "",
+		Search: searchService,
+		Claim:  claimService,
+		// Test infrastructure only: the E2E suite has no DeepSeek, so it
+		// drives the deterministic agent explicitly.
+		Offline: true,
 	})
 	// The E2E wizard uses the deterministic fallbacks: D3 nil, planner nil,
 	// Mapbox nil (haversine + manual zone).

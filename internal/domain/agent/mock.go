@@ -50,7 +50,10 @@ func (s *service) mockChat(ctx context.Context, searcherID string, messages []Me
 		}, nil
 	}
 
-	best, ok := s.bestCandidate(ctx, results, answers)
+	best, ok, err := s.bestCandidate(ctx, results, answers, text)
+	if err != nil {
+		return Reply{}, err
+	}
 	if !ok {
 		return Reply{
 			Message:    "Non riesco ancora a verificare i dettagli. Puoi aggiungere un altro dettaglio che solo il proprietario conosce?",
@@ -78,7 +81,7 @@ func (s *service) mockChat(ctx context.Context, searcherID string, messages []Me
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
 		ItemID:     best.itemID,
 		SearcherID: searcherID,
-		Session:    claim.Session{Answers: answers},
+		Session:    claim.Session{Answers: answers, Statement: text},
 		Flags:      flags,
 	})
 	if err != nil {
