@@ -62,6 +62,11 @@ type Service interface {
 	// because D3 is unavailable: Source is then "form".
 	Catalog(ctx context.Context, photos []ImageInput, form CatalogForm) (CatalogResult, error)
 
+	// Analyze classifies photos for the finder wizard: it sends the images to
+	// D3 even when the enrollment AllowD3Images flag is off, unless the form
+	// already names a document category.
+	Analyze(ctx context.Context, photos []ImageInput, form CatalogForm) (CatalogResult, error)
+
 	// SavePhoto stores one uploaded image and returns its relative path.
 	SavePhoto(r io.Reader) (string, error)
 

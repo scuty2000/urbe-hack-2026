@@ -420,6 +420,54 @@ func TestCatalogNeverSendsDocumentImagesToD3(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSendsImagesWithoutEnrollmentFlag(t *testing.T) {
+	cataloger := &fakeCataloger{}
+	svc, _ := newService(t, item.Deps{D3: cataloger})
+
+	if _, err := svc.Analyze(context.Background(), []item.ImageInput{{
+		Data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, MediaType: "image/jpeg",
+	}}, item.CatalogForm{}); err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(cataloger.images) != 1 || len(cataloger.images[0]) != 1 {
+		t.Fatalf("D3 images = %+v, want the first wizard photo", cataloger.images)
+	}
+}
+
+func TestAnalyzeSkipsKnownDocumentCategory(t *testing.T) {
+	cataloger := &fakeCataloger{}
+	svc, _ := newService(t, item.Deps{D3: cataloger})
+
+	if _, err := svc.Analyze(context.Background(), []item.ImageInput{{
+		Data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, MediaType: "image/jpeg",
+	}}, item.CatalogForm{Category: "documenti"}); err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if len(cataloger.images) != 1 || len(cataloger.images[0]) != 0 {
+		t.Fatalf("D3 images = %+v, want none for a known document category", cataloger.images)
+	}
+}
+
+func TestAnalyzeReadsCaseColor(t *testing.T) {
+	cataloger := &fakeCataloger{responses: []map[string]item.Answer{{
+		"category":   {Type: "choice", Choice: "smartphone"},
+		"color":      {Type: "choice", Choice: "black"},
+		"case_color": {Type: "choice", Choice: "blue"},
+		"condition":  {Type: "choice", Choice: "good"},
+	}}}
+	svc, _ := newService(t, item.Deps{D3: cataloger})
+
+	got, err := svc.Analyze(context.Background(), []item.ImageInput{{
+		Data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, MediaType: "image/jpeg",
+	}}, item.CatalogForm{})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if got.CaseColor != "blue" || got.Category != "smartphone" {
+		t.Fatalf("Analyze() = %+v, want case color blue and smartphone", got)
+	}
+}
+
 func TestCreateItemDocumentSignalFloorsRiskToSensitive(t *testing.T) {
 	cataloger := &fakeCataloger{responses: []map[string]item.Answer{
 		{

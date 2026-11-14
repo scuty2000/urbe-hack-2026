@@ -33,6 +33,7 @@ type Answer struct {
 type CatalogForm struct {
 	Category     string
 	Color        string
+	CaseColor    string
 	Condition    string
 	DocumentType string
 	HasCrack     bool
@@ -46,6 +47,7 @@ type CatalogForm struct {
 type CatalogResult struct {
 	Category     string
 	Color        string
+	CaseColor    string
 	Condition    string
 	DocumentType string
 	HasCrack     bool
@@ -110,12 +112,12 @@ func catalogQuestions() map[string]Question {
 			},
 		},
 		"color": {
-			Type: "choice",
-			Criteria: map[string]string{
-				"black": "black", "white": "white", "gray": "gray or silver",
-				"red": "red", "blue": "blue", "green": "green", "yellow": "yellow",
-				"brown": "brown", "pink": "pink", "other": "another color",
-			},
+			Type:     "choice",
+			Criteria: colorCriteria(),
+		},
+		"case_color": {
+			Type:     "choice",
+			Criteria: colorCriteria(),
 		},
 		"condition": {
 			Type: "choice",
@@ -128,6 +130,14 @@ func catalogQuestions() map[string]Question {
 		"has_sticker": {Type: "noul"},
 		"has_case":    {Type: "noul"},
 		"is_document": {Type: "noul"},
+	}
+}
+
+func colorCriteria() map[string]string {
+	return map[string]string{
+		"black": "black", "white": "white", "gray": "gray or silver",
+		"red": "red", "blue": "blue", "green": "green", "yellow": "yellow",
+		"brown": "brown", "pink": "pink", "other": "another color",
 	}
 }
 
@@ -151,11 +161,22 @@ func documentTypeQuestion() map[string]Question {
 // values. A missing, failing or empty D3 endpoint never fails enrollment: the
 // result falls back to the form with Source "form".
 func (s *service) Catalog(ctx context.Context, photos []ImageInput, form CatalogForm) (CatalogResult, error) {
+	return s.catalog(ctx, photos, form, s.catalogImages(photos, form.Category))
+}
+
+// Analyze is the wizard classification path: it always sends the photos to D3
+// unless the form already names a document category. The wizard needs to
+// classify the first photo before a category exists, so it cannot use the
+// enrollment image flag.
+func (s *service) Analyze(ctx context.Context, photos []ImageInput, form CatalogForm) (CatalogResult, error) {
+	return s.catalog(ctx, photos, form, s.analyzeImages(photos, form.Category))
+}
+
+func (s *service) catalog(ctx context.Context, photos []ImageInput, form CatalogForm, images []string) (CatalogResult, error) {
 	if s.deps.D3 == nil {
 		return catalogFromForm(form), nil
 	}
 
-	images := s.catalogImages(photos, form.Category)
 	answers, err := s.deps.D3.Ask(ctx, catalogState, images, catalogQuestions())
 	if err != nil || len(answers) == 0 {
 		// The caller should not have to distinguish "D3 is down" from "D3
@@ -167,6 +188,7 @@ func (s *service) Catalog(ctx context.Context, photos []ImageInput, form Catalog
 	result.Source = CatalogSourceD3
 	result.Category = choiceOrFallback(answers["category"], result.Category)
 	result.Color = choiceOrFallback(answers["color"], result.Color)
+	result.CaseColor = choiceOrFallback(answers["case_color"], result.CaseColor)
 	result.Condition = choiceOrFallback(answers["condition"], result.Condition)
 	result.HasCrack = noulOrFallback(answers["has_crack"], result.HasCrack)
 	result.HasSticker = noulOrFallback(answers["has_sticker"], result.HasSticker)
@@ -190,6 +212,7 @@ func catalogFromForm(form CatalogForm) CatalogResult {
 	return CatalogResult{
 		Category:     strings.TrimSpace(form.Category),
 		Color:        strings.TrimSpace(form.Color),
+		CaseColor:    strings.TrimSpace(form.CaseColor),
 		Condition:    strings.TrimSpace(form.Condition),
 		DocumentType: strings.TrimSpace(form.DocumentType),
 		HasCrack:     form.HasCrack,
@@ -226,6 +249,20 @@ func (s *service) catalogImages(photos []ImageInput, category string) []string {
 		return []string{}
 	}
 	return s.dataURLs(photos)
+}
+
+// analyzeImages is the wizard path: an empty category is exactly the case the
+// wizard must classify, so only an already-known document category skips the
+// photos. The D3 endpoint is the official/perimeter decision engine.
+func (s *service) analyzeImages(photos []ImageInput, category string) []string {
+	if isKnownDocumentCategory(category) {
+		return []string{}
+	}
+	return s.dataURLs(photos)
+}
+
+func isKnownDocumentCategory(category string) bool {
+	return strings.TrimSpace(category) != "" && isDocumentCategory(category)
 }
 
 // isDocumentCategory reports whether the form category belongs to the sensitive
