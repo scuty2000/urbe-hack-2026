@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/dto"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler/reqcontext"
 )
@@ -59,7 +61,17 @@ func authenticateRequest(c *gin.Context, authService auth.Service) (auth.User, b
 
 	user, err := authService.Authenticate(c.Request.Context(), token)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "invalid or expired session"})
+		if errors.Is(err, errs.ErrUnauthorized) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ErrorResponse{Error: "invalid or expired session"})
+			return auth.User{}, false
+		}
+		// Any other error is an infrastructure failure (e.g. the database is
+		// unavailable): log it and report 500 instead of mislabelling it as a
+		// bad session. Mirrors PostLogin's error mapping.
+		if rc.Logger != nil {
+			rc.Logger.Error("authenticate session", "err", err)
+		}
+		c.AbortWithStatusJSON(http.StatusInternalServerError, dto.ErrorResponse{Error: "internal server error"})
 		return auth.User{}, false
 	}
 

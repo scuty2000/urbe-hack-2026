@@ -124,6 +124,38 @@ func TestRequireAuthRejectsInvalidSession(t *testing.T) {
 	}
 }
 
+func TestRequireAuthReportsInfrastructureFailure(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	svc := fakeAuthService{err: errors.New("database is down")}
+	router := gin.New()
+	router.Use(RequestContextLogger(slog.New(slog.NewTextHandler(io.Discard, nil))))
+
+	reachedHandler := false
+	router.GET("/me", RequireAuth(svc), func(c *gin.Context) {
+		reachedHandler = true
+		c.Status(http.StatusOK)
+	})
+
+	recorder := performRequest(router, "/me", "session-token")
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+	if reachedHandler {
+		t.Fatal("downstream handler ran after an authentication infrastructure error")
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding error body: %v", err)
+	}
+	if body["error"] == "" {
+		t.Fatalf("error body = %v, want an error message", body)
+	}
+}
+
 func TestRequireAuthExposesUserOnRequestContext(t *testing.T) {
 	t.Parallel()
 
