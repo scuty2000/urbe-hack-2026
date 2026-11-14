@@ -427,7 +427,7 @@ func (f fakeItemReader) ItemForAgent(context.Context, string) (itemdomain.Item, 
 	return f.item, nil
 }
 
-func TestPreflightWrongPrivateDetailClosesBeforeLLM(t *testing.T) {
+func TestPreflightSingleWrongPrivateDetailAsksAgain(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
@@ -440,6 +440,32 @@ func TestPreflightWrongPrivateDetailClosesBeforeLLM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
+	// People misremember: one wrong detail asks for another one instead of
+	// closing the conversation.
+	if reply.Done || !strings.Contains(strings.ToLower(reply.Message), "non basta ancora") {
+		t.Fatalf("reply = %+v, want another-detail question", reply)
+	}
+	if claims.calls != 0 || reply.ClaimID != "" {
+		t.Fatalf("claim forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
+	}
+	if len(llm.calls) != 0 {
+		t.Fatalf("LLM was called %d times; the deterministic gate should ask", len(llm.calls))
+	}
+}
+
+func TestPreflightSeveralWrongPrivateDetailsCloseBeforeLLM(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha una custodia gialla ed è senza crepe"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
 	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "non posso verificare") {
 		t.Fatalf("reply = %+v, want a terminal rejection", reply)
 	}
@@ -448,6 +474,40 @@ func TestPreflightWrongPrivateDetailClosesBeforeLLM(t *testing.T) {
 	}
 	if len(llm.calls) != 0 {
 		t.Fatalf("LLM was called %d times after a clear contradiction", len(llm.calls))
+	}
+}
+
+func TestPreflightMixedPrivateDetailsGoToHumanReview(t *testing.T) {
+	llm := &scriptedLLM{}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha una custodia blu ed è senza crepe"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	// One right and one wrong detail: a human decides, the claim is recorded.
+	if !reply.Done || reply.ClaimID == "" || !strings.Contains(reply.Message, "in verifica") {
+		t.Fatalf("reply = %+v, want a claim under review", reply)
+	}
+}
+
+func TestPreflightApproximateColourMatches(t *testing.T) {
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha una cover azzurra"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || reply.ClaimID == "" {
+		t.Fatalf("reply = %+v, want a created claim for a colour synonym", reply)
 	}
 }
 
@@ -471,8 +531,8 @@ func TestPreflightCorrectPrivateDetailCreatesClaimBeforeLLM(t *testing.T) {
 	}
 }
 
-func TestPreflightNoPrivateAttributesClosesBeforeLLM(t *testing.T) {
-	claims := &recordingClaims{}
+func TestPreflightNoPrivateAttributesGoesToHumanReview(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-watch", Status: claim.StatusUnderReview}}
 	llm := &scriptedLLM{}
 	db := testutil.NewTestDB(t)
 	svc := agent.New(db, agent.Deps{
@@ -494,11 +554,16 @@ func TestPreflightNoPrivateAttributesClosesBeforeLLM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
-	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "dettagli privati") {
-		t.Fatalf("reply = %+v, want the no-evidence close", reply)
+	// The item has nothing to verify against: that is not the searcher's
+	// fault, so the request reaches a human instead of being refused.
+	if !reply.Done || reply.ClaimID != "claim-watch" || !strings.Contains(reply.Message, "in verifica") {
+		t.Fatalf("reply = %+v, want a claim under review", reply)
 	}
-	if claims.calls != 0 || len(llm.calls) != 0 {
-		t.Fatalf("claims=%d llm=%d, want neither", claims.calls, len(llm.calls))
+	if claims.calls != 1 || len(llm.calls) != 0 {
+		t.Fatalf("claims=%d llm=%d, want one deterministic claim", claims.calls, len(llm.calls))
+	}
+	if len(claims.input.Flags) != 1 || claims.input.Flags[0] != "missing_evidence" {
+		t.Fatalf("flags = %v, want missing_evidence to force human review", claims.input.Flags)
 	}
 }
 
@@ -521,23 +586,49 @@ func TestPreflightUndecidedAsksWithoutEscalating(t *testing.T) {
 	if claims.calls != 0 || len(llm.calls) != 0 {
 		t.Fatalf("claims=%d llm=%d, want a deterministic question", claims.calls, len(llm.calls))
 	}
-	if !strings.Contains(reply.Message, "Non basta ancora") {
+	if !strings.Contains(strings.ToLower(reply.Message), "non basta ancora") {
 		t.Fatalf("message = %q, want another-detail question", reply.Message)
 	}
 }
 
-func TestScoreWrongPrivateDetailClosesWithoutClaim(t *testing.T) {
+func TestScoreSingleWrongPrivateDetailKeepsAsking(t *testing.T) {
 	claims := &recordingClaims{}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
 			`{"item_id":"item-phone","answers":{"case_color":"giallo"}}`)}},
-		{Content: "Continuiamo a provare."},
+		{Content: "Mi descriva un altro dettaglio."},
 	}}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo",
 		[]agent.Message{{Role: "user", Content: "ha un cinturino giallo"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if reply.Done || reply.Message != "Mi descriva un altro dettaglio." {
+		t.Fatalf("reply = %+v, want the conversation to continue", reply)
+	}
+	if claims.calls != 0 || reply.ClaimID != "" {
+		t.Fatalf("claim was forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
+	}
+	if result := toolResultFor(t, llm.call(2), "score_with_d3"); !strings.Contains(result, `"more_info"`) {
+		t.Fatalf("score result = %s, want more_info", result)
+	}
+}
+
+func TestScoreSeveralWrongPrivateDetailsCloseWithoutClaim(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+			`{"item_id":"item-phone","answers":{"case_color":"giallo","sticker":"cane"}}`)}},
+		{Content: "Continuiamo a provare."},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "ha un cinturino giallo e un adesivo di un cane"}})
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -549,13 +640,15 @@ func TestScoreWrongPrivateDetailClosesWithoutClaim(t *testing.T) {
 	}
 }
 
-func TestScoreNoPrivateAttributesClosesWithoutClaim(t *testing.T) {
-	claims := &recordingClaims{}
+func TestScoreNoPrivateAttributesGoesToHumanReview(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-watch", Status: claim.StatusUnderReview}}
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"orologio"}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
 			`{"item_id":"watch-x","answers":{"color":"nero"}}`)}},
-		{Content: "Continuiamo a provare."},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-3", "create_claim",
+			`{"item_id":"watch-x","answers":{"color":"nero"}}`)}},
+		{Content: "La richiesta sarà verificata dal custode."},
 	}}
 	db := testutil.NewTestDB(t)
 	svc := agent.New(db, agent.Deps{
@@ -575,15 +668,18 @@ func TestScoreNoPrivateAttributesClosesWithoutClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
-	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "dettagli privati") {
-		t.Fatalf("reply = %+v, want a terminal no-evidence close", reply)
+	if !reply.Done || reply.ClaimID != "claim-watch" {
+		t.Fatalf("reply = %+v, want a claim under human review", reply)
 	}
-	if claims.calls != 0 || reply.ClaimID != "" {
-		t.Fatalf("claim was forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
+	if result := toolResultFor(t, llm.call(2), "score_with_d3"); !strings.Contains(result, `"review"`) {
+		t.Fatalf("score result = %s, want review", result)
+	}
+	if claims.calls != 1 || len(claims.input.Flags) != 1 || claims.input.Flags[0] != "missing_evidence" {
+		t.Fatalf("claims=%d flags=%v, want one claim flagged missing_evidence", claims.calls, claims.input.Flags)
 	}
 }
 
-func TestMockAgentClosesOnFeminineWrongPrivateDetail(t *testing.T) {
+func TestMockAgentAsksAgainOnFeminineWrongPrivateDetail(t *testing.T) {
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: ""})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
@@ -594,8 +690,8 @@ func TestMockAgentClosesOnFeminineWrongPrivateDetail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
-	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "non posso verificare") {
-		t.Fatalf("reply = %+v, want a terminal rejection", reply)
+	if reply.Done || !strings.Contains(strings.ToLower(reply.Message), "non basta ancora") {
+		t.Fatalf("reply = %+v, want another-detail question", reply)
 	}
 	if reply.ClaimID != "" {
 		t.Fatalf("wrong private detail created a claim: %q", reply.ClaimID)
@@ -881,5 +977,33 @@ func TestRejectsTooManyMessages(t *testing.T) {
 	}
 	if _, err := svc.Chat(context.Background(), "searcher-demo", messages); !errors.Is(err, errs.ErrInvalidInput) {
 		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+// Regression: a claim approved on the last tool round used to end with the
+// generic "forwarded to an operator" fallback, contradicting the claim.
+func TestClaimOnLastToolRoundRepliesWithClaimOutcome(t *testing.T) {
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "search_items", `{"query":"iphone nero"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-3", "get_private_profile", `{"item_id":"item-phone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-4", "score_with_d3",
+			`{"item_id":"item-phone","answers":{"case_color":"blu"}}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-5", "create_claim",
+			`{"item_id":"item-phone","answers":{"case_color":"blu"}}`)}},
+	}}
+	claims := &recordingClaims{created: claim.Claim{ID: "claim-1", Status: claim.StatusApproved}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims, MaxToolRounds: 5})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "iphone con custodia blu"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || reply.ClaimID != "claim-1" || !strings.Contains(reply.Message, "approvata") {
+		t.Fatalf("reply = %+v, want the approved-claim message", reply)
+	}
+	if strings.Contains(reply.Message, "operatore") {
+		t.Fatalf("reply contradicts the approved claim: %q", reply.Message)
 	}
 }

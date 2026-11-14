@@ -103,6 +103,11 @@ type WebAPIConfiguration struct {
 		MaxUploadMB int    `conf:"env:STORAGE_MAX_UPLOAD_MB,default:8,help:maximum upload size in megabytes"`
 	}
 
+	// Trace is the JSONL log of model outputs and tool calls.
+	Trace struct {
+		File string `conf:"env:TRACE_FILE,help:JSONL file for model outputs and tool calls (default <storage data dir>/traces/model-trace.jsonl; off disables)"`
+	}
+
 	// Custody policy.
 	Civic struct {
 		CustodyDays int `conf:"env:CIVIC_CUSTODY_DAYS,default:7,help:days an item is held at the civic office"`

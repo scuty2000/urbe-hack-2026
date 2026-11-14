@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/trace"
 )
 
 // profileMetadataKeys are private-profile bookkeeping values that are not
@@ -103,9 +105,8 @@ type toolOutcome struct {
 }
 
 const (
-	terminalMismatchMessage   = "Non posso verificare che l'oggetto sia suo: i dettagli forniti non corrispondono a quelli registrati. La conversazione termina qui. Se ritiene che ci sia un errore, si rivolga al punto di raccolta."
-	terminalNoEvidenceMessage = "Non ci sono dettagli privati sufficienti per verificare la proprietà di questo oggetto. Non posso inoltrare la richiesta: la conversazione termina qui. Si rivolga al punto di raccolta."
-	moreInfoMessage           = "Non basta ancora per verificare la proprietà. Mi descriva un altro dettaglio che solo il proprietario conosce, ad esempio il colore di un accessorio, un segno particolare o un'incisione."
+	terminalMismatchMessage = "Non posso verificare che l'oggetto sia suo: i dettagli forniti non corrispondono a quelli registrati. La conversazione termina qui. Se ritiene che ci sia un errore, si rivolga al punto di raccolta."
+	moreInfoMessage         = "Ci siamo quasi, ma non basta ancora per verificare la proprietà. Mi descriva un altro dettaglio che solo il proprietario conosce, anche in modo approssimativo: il colore di un accessorio, un segno particolare, un adesivo o cosa conteneva."
 )
 
 // toolDefinitions declares the tools offered to the model.
@@ -145,7 +146,7 @@ func toolDefinitions() []deepseek.Tool {
 			Type: "function",
 			Function: deepseek.ToolFunction{
 				Name:        ToolScoreWithD3,
-				Description: "Valuta le risposte rispetto all'oggetto. Restituisce solo confidenza, decisione e motivazioni, mai i valori attesi.",
+				Description: "Valuta le risposte rispetto all'oggetto. Le chiavi sono gli attributi del profilo (es. case_color, has_crack, sticker, contents); i valori sono le parole scritte dall'utente, riportate alla lettera. Restituisce solo confidenza, decisione e motivazioni, mai i valori attesi.",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -163,7 +164,7 @@ func toolDefinitions() []deepseek.Tool {
 			Type: "function",
 			Function: deepseek.ToolFunction{
 				Name:        ToolCreateClaim,
-				Description: "Crea la richiesta di verifica per il searcher autenticato. Non accetta una confidenza dal client.",
+				Description: "Crea la richiesta di verifica per il searcher autenticato, con le stesse risposte (parole dell'utente alla lettera) passate a score_with_d3. Non accetta una confidenza dal client.",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -203,6 +204,24 @@ func toolDefinitions() []deepseek.Tool {
 // abort the request. Every tool is scoped to the items discovered by
 // search_items in this turn.
 func (s *service) executeTool(ctx context.Context, searcherID string, call deepseek.ToolCall, state *turnState) toolOutcome {
+	outcome := s.dispatchTool(ctx, searcherID, call, state)
+	s.deps.Trace.Record(ctx, trace.Event{
+		Kind:      trace.KindToolCall,
+		Source:    "agent",
+		Tool:      strings.TrimSpace(call.Function.Name),
+		Arguments: trace.RawJSON(strings.TrimSpace(call.Function.Arguments)),
+		Result:    trace.RawJSON(outcome.content),
+		Data: map[string]any{
+			"claimId":         outcome.claimID,
+			"escalated":       outcome.escalated,
+			"terminal":        outcome.terminal,
+			"terminalMessage": outcome.terminalMessage,
+		},
+	})
+	return outcome
+}
+
+func (s *service) dispatchTool(ctx context.Context, searcherID string, call deepseek.ToolCall, state *turnState) toolOutcome {
 	if state == nil {
 		state = newTurnState(nil)
 	}
@@ -489,16 +508,56 @@ type ownershipEvaluation struct {
 	Answers     map[string]itemdomain.Answer
 }
 
-func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, answers map[string]string) (ownershipEvaluation, error) {
-	attributes, privateKeys := scoringAttributes(item)
-	evaluation := ownershipEvaluation{
-		PrivateKeys: privateKeys,
-		Reasons:     []string{},
+// unverifiable reports an item without private attributes: the engine has
+// nothing to compare, so only a human can decide.
+func (e ownershipEvaluation) unverifiable() bool {
+	return len(e.PrivateKeys) == 0
+}
+
+// claimFlags are the flags the agent adds to a claim. An unverifiable item is
+// marked missing_evidence, which the policy always maps to human review.
+func (e ownershipEvaluation) claimFlags() []string {
+	if e.unverifiable() {
+		return []string{verification.FlagMissingEvidence}
 	}
+	return nil
+}
+
+// evaluateOwnership scores the searcher's answers and records the outcome in
+// the trace, including per-attribute probabilities, so a refusal can be
+// explained afterwards.
+func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, answers map[string]string) (ownershipEvaluation, error) {
+	evaluation, modelVersion, err := s.scoreOwnership(ctx, item, answers)
+	s.deps.Trace.Record(ctx, trace.Event{
+		Kind:   trace.KindDecision,
+		Source: "agent",
+		Model:  modelVersion,
+		Error:  trace.ErrString(err),
+		Data: map[string]any{
+			"itemId":        item.ID,
+			"riskTier":      riskTierOf(item),
+			"answers":       answers,
+			"privateKeys":   sortedKeys(evaluation.PrivateKeys),
+			"probabilities": evaluation.Answers,
+			"confidence":    evaluation.Confidence,
+			"decision":      evaluation.Decision,
+			"reasons":       evaluation.Reasons,
+		},
+	})
+	return evaluation, err
+}
+
+func (s *service) scoreOwnership(ctx context.Context, item itemdomain.Item, answers map[string]string) (ownershipEvaluation, string, error) {
+	attributes, privateKeys := scoringAttributes(item)
 	if len(privateKeys) == 0 {
-		evaluation.Decision = verification.DecisionReject
-		evaluation.Reasons = []string{"no private attributes available; ownership cannot be verified"}
-		return evaluation, nil
+		// Nothing discriminative was recorded at enrollment. That is not the
+		// searcher's fault: the request goes to a human instead of being
+		// refused.
+		return ownershipEvaluation{
+			Decision:    verification.DecisionReview,
+			Reasons:     []string{"no private attributes available; a human must verify ownership"},
+			PrivateKeys: privateKeys,
+		}, "", nil
 	}
 
 	questions := questionsFor(attributes, privateKeys)
@@ -515,20 +574,21 @@ func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, a
 
 	result, err := s.deps.Engine.Score(ctx, verificationState, questions)
 	if err != nil {
-		return ownershipEvaluation{}, err
+		return ownershipEvaluation{PrivateKeys: privateKeys}, "", err
 	}
 	confidence := clamp01(result.Confidence)
 	privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys)
-	switch {
-	case answered > 0:
+	if answered > 0 {
 		confidence = clamp01(privateConfidence)
-	case len(privateKeys) > 0:
+	} else {
 		// Missing private answers are not evidence of ownership, and the
 		// provider's average over unanswered questions must not be used.
 		confidence = 0
 	}
-	if verification.HasPrivateMismatch(answers, result.Answers, privateKeys) {
-		flags = append(flags, verification.FlagPrivateMismatch)
+	// Mirror the claim service: one wrong detail is not a rejection.
+	matches, mismatches := verification.PrivateEvidence(answers, result.Answers, privateKeys)
+	if flag := verification.PrivateEvidenceFlag(matches, mismatches); flag != "" {
+		flags = append(flags, flag)
 	}
 	policy := verification.Decision(verificationState.RiskTier, confidence, nil, flags)
 	// Mirror the claim service: an automatic approval needs at least one
@@ -547,7 +607,16 @@ func (s *service) evaluateOwnership(ctx context.Context, item itemdomain.Item, a
 		Reasons:     reasons,
 		PrivateKeys: privateKeys,
 		Answers:     result.Answers,
-	}, nil
+	}, result.ModelVersion, nil
+}
+
+func sortedKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall, state *turnState) toolOutcome {
@@ -585,11 +654,6 @@ func (s *service) toolScore(ctx context.Context, call deepseek.ToolCall, state *
 		Decision:   evaluation.Decision,
 		Reasons:    reasons,
 	})}
-	if len(evaluation.PrivateKeys) == 0 {
-		outcome.terminal = true
-		outcome.terminalMessage = terminalNoEvidenceMessage
-		return outcome
-	}
 	if evaluation.Decision == verification.DecisionReject {
 		outcome.terminal = true
 		outcome.terminalMessage = terminalMismatchMessage
@@ -641,22 +705,12 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 	}
 	evaluation, err := s.evaluateOwnership(ctx, item, answers)
 	if err != nil {
-		return toolOutcome{
-			content:         mustJSON(map[string]any{"error": "ownership could not be verified"}),
-			terminal:        true,
-			terminalMessage: terminalNoEvidenceMessage,
-		}
-	}
-	if len(evaluation.PrivateKeys) == 0 {
-		return toolOutcome{
-			content:         mustJSON(map[string]any{"error": "no verifiable private attributes"}),
-			terminal:        true,
-			terminalMessage: terminalNoEvidenceMessage,
-		}
+		// A scoring outage is not a refusal: the model can retry or ask again.
+		return toolError("scoring is unavailable; try again")
 	}
 	if evaluation.Decision == verification.DecisionReject {
 		return toolOutcome{
-			content:         mustJSON(map[string]any{"error": "a private detail does not match"}),
+			content:         mustJSON(map[string]any{"error": "the private details do not match"}),
 			terminal:        true,
 			terminalMessage: terminalMismatchMessage,
 		}
@@ -673,6 +727,7 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 			Answers: answers,
 		},
 		Evidence: args.Evidence,
+		Flags:    evaluation.claimFlags(),
 	})
 	if err != nil {
 		return toolError("claim could not be created")
@@ -695,6 +750,9 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 	if band == "" {
 		band = claim.ConfidenceBand(created.Confidence)
 	}
+	// A recorded claim ends the turn: the server states the outcome from the
+	// claim status, so the reply can never contradict it (e.g. a claim approved
+	// on the last tool round answered with the generic fallback).
 	return toolOutcome{
 		content: mustJSON(claimToolResult{
 			ClaimID:        created.ID,
@@ -702,7 +760,9 @@ func (s *service) toolCreateClaim(ctx context.Context, searcherID string, call d
 			ReturnChannel:  created.ReturnChannel,
 			ConfidenceBand: band,
 		}),
-		claimID: created.ID,
+		claimID:         created.ID,
+		terminal:        true,
+		terminalMessage: mockClaimMessage(created),
 	}
 }
 
@@ -856,7 +916,7 @@ func hasIdentityMismatch(matches map[string]bool) bool {
 func hasPrivateMatch(answers map[string]itemdomain.Answer, privateKeys map[string]bool) bool {
 	for key := range privateKeys {
 		answer, ok := answers[key]
-		if ok && verification.AnswerProbability(answer) >= 0.75 {
+		if ok && verification.AnswerProbability(answer) >= verification.MatchProbability {
 			return true
 		}
 	}

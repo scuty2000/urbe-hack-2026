@@ -9,6 +9,7 @@ import (
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/trace"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 )
 
@@ -44,6 +45,10 @@ type Deps struct {
 
 	// MaxToolRounds defaults to 5 and is capped at 5.
 	MaxToolRounds int
+
+	// Trace receives the model outputs, tool calls, ownership decisions and
+	// replies of every turn as JSONL. Nil disables tracing.
+	Trace *trace.Recorder
 }
 
 // Service is the orchestrator API exposed to the HTTP layer.
@@ -86,7 +91,7 @@ func New(db repository.Database, options ...Deps) Service {
 		if timeout <= 0 {
 			timeout = defaultTimeout
 		}
-		deps.Client = deepseek.New(url, deps.DeepSeekKey, model, timeout)
+		deps.Client = deepseek.New(url, deps.DeepSeekKey, model, timeout).WithTrace(deps.Trace, "agent")
 	}
 	rounds := deps.MaxToolRounds
 	if rounds <= 0 || rounds > maxToolRounds {

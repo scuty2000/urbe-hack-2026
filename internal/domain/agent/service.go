@@ -6,16 +6,19 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/gofrs/uuid"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/trace"
 )
 
 const (
 	// fallbackMessage is returned when the provider produced no usable text.
-	fallbackMessage = "Non riesco a completare la verifica in questa conversazione. Ho inoltrato la richiesta a un operatore."
+	// Nothing was forwarded, so it must not say so: the searcher can go on.
+	fallbackMessage = "Non sono riuscito a completare la verifica in questo passaggio. Mi descriva un altro dettaglio dell'oggetto per continuare."
 	// escalationMessage is returned when the model escalates.
 	escalationMessage = "Ho inoltrato la richiesta a un operatore. Riceverai aggiornamenti in questa conversazione."
 	// partialFailureMessage is returned when the provider fails after a tool
@@ -37,7 +40,9 @@ type service struct {
 
 // Chat runs one conversation turn. Without a configured client the deterministic
 // mock answers; any provider failure also falls back to the mock, so the
-// searcher never sees a 500 because of DeepSeek.
+// searcher never sees a 500 because of DeepSeek. The turn (messages, model
+// outputs, tool calls, ownership decisions and the reply) is appended to the
+// JSONL trace when one is configured.
 func (s *service) Chat(ctx context.Context, searcherID string, messages []Message) (Reply, error) {
 	searcherID = strings.TrimSpace(searcherID)
 	if searcherID == "" {
@@ -48,30 +53,126 @@ func (s *service) Chat(ctx context.Context, searcherID string, messages []Messag
 		return Reply{}, err
 	}
 
-	// The server, not the model, decides the terminal ownership outcome once
-	// the searcher has supplied a detail. This keeps a wrong private answer
-	// from turning into "let me try another question" or a forwarded claim.
+	ctx = trace.WithTurnID(ctx, newTurnID())
+	s.deps.Trace.Record(ctx, trace.Event{
+		Kind:   trace.KindChatTurn,
+		Source: "agent",
+		Data:   map[string]any{"searcherId": searcherID, "messages": traceMessages(normalized)},
+	})
+	reply, path, err := s.route(ctx, searcherID, normalized)
+	s.deps.Trace.Record(ctx, trace.Event{
+		Kind:   trace.KindReply,
+		Source: "agent",
+		Error:  trace.ErrString(err),
+		Output: map[string]any{
+			"message":    reply.Message,
+			"candidates": len(reply.Candidates),
+			"claimId":    reply.ClaimID,
+			"done":       reply.Done,
+		},
+		Data: map[string]any{"path": path},
+	})
+	return reply, err
+}
+
+// route picks who answers the turn and reports it for the trace: the
+// deterministic ownership gate, the model or the mock.
+func (s *service) route(ctx context.Context, searcherID string, normalized []Message) (Reply, string, error) {
+	// The server, not the model, decides the ownership outcome once the
+	// searcher has supplied a detail.
 	if reply, handled, err := s.preflightChat(ctx, searcherID, normalized); err != nil {
-		return Reply{}, err
+		return Reply{}, "preflight", err
 	} else if handled {
-		return reply, nil
+		return reply, "preflight", nil
 	}
 
 	if s.deps.Client == nil {
-		return s.mockChat(ctx, searcherID, normalized)
+		reply, err := s.mockChat(ctx, searcherID, normalized)
+		return reply, "mock", err
 	}
 	reply, err := s.llmChat(ctx, searcherID, normalized)
 	if err != nil {
-		return s.mockChat(ctx, searcherID, normalized)
+		reply, err = s.mockChat(ctx, searcherID, normalized)
+		return reply, "mock_fallback", err
 	}
-	return reply, nil
+	return reply, "llm", nil
+}
+
+func newTurnID() string {
+	id, err := uuid.NewV4()
+	if err != nil {
+		return ""
+	}
+	return id.String()
+}
+
+func traceMessages(messages []Message) []map[string]string {
+	out := make([]map[string]string, 0, len(messages))
+	for _, message := range messages {
+		out = append(out, map[string]string{"role": message.Role, "content": message.Content})
+	}
+	return out
+}
+
+// maxEvaluatedCandidates bounds the candidates scored by the deterministic
+// gate. The searcher's object is not always the first search result.
+const maxEvaluatedCandidates = 3
+
+// candidateEvaluation is the ownership evaluation of one search candidate.
+type candidateEvaluation struct {
+	itemID     string
+	evaluation ownershipEvaluation
+}
+
+// bestCandidate scores the top candidates and returns the most favourable
+// one, so a detail that contradicts the first result does not close the
+// conversation when it fits the second. Search order breaks ties.
+func (s *service) bestCandidate(ctx context.Context, results []search.SearchResult, answers map[string]string) (candidateEvaluation, bool) {
+	best := candidateEvaluation{}
+	bestRank := -1
+	for index, result := range results {
+		if index >= maxEvaluatedCandidates {
+			break
+		}
+		item, err := s.deps.Items.ItemForAgent(ctx, result.ItemID)
+		if err != nil {
+			continue
+		}
+		evaluation, err := s.evaluateOwnership(ctx, item, answers)
+		if err != nil {
+			continue
+		}
+		if rank := decisionRank(evaluation); rank > bestRank {
+			best = candidateEvaluation{itemID: result.ItemID, evaluation: evaluation}
+			bestRank = rank
+		}
+	}
+	return best, bestRank >= 0
+}
+
+// decisionRank orders evaluations from least to most favourable: a rejection,
+// an item nobody can verify automatically, an undecided case and a verified
+// (approved or reviewable) one.
+func decisionRank(evaluation ownershipEvaluation) int {
+	switch {
+	case evaluation.Decision == verification.DecisionReject:
+		return 0
+	case evaluation.unverifiable():
+		return 1
+	case evaluation.Decision == verification.DecisionMoreInfo:
+		return 2
+	default:
+		return 3
+	}
 }
 
 // preflightChat is the deterministic ownership gate. After the first exchange,
 // it searches with the searcher's own words, evaluates the extracted private
-// answers with the configured engine (D3 when available) and either creates the
-// claim, asks the model for more information, or closes the conversation on a
-// clear contradiction/no verifiable private attribute.
+// answers with the configured engine (D3 when available) against the top
+// candidates and either creates the claim, asks for more information, or
+// closes the conversation when every candidate clearly contradicts the answers.
+// An item without verifiable private attributes becomes a claim under human
+// review instead of a refusal.
 func (s *service) preflightChat(ctx context.Context, searcherID string, messages []Message) (Reply, bool, error) {
 	users := messagesFromUser(messages)
 	if len(users) < 2 {
@@ -92,29 +193,18 @@ func (s *service) preflightChat(ctx context.Context, searcherID string, messages
 	if err != nil || len(results) == 0 {
 		return Reply{}, false, nil
 	}
-	item, err := s.deps.Items.ItemForAgent(ctx, results[0].ItemID)
-	if err != nil {
+	best, ok := s.bestCandidate(ctx, results, answers)
+	if !ok {
 		return Reply{}, false, nil
 	}
-	evaluation, err := s.evaluateOwnership(ctx, item, answers)
-	if err != nil {
-		return Reply{}, false, nil
-	}
-	if len(evaluation.PrivateKeys) == 0 {
-		return Reply{
-			Message:    terminalNoEvidenceMessage,
-			Candidates: results,
-			Done:       true,
-		}, true, nil
-	}
-	if evaluation.Decision == verification.DecisionReject {
+	if best.evaluation.Decision == verification.DecisionReject {
 		return Reply{
 			Message:    terminalMismatchMessage,
 			Candidates: results,
 			Done:       true,
 		}, true, nil
 	}
-	if evaluation.Decision == verification.DecisionMoreInfo {
+	if best.evaluation.Decision == verification.DecisionMoreInfo {
 		// The server asks, so the model cannot turn an undecided case into an
 		// escalation or a forwarded claim.
 		return Reply{
@@ -124,9 +214,10 @@ func (s *service) preflightChat(ctx context.Context, searcherID string, messages
 	}
 
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
-		ItemID:     results[0].ItemID,
+		ItemID:     best.itemID,
 		SearcherID: searcherID,
 		Session:    claim.Session{Answers: answers},
+		Flags:      best.evaluation.claimFlags(),
 	})
 	if err != nil {
 		return Reply{}, false, nil
@@ -267,7 +358,7 @@ func (s *service) llmChat(ctx context.Context, searcherID string, messages []Mes
 		}
 	}
 
-	return Reply{Message: fallbackMessage, Candidates: candidates, ClaimID: claimID, Done: claimID != ""}, nil
+	return Reply{Message: fallbackMessage, Candidates: candidates, ClaimID: claimID, Done: claimID != "" || escalated}, nil
 }
 
 // trimConversation caps the provider conversation, keeping the system prompt

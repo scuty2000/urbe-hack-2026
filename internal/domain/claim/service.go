@@ -112,8 +112,10 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		// score or turn a "keep asking" case into a claim.
 		confidence = 0
 	}
-	if verification.HasPrivateMismatch(answers, result.Answers, privateKeys) {
-		flags = mergeStrings(flags, []string{verification.FlagPrivateMismatch})
+	// One wrong detail is not a rejection: right and wrong details together go
+	// to a human, and only several wrong details with none right are rejected.
+	if flag := verification.PrivateEvidenceFlag(verification.PrivateEvidence(answers, result.Answers, privateKeys)); flag != "" {
+		flags = mergeStrings(flags, []string{flag})
 	}
 	policy := verification.Decision(state.RiskTier, confidence, evidence, flags)
 	// Public listing attributes alone are not ownership evidence: an automatic
@@ -796,7 +798,7 @@ func hasIdentityMismatch(matches map[string]bool) bool {
 func hasPrivateMatch(answers map[string]itemdomain.Answer, privateKeys map[string]bool) bool {
 	for key := range privateKeys {
 		answer, ok := answers[key]
-		if ok && verification.AnswerProbability(answer) >= 0.75 {
+		if ok && verification.AnswerProbability(answer) >= verification.MatchProbability {
 			return true
 		}
 	}

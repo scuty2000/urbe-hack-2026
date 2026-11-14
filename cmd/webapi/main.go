@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -62,6 +63,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/qdrant"
 	platformsqlite "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/sqlite"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/trace"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/seed"
 	"gorm.io/driver/sqlite"
@@ -218,10 +220,25 @@ func run() error {
 		AgentMode:         agentMode,
 	})
 
+	// Model outputs and tool calls are appended to a JSONL file under the
+	// storage data directory (a bind mount in Docker Compose). Tracing is a
+	// debugging aid: a failure to open the file only disables it.
+	var tracer *trace.Recorder
+	if tracePath := traceFilePath(cfg); tracePath != "" {
+		opened, err := trace.Open(tracePath)
+		if err != nil {
+			logger.Warn("model trace disabled", slog.Any("err", err))
+		} else {
+			tracer = opened
+			defer func() { _ = tracer.Close() }()
+			logger.Info("model trace enabled", slog.String("file", tracePath))
+		}
+	}
+
 	// D3 is optional: without a URL the catalog falls back to the form values.
 	var cataloger itemdomain.Cataloger
 	if cfg.Features.D3 && cfg.D3.URL != "" {
-		cataloger = d3.New(cfg.D3.URL, cfg.D3.Key, cfg.D3.Model, cfg.D3.Timeout)
+		cataloger = d3.New(cfg.D3.URL, cfg.D3.Key, cfg.D3.Model, cfg.D3.Timeout).WithTrace(tracer)
 	}
 	itemService := itemdomain.New(db, itemdomain.Deps{
 		Storage:       storage.NewLocal(cfg.Storage.DataDir, cfg.Storage.MaxUploadMB),
@@ -326,6 +343,7 @@ func run() error {
 		DeepSeekModel:   cfg.DeepSeek.Model,
 		DeepSeekTimeout: cfg.DeepSeek.Timeout,
 		MaxToolRounds:   cfg.DeepSeek.MaxToolRounds,
+		Trace:           tracer,
 	})
 
 	// Finder wizard: D3 classifies the photos, DeepSeek writes the photo plan
@@ -335,7 +353,7 @@ func run() error {
 	var wizardPlanner wizarddomain.Planner
 	if cfg.Features.DeepSeek && cfg.DeepSeek.Key != "" {
 		wizardPlanner = wizarddomain.NewDeepSeekPlanner(
-			deepseek.New(cfg.DeepSeek.URL, cfg.DeepSeek.Key, cfg.DeepSeek.Model, cfg.DeepSeek.Timeout),
+			deepseek.New(cfg.DeepSeek.URL, cfg.DeepSeek.Key, cfg.DeepSeek.Model, cfg.DeepSeek.Timeout).WithTrace(tracer, "wizard"),
 		)
 	}
 	mapboxClient := mapbox.New("", cfg.Mapbox.Token, 5*time.Second)
@@ -474,4 +492,18 @@ func run() error {
 	}
 
 	return nil
+}
+
+// traceFilePath resolves the JSONL trace location: the configured file, or
+// traces/model-trace.jsonl under the storage data directory. "off" disables it.
+func traceFilePath(cfg WebAPIConfiguration) string {
+	configured := strings.TrimSpace(cfg.Trace.File)
+	switch strings.ToLower(configured) {
+	case "off", "false", "none", "disabled":
+		return ""
+	case "":
+		return filepath.Join(cfg.Storage.DataDir, "traces", "model-trace.jsonl")
+	default:
+		return configured
+	}
 }

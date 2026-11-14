@@ -61,39 +61,75 @@ func IsFreeTextField(key string) bool {
 	return FreeTextFields[strings.ToLower(strings.TrimSpace(key))]
 }
 
-// HasPrivateMismatch reports a clear contradiction on a private, verifiable
-// attribute. The claim service and the agent use it as a hard reject: a
-// confident wrong answer is not averaged with the public fields.
+// Probability bounds used to read one private answer as evidence.
+const (
+	// MatchProbability is the minimum probability of an ownership-grade match.
+	MatchProbability = 0.75
+	// MismatchProbability is the probability below which an answer is a clear
+	// contradiction. Anything in between is undecided, not a mismatch.
+	MismatchProbability = 0.25
+)
+
 // PrivateConfidence averages the probabilities of the private attributes the
 // searcher actually answered. Missing attributes are not mismatches: one
-// correct high-signal detail is ownership evidence, while one wrong detail is
-// caught by HasPrivateMismatch.
+// correct high-signal detail is ownership evidence.
 func PrivateConfidence(answers map[string]string, probabilities map[string]itemdomain.Answer, privateKeys map[string]bool) (float64, int) {
-	if len(privateKeys) == 0 || len(answers) == 0 {
-		return 0, 0
-	}
 	sum := 0.0
 	count := 0
-	for key := range privateKeys {
-		if strings.TrimSpace(answers[key]) == "" {
-			continue
-		}
-		answer, ok := probabilities[key]
-		if !ok {
-			continue
-		}
-		sum += AnswerProbability(answer)
+	forEachPrivateAnswer(answers, probabilities, privateKeys, func(probability float64) {
+		sum += probability
 		count++
-	}
+	})
 	if count == 0 {
 		return 0, 0
 	}
 	return sum / float64(count), count
 }
 
+// PrivateEvidence counts the answered private attributes that clearly matched
+// and clearly contradicted the item profile.
+func PrivateEvidence(answers map[string]string, probabilities map[string]itemdomain.Answer, privateKeys map[string]bool) (matches, mismatches int) {
+	forEachPrivateAnswer(answers, probabilities, privateKeys, func(probability float64) {
+		switch {
+		case probability >= MatchProbability:
+			matches++
+		case probability < MismatchProbability:
+			mismatches++
+		}
+	})
+	return matches, mismatches
+}
+
+// PrivateEvidenceFlag turns the private evidence into the flag the policy
+// understands. People misremember: a single wrong detail is not a rejection.
+//
+//   - right and wrong details together -> inconsistent_answers (human review);
+//   - two or more wrong details and none right -> private_mismatch (reject);
+//   - one wrong detail and none right -> no flag: the low confidence already
+//     yields more_info, so the searcher can describe another detail.
+func PrivateEvidenceFlag(matches, mismatches int) string {
+	switch {
+	case mismatches == 0:
+		return ""
+	case matches > 0:
+		return FlagInconsistentAnswers
+	case mismatches >= 2:
+		return FlagPrivateMismatch
+	default:
+		return ""
+	}
+}
+
+// HasPrivateMismatch reports at least one clear contradiction on a private,
+// verifiable attribute.
 func HasPrivateMismatch(answers map[string]string, probabilities map[string]itemdomain.Answer, privateKeys map[string]bool) bool {
+	_, mismatches := PrivateEvidence(answers, probabilities, privateKeys)
+	return mismatches > 0
+}
+
+func forEachPrivateAnswer(answers map[string]string, probabilities map[string]itemdomain.Answer, privateKeys map[string]bool, visit func(probability float64)) {
 	if len(privateKeys) == 0 || len(answers) == 0 {
-		return false
+		return
 	}
 	for key := range privateKeys {
 		if strings.TrimSpace(answers[key]) == "" {
@@ -103,11 +139,8 @@ func HasPrivateMismatch(answers map[string]string, probabilities map[string]item
 		if !ok {
 			continue
 		}
-		if AnswerProbability(answer) < 0.25 {
-			return true
-		}
+		visit(AnswerProbability(answer))
 	}
-	return false
 }
 
 // Model identifiers stored on every verification session.

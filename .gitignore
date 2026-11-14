@@ -5,6 +5,7 @@
 
 # local data
 data/
+traces/
 *.db
 *.db-shm
 *.db-wal

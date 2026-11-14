@@ -7,7 +7,12 @@ services:
       API_QDRANT_URL: http://qdrant:6333
       API_DB_FILENAME: /data/lostfound.db
       API_STORAGE_DATA_DIR: /data
-    volumes: ["./data:/data"]
+      # Model outputs and tool calls (JSONL), on a dedicated bind mount so they
+      # survive restarts and can be read from the host: ./traces/model-trace.jsonl
+      API_TRACE_FILE: /traces/model-trace.jsonl
+    volumes:
+      - ./data:/data
+      - ./traces:/traces
     depends_on: [qdrant]
   qdrant:
     image: qdrant/qdrant:latest

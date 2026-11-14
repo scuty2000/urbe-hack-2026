@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 data/
+traces/
 *.db
 *.db-shm
 *.db-wal

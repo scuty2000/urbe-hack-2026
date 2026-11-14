@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/trace"
 )
 
 const (
@@ -119,6 +120,20 @@ type Client struct {
 	key     string
 	model   string
 	http    *http.Client
+	// tracer and source are optional: see WithTrace.
+	tracer *trace.Recorder
+	source string
+}
+
+// WithTrace makes the client append every completion (content, tool calls,
+// finish reason or error) to the JSONL trace. source names the caller, for
+// example "agent" or "wizard". It returns the client for chaining.
+func (c *Client) WithTrace(recorder *trace.Recorder, source string) *Client {
+	if c != nil {
+		c.tracer = recorder
+		c.source = source
+	}
+	return c
 }
 
 // New returns a DeepSeek client. An empty baseURL or key makes every call
@@ -157,6 +172,30 @@ type chatResponse struct {
 // Complete sends one chat completion request. Any transport, status or decoding
 // failure is reported as errs.ErrUnavailable so the agent can fall back.
 func (c *Client) Complete(ctx context.Context, messages []Message, tools []Tool) (Completion, error) {
+	if c == nil || c.tracer == nil {
+		return c.complete(ctx, messages, tools)
+	}
+	started := time.Now()
+	completion, err := c.complete(ctx, messages, tools)
+	event := trace.Event{
+		Kind:       trace.KindModelOutput,
+		Source:     c.source,
+		Model:      c.model,
+		Error:      trace.ErrString(err),
+		DurationMS: time.Since(started).Milliseconds(),
+	}
+	if err == nil {
+		event.Output = map[string]any{
+			"content":      completion.Content,
+			"toolCalls":    completion.ToolCalls,
+			"finishReason": completion.FinishReason,
+		}
+	}
+	c.tracer.Record(ctx, event)
+	return completion, err
+}
+
+func (c *Client) complete(ctx context.Context, messages []Message, tools []Tool) (Completion, error) {
 	if c == nil || c.baseURL == "" || c.key == "" {
 		return Completion{}, fmt.Errorf("deepseek completion: endpoint is not configured: %w", errs.ErrUnavailable)
 	}

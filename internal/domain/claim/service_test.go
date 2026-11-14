@@ -420,23 +420,35 @@ func TestReviewClaimReclassifiesChannelAfterTransfer(t *testing.T) {
 	}
 }
 
-func TestCreateClaimRejectsClearPrivateMismatch(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	seed.Demo(t, db)
-	svc := claim.New(db)
-
-	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
-		ItemID:     "item-phone",
-		SearcherID: "searcher-demo",
-		Session: claim.Session{Answers: map[string]string{
-			"case_color": "giallo",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("CreateClaim() error = %v", err)
+func TestCreateClaimPrivateMismatchPolicy(t *testing.T) {
+	cases := []struct {
+		name    string
+		answers map[string]string
+		want    string
+	}{
+		{"one wrong detail asks for more", map[string]string{"case_color": "giallo"}, claim.StatusMoreInfo},
+		{"several wrong details are rejected", map[string]string{"case_color": "giallo", "sticker": "cane"}, claim.StatusRejected},
+		{"right and wrong details reach a human", map[string]string{"case_color": "blu", "sticker": "cane"}, claim.StatusUnderReview},
+		{"an approximate detail still counts", map[string]string{"case_color": "azzurra", "sticker": "un gatto"}, claim.StatusUnderReview},
 	}
-	if created.Status != claim.StatusRejected {
-		t.Fatalf("status = %q, want rejected for a wrong private detail", created.Status)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := testutil.NewTestDB(t)
+			seed.Demo(t, db)
+			svc := claim.New(db)
+
+			created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+				ItemID:     "item-phone",
+				SearcherID: "searcher-demo",
+				Session:    claim.Session{Answers: tc.answers},
+			})
+			if err != nil {
+				t.Fatalf("CreateClaim() error = %v", err)
+			}
+			if created.Status != tc.want {
+				t.Fatalf("status = %q, want %q", created.Status, tc.want)
+			}
+		})
 	}
 }
 

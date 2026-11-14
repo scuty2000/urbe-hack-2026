@@ -20,6 +20,7 @@ import (
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/trace"
 )
 
 const (
@@ -37,6 +38,17 @@ type Client struct {
 	key     string
 	model   string
 	http    *http.Client
+	// tracer is optional: see WithTrace.
+	tracer *trace.Recorder
+}
+
+// WithTrace makes the client append every answer batch (or error) to the JSONL
+// trace. The request state is not recorded. It returns the client for chaining.
+func (c *Client) WithTrace(recorder *trace.Recorder) *Client {
+	if c != nil {
+		c.tracer = recorder
+	}
+	return c
 }
 
 // New returns a D3 client. An empty baseURL makes every call return
@@ -69,6 +81,27 @@ type askResponse struct {
 // transport, status or decoding failure is reported as errs.ErrUnavailable so
 // the caller can fall back deterministically.
 func (c *Client) Ask(ctx context.Context, state string, images []string, questions map[string]item.Question) (map[string]item.Answer, error) {
+	if c == nil || c.tracer == nil {
+		return c.ask(ctx, state, images, questions)
+	}
+	started := time.Now()
+	answers, err := c.ask(ctx, state, images, questions)
+	event := trace.Event{
+		Kind:       trace.KindModelOutput,
+		Source:     "d3",
+		Model:      c.model,
+		Error:      trace.ErrString(err),
+		DurationMS: time.Since(started).Milliseconds(),
+		Data:       map[string]any{"questions": questions, "images": len(images)},
+	}
+	if err == nil {
+		event.Output = answers
+	}
+	c.tracer.Record(ctx, event)
+	return answers, err
+}
+
+func (c *Client) ask(ctx context.Context, state string, images []string, questions map[string]item.Question) (map[string]item.Answer, error) {
 	if c == nil || c.baseURL == "" {
 		return nil, fmt.Errorf("d3 ask: endpoint is not configured: %w", errs.ErrUnavailable)
 	}

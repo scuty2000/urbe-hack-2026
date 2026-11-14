@@ -50,45 +50,32 @@ func (s *service) mockChat(ctx context.Context, searcherID string, messages []Me
 		}, nil
 	}
 
-	item, err := s.deps.Items.ItemForAgent(ctx, results[0].ItemID)
-	if err != nil {
-		return Reply{
-			Message:    "Non riesco a leggere la scheda dell'oggetto. Riprova più tardi.",
-			Candidates: results,
-		}, nil
-	}
-	evaluation, err := s.evaluateOwnership(ctx, item, answers)
-	if err != nil {
+	best, ok := s.bestCandidate(ctx, results, answers)
+	if !ok {
 		return Reply{
 			Message:    "Non riesco ancora a verificare i dettagli. Puoi aggiungere un altro dettaglio che solo il proprietario conosce?",
 			Candidates: results,
 		}, nil
 	}
-	if len(evaluation.PrivateKeys) == 0 {
-		return Reply{
-			Message:    terminalNoEvidenceMessage,
-			Candidates: results,
-			Done:       true,
-		}, nil
-	}
-	if evaluation.Decision == verification.DecisionReject {
+	if best.evaluation.Decision == verification.DecisionReject {
 		return Reply{
 			Message:    terminalMismatchMessage,
 			Candidates: results,
 			Done:       true,
 		}, nil
 	}
-	if evaluation.Decision == verification.DecisionMoreInfo {
+	if best.evaluation.Decision == verification.DecisionMoreInfo {
 		return Reply{
-			Message:    "Non basta ancora: descrivi un dettaglio che solo il proprietario conosce, ad esempio il colore di un accessorio o un segno particolare.",
+			Message:    "Ci siamo quasi: descrivi un altro dettaglio che solo il proprietario conosce, anche in modo approssimativo, ad esempio il colore di un accessorio o un segno particolare.",
 			Candidates: results,
 		}, nil
 	}
 
 	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
-		ItemID:     results[0].ItemID,
+		ItemID:     best.itemID,
 		SearcherID: searcherID,
 		Session:    claim.Session{Answers: answers},
+		Flags:      best.evaluation.claimFlags(),
 	})
 	if err != nil {
 		if errors.Is(err, errs.ErrConflict) {
@@ -127,7 +114,7 @@ func mockQuestion(results []search.SearchResult) string {
 func mockClaimMessage(created claim.Claim) string {
 	switch created.Status {
 	case claim.StatusApproved:
-		return "La richiesta è stata approvata. Puoi ritirare l'oggetto presso il custode."
+		return "Ottima notizia: l'oggetto è stato riconosciuto come tuo e la richiesta è approvata! Puoi procedere al ritiro: genera il pass dalla scheda della richiesta e mostralo al custode."
 	case claim.StatusUnderReview:
 		return "Ho registrato la richiesta: è in verifica da parte del custode."
 	case claim.StatusRejected:
@@ -214,10 +201,18 @@ func mockAnswers(text string) map[string]string {
 		}
 	}
 
-	if containsAny(lower, "bancomat") {
+	// "carta" alone is ambiguous (credit card, loyalty card, paper): only an
+	// explicit mention becomes an answer, so a guess cannot count as a wrong
+	// private detail.
+	switch {
+	case containsAny(lower, "bancomat"):
 		answers["contents"] = "bancomat"
-	} else if strings.Contains(lower, "carta") {
+	case containsAny(lower, "carta di identità", "carta d'identità", "carta identità"):
 		answers["contents"] = "carta di identità"
+	case containsAny(lower, "carta di credito"):
+		answers["contents"] = "carta di credito"
+	case containsAny(lower, "patente"):
+		answers["contents"] = "patente"
 	}
 
 	return answers

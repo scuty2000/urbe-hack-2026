@@ -150,11 +150,11 @@ func TestDecisionThresholds(t *testing.T) {
 		confidence float64
 		want       string
 	}{
-		{"low just above threshold", verification.RiskLow, 0.75, verification.DecisionAutoApprove},
+		{"low at threshold", verification.RiskLow, 0.60, verification.DecisionAutoApprove},
 		{"medium above threshold", verification.RiskMedium, 0.90, verification.DecisionAutoApprove},
-		{"medium below threshold", verification.RiskMedium, 0.60, verification.DecisionMoreInfo},
+		{"medium below threshold", verification.RiskMedium, 0.55, verification.DecisionMoreInfo},
 		{"high above threshold", verification.RiskHigh, 0.90, verification.DecisionReview},
-		{"high at threshold", verification.RiskHigh, 0.85, verification.DecisionReview},
+		{"high at threshold", verification.RiskHigh, 0.70, verification.DecisionReview},
 		{"high below threshold", verification.RiskHigh, 0.50, verification.DecisionMoreInfo},
 		{"sensitive always reviewed", verification.RiskSensitive, 0.99, verification.DecisionReview},
 	}
@@ -238,5 +238,59 @@ func TestQuestionsUseD3Types(t *testing.T) {
 	}
 	if questions["color"].Type != "noul" {
 		t.Fatalf("question type = %q", questions["color"].Type)
+	}
+}
+
+func TestPrivateEvidenceFlag(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name                string
+		matches, mismatches int
+		want                string
+	}{
+		{"nothing wrong", 2, 0, ""},
+		{"one wrong detail alone", 0, 1, ""},
+		{"several wrong details", 0, 2, verification.FlagPrivateMismatch},
+		{"right and wrong details", 1, 1, verification.FlagInconsistentAnswers},
+		{"right and several wrong details", 1, 3, verification.FlagInconsistentAnswers},
+	}
+	for _, tc := range cases {
+		if got := verification.PrivateEvidenceFlag(tc.matches, tc.mismatches); got != tc.want {
+			t.Errorf("%s: PrivateEvidenceFlag(%d, %d) = %q, want %q", tc.name, tc.matches, tc.mismatches, got, tc.want)
+		}
+	}
+}
+
+func TestLocalScoreToleratesApproximateAnswers(t *testing.T) {
+	t.Parallel()
+
+	questions := verification.Questions{"detail": {Type: "noul"}}
+	cases := []struct {
+		name     string
+		expected any
+		answer   string
+		min, max float64
+	}{
+		{"exact", "blu", "blu", 0.9, 1},
+		{"gender", "nero", "nera", 0.9, 1},
+		{"colour synonym", "blu", "azzurra", 0.9, 1},
+		{"shade", "blu scuro", "blu", 0.75, 0.9},
+		{"shared word", "gatto", "adesivo di un gatto", 0.75, 0.9},
+		{"list member", []any{"bancomat", "patente"}, "la patente", 0.75, 1},
+		{"presence only", "gatto", "sì", 0.25, 0.75},
+		{"described boolean", true, "ha una crepa in alto", 0.9, 1},
+		{"denied boolean", true, "nessuna crepa", 0, 0.25},
+		{"wrong", "blu", "giallo", 0, 0.25},
+	}
+	for _, tc := range cases {
+		state := verification.State{
+			Item:     map[string]any{"detail": tc.expected},
+			Searcher: map[string]any{"detail": tc.answer},
+		}
+		got := verification.LocalScore(state, questions).Answers["detail"].Noul
+		if got < tc.min || got > tc.max {
+			t.Errorf("%s: probability = %v, want in [%v, %v]", tc.name, got, tc.min, tc.max)
+		}
 	}
 }

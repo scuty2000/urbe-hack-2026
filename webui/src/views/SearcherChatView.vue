@@ -28,6 +28,13 @@ const route = useRoute();
 const messages = ref<ChatTurn[]>([]);
 const candidates = ref<ChatCandidate[]>([]);
 const claim = ref<ClaimOwner | null>(null);
+
+const claimOutcomeMessages: Record<string, string> = {
+  approved: "Ottima notizia: l'oggetto è stato riconosciuto come tuo e la richiesta è approvata! Puoi procedere al ritiro: genera il pass dalla scheda della richiesta e mostralo al custode.",
+  under_review: "Ho registrato la richiesta: è in verifica da parte del custode.",
+  more_info: "Ho registrato la richiesta, ma servono altre informazioni per completare la verifica.",
+  rejected: "La richiesta non è stata approvata.",
+};
 const input = ref("");
 const sending = ref(false);
 const generating = ref(false);
@@ -94,6 +101,12 @@ async function send() {
     candidates.value = reply.candidates;
     if (reply.claimId) {
       await loadClaim(reply.claimId, true);
+      // The claim status is the source of truth: never show an assistant
+      // message that contradicts the claim card.
+      const outcome = claim.value ? claimOutcomeMessages[claim.value.status] : undefined;
+      if (outcome) {
+        messages.value = [...messages.value.slice(0, -1), { role: "assistant", content: outcome }];
+      }
       notice.value = claim.value
         ? `Richiesta ${reply.claimId} registrata.`
         : `Richiesta ${reply.claimId} registrata: non riesco a leggerne lo stato.`;
