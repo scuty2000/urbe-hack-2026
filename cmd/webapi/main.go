@@ -40,6 +40,7 @@ import (
 	"github.com/gin-contrib/cors"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
@@ -213,6 +214,11 @@ func run() error {
 		MaxDays:        cfg.Civic.CustodyDays,
 		SensitiveHours: cfg.Sensitive.CustodyHours,
 	})
+	// Claims use D3 when configured and the deterministic local scorer
+	// otherwise; the verification engine itself falls back on outage.
+	claimService := claimdomain.New(db, claimdomain.Deps{
+		Engine: claimdomain.D3Engine(cataloger),
+	})
 
 	// Vector search is optional: without Qdrant or embeddings the search
 	// service falls back to SQLite, so the demo always works.
@@ -279,6 +285,7 @@ func run() error {
 			ItemService:     itemService,
 			CustodyService:  custodyService,
 			SearchService:   searchService,
+			ClaimService:    claimService,
 			DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db, searchService) },
 			DemoResetSecret: cfg.Demo.ResetSecret,
 			TrustedProxies:  cfg.Web.TrustedProxies,

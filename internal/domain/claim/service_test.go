@@ -1,0 +1,440 @@
+package claim_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
+	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/testutil"
+)
+
+// fakeEngine returns a fixed verification result so claim tests exercise the
+// policy and persistence without any network dependency.
+type fakeEngine struct {
+	result verification.D3Result
+	err    error
+	state  verification.State
+}
+
+func (f *fakeEngine) Score(_ context.Context, state verification.State, _ verification.Questions) (verification.D3Result, error) {
+	f.state = state
+	return f.result, f.err
+}
+
+func fixedEngine(confidence float64) *fakeEngine {
+	return &fakeEngine{result: verification.D3Result{
+		Answers: map[string]itemdomain.Answer{
+			"color": {Type: "noul", Noul: confidence, Confidence: confidence},
+		},
+		Confidence:   confidence,
+		Rationale:    "fake engine",
+		ModelVersion: "fake",
+	}}
+}
+
+func newClaimService(t *testing.T, engine claim.Engine) (claim.Service, repository.Database) {
+	t.Helper()
+
+	db := testutil.NewTestDB(t)
+	if err := auth.SeedDemoUsers(context.Background(), db); err != nil {
+		t.Fatalf("seeding demo users: %v", err)
+	}
+	if engine == nil {
+		engine = fixedEngine(0.9)
+	}
+	return claim.New(db, claim.Deps{Engine: engine, Now: func() time.Time {
+		return time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	}}), db
+}
+
+// seedClaimItem inserts an in-custody or transferred item without going through
+// the enrollment HTTP flow.
+func seedClaimItem(t *testing.T, db repository.Database, id, status, riskTier string, sensitive bool) {
+	t.Helper()
+
+	now := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	item := record.ItemRecord{
+		ID:               id,
+		PublicCode:       "LF-CLAIM01",
+		Source:           itemdomain.SourceFinderSelf,
+		CustodyMode:      itemdomain.CustodyModeIntermediary,
+		Status:           status,
+		LegalFinderID:    "bar-x",
+		RightsAssignedAt: &now,
+		Category:         "wallet",
+		Color:            "black",
+		PrivateProfile:   `{"serial":"secret-serial","owner_name":"Giulia Ferrari","color":"black"}`,
+		Photos:           "[]",
+		FoundAt:          now,
+		FoundZone:        "San Lorenzo",
+		CustodianID:      "bar-x",
+		RiskTier:         riskTier,
+		Sensitive:        sensitive,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	custody := record.CustodyRecord{
+		ID:                id + "-custody",
+		ItemID:            id,
+		CustodianType:     itemdomain.CustodyModeIntermediary,
+		CustodianID:       "bar-x",
+		LegalFinderID:     "bar-x",
+		RightsAssignedAt:  &now,
+		ApprovalAuthority: itemdomain.CustodyModeIntermediary,
+		MaxCustodyDays:    7,
+		AcceptedAt:        &now,
+	}
+	event := record.CustodyEventRecord{
+		ID:        id + "-rights",
+		ItemID:    id,
+		Type:      itemdomain.EventRightsAssigned,
+		ActorID:   "finder-demo",
+		Timestamp: now,
+	}
+	if err := db.CreateItemWithCustody(context.Background(), item, custody, event); err != nil {
+		t.Fatalf("seeding claim item %q: %v", id, err)
+	}
+}
+
+func TestCreateClaimWritesClaimSessionEventAndAudit(t *testing.T) {
+	engine := fixedEngine(0.9)
+	svc, db := newClaimService(t, engine)
+	seedClaimItem(t, db, "item-low", itemdomain.StatusInCustody, itemdomain.RiskLow, false)
+
+	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+		ItemID:     "item-low",
+		SearcherID: "searcher-demo",
+		Session: claim.Session{
+			Answers: map[string]string{"color": "black", "serial": "secret-serial"},
+		},
+		Evidence: []string{"receipt"},
+	})
+	if err != nil {
+		t.Fatalf("CreateClaim() error = %v", err)
+	}
+
+	if created.ID == "" {
+		t.Fatal("created claim has no id")
+	}
+	if created.Status != claim.StatusApproved {
+		t.Fatalf("status = %q, want approved", created.Status)
+	}
+	if created.ReturnChannel != claim.ReturnChannelIntermediaryDirect {
+		t.Fatalf("returnChannel = %q, want intermediary_direct", created.ReturnChannel)
+	}
+	if created.Confidence != 0.9 {
+		t.Fatalf("confidence = %v, want 0.9", created.Confidence)
+	}
+	if created.Report != nil {
+		t.Fatal("CreateClaim must not return the verification report")
+	}
+
+	ctx := context.Background()
+	claimRow, err := db.GetClaimByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetClaimByID() error = %v", err)
+	}
+	if claimRow.Status != claim.StatusApproved || claimRow.SearcherID != "searcher-demo" {
+		t.Fatalf("claim row = %+v", claimRow)
+	}
+	if claimRow.ApprovalBy != "policy" || claimRow.ApprovedAt == nil {
+		t.Fatalf("auto-approved claim approval = %q / %v", claimRow.ApprovalBy, claimRow.ApprovedAt)
+	}
+
+	session, err := db.GetVerificationSessionByClaimID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetVerificationSessionByClaimID() error = %v", err)
+	}
+	if session.ModelVersion != "fake" || !strings.Contains(session.Probabilities, "color") {
+		t.Fatalf("verification session = %+v", session)
+	}
+	if !strings.Contains(session.Answers, "secret-serial") {
+		t.Fatalf("session answers = %s, want the searcher answers", session.Answers)
+	}
+
+	events, err := db.ListCustodyEvents(ctx, "item-low")
+	if err != nil {
+		t.Fatalf("ListCustodyEvents() error = %v", err)
+	}
+	if !hasEvent(events, "claim_created") {
+		t.Fatalf("events = %+v, want claim_created", events)
+	}
+
+	audits, err := db.ListAuditLogs(ctx, repository.AuditLogFilter{Entity: "claim", EntityID: created.ID})
+	if err != nil {
+		t.Fatalf("ListAuditLogs() error = %v", err)
+	}
+	if len(audits) != 1 || audits[0].Action != "claim.created" {
+		t.Fatalf("audit = %+v, want one claim.created entry", audits)
+	}
+
+	var passes int64
+	if err := db.GormDB().Model(&record.PassRecord{}).Where("claim_id = ?", created.ID).Count(&passes).Error; err != nil {
+		t.Fatalf("counting passes: %v", err)
+	}
+	if passes != 0 {
+		t.Fatalf("claim created %d passes, want none before approval/verification", passes)
+	}
+
+	// The engine saw the expected private attributes but the identity fields
+	// were never mixed into the answer state.
+	if engine.state.Item["color"] != "black" {
+		t.Fatalf("engine item state = %+v", engine.state.Item)
+	}
+}
+
+func TestCreateClaimStatusFollowsPolicy(t *testing.T) {
+	cases := []struct {
+		name      string
+		riskTier  string
+		sensitive bool
+		conf      float64
+		flags     []string
+		want      string
+	}{
+		{"low auto approves", itemdomain.RiskLow, false, 0.90, nil, claim.StatusApproved},
+		{"medium auto approves", itemdomain.RiskMedium, false, 0.80, nil, claim.StatusApproved},
+		{"low low confidence asks more info", itemdomain.RiskLow, false, 0.50, nil, claim.StatusMoreInfo},
+		{"high stays under review", itemdomain.RiskHigh, false, 0.90, nil, claim.StatusUnderReview},
+		{"sensitive stays under review", itemdomain.RiskSensitive, true, 0.99, nil, claim.StatusUnderReview},
+		{"prompt injection is rejected", itemdomain.RiskLow, false, 0.99,
+			[]string{verification.FlagPromptInjection}, claim.StatusRejected},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			svc, db := newClaimService(t, fixedEngine(tc.conf))
+			id := "item-" + strings.ReplaceAll(tc.name, " ", "-")
+			seedClaimItem(t, db, id, itemdomain.StatusInCustody, tc.riskTier, tc.sensitive)
+
+			created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+				ItemID:     id,
+				SearcherID: "searcher-demo",
+				Session:    claim.Session{Answers: map[string]string{"color": "black"}},
+				Flags:      tc.flags,
+			})
+			if err != nil {
+				t.Fatalf("CreateClaim() error = %v", err)
+			}
+			if created.Status != tc.want {
+				t.Fatalf("status = %q, want %q", created.Status, tc.want)
+			}
+		})
+	}
+}
+
+func TestCreateClaimValidatesReturnChannelAgainstItemState(t *testing.T) {
+	svc, db := newClaimService(t, fixedEngine(0.9))
+	seedClaimItem(t, db, "item-custody", itemdomain.StatusInCustody, itemdomain.RiskLow, false)
+	seedClaimItem(t, db, "item-transferred", "transferred", itemdomain.RiskLow, false)
+	seedClaimItem(t, db, "item-pending", itemdomain.StatusPendingCustody, itemdomain.RiskLow, false)
+
+	ctx := context.Background()
+
+	created, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:     "item-custody",
+		SearcherID: "searcher-demo",
+	})
+	if err != nil {
+		t.Fatalf("default channel CreateClaim() error = %v", err)
+	}
+	if created.ReturnChannel != claim.ReturnChannelIntermediaryDirect {
+		t.Fatalf("in custody channel = %q, want intermediary_direct", created.ReturnChannel)
+	}
+
+	transferred, err := svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:     "item-transferred",
+		SearcherID: "searcher-demo",
+	})
+	if err != nil {
+		t.Fatalf("transferred CreateClaim() error = %v", err)
+	}
+	if transferred.ReturnChannel != claim.ReturnChannelPA {
+		t.Fatalf("transferred channel = %q, want pa", transferred.ReturnChannel)
+	}
+
+	_, err = svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:        "item-transferred",
+		SearcherID:    "searcher-demo",
+		ReturnChannel: claim.ReturnChannelIntermediaryDirect,
+	})
+	if !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("conflicting channel error = %v, want ErrInvalidInput", err)
+	}
+
+	_, err = svc.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:     "item-pending",
+		SearcherID: "searcher-demo",
+	})
+	if !errors.Is(err, errs.ErrConflict) {
+		t.Fatalf("pending item error = %v, want ErrConflict", err)
+	}
+
+	_, err = svc.CreateClaim(ctx, claim.CreateClaimInput{ItemID: "missing", SearcherID: "searcher-demo"})
+	if !errors.Is(err, errs.ErrNotFound) {
+		t.Fatalf("missing item error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestReviewClaimByCustodianAndInstitution(t *testing.T) {
+	svc, db := newClaimService(t, fixedEngine(0.9))
+	seedClaimItem(t, db, "item-review", itemdomain.StatusInCustody, itemdomain.RiskHigh, false)
+
+	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+		ItemID:     "item-review",
+		SearcherID: "searcher-demo",
+		Session:    claim.Session{Answers: map[string]string{"color": "black"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateClaim() error = %v", err)
+	}
+	if created.Status != claim.StatusUnderReview {
+		t.Fatalf("status = %q, want under_review", created.Status)
+	}
+
+	if _, err := svc.ReviewClaim(context.Background(), created.ID, "maybe", "bar-x"); !errors.Is(err, errs.ErrInvalidInput) {
+		t.Fatalf("invalid decision error = %v, want ErrInvalidInput", err)
+	}
+	if _, err := svc.ReviewClaim(context.Background(), created.ID, claim.DecisionApproved, "searcher-demo"); !errors.Is(err, errs.ErrForbidden) {
+		t.Fatalf("searcher review error = %v, want ErrForbidden", err)
+	}
+
+	reviewed, err := svc.ReviewClaim(context.Background(), created.ID, claim.DecisionApproved, "bar-x")
+	if err != nil {
+		t.Fatalf("custodian ReviewClaim() error = %v", err)
+	}
+	if reviewed.Status != claim.StatusApproved || reviewed.ApprovalBy != "bar-x" || reviewed.ApprovedAt == nil {
+		t.Fatalf("reviewed claim = %+v", reviewed)
+	}
+
+	events, err := db.ListCustodyEvents(context.Background(), "item-review")
+	if err != nil {
+		t.Fatalf("ListCustodyEvents() error = %v", err)
+	}
+	if !hasEvent(events, claim.DecisionApproved) {
+		t.Fatalf("events = %+v, want approved", events)
+	}
+	audits, err := db.ListAuditLogs(context.Background(), repository.AuditLogFilter{Entity: "claim", EntityID: created.ID})
+	if err != nil {
+		t.Fatalf("ListAuditLogs() error = %v", err)
+	}
+	if !hasAudit(audits, "claim.approved") {
+		t.Fatalf("audit = %+v, want claim.approved", audits)
+	}
+
+	var passes int64
+	if err := db.GormDB().Model(&record.PassRecord{}).Where("claim_id = ?", created.ID).Count(&passes).Error; err != nil {
+		t.Fatalf("counting passes: %v", err)
+	}
+	if passes != 0 {
+		t.Fatalf("review issued %d passes, want none", passes)
+	}
+
+	// A second reviewed claim can be rejected by the institution.
+	second, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+		ItemID:     "item-review",
+		SearcherID: "searcher-demo",
+	})
+	if err != nil {
+		t.Fatalf("second CreateClaim() error = %v", err)
+	}
+	rejected, err := svc.ReviewClaim(context.Background(), second.ID, claim.DecisionRejected, "institution-demo")
+	if err != nil {
+		t.Fatalf("institution ReviewClaim() error = %v", err)
+	}
+	if rejected.Status != claim.StatusRejected {
+		t.Fatalf("rejected status = %q, want rejected", rejected.Status)
+	}
+}
+
+func TestGetClaimHidesReportFromOwnerAndExposesItToInstitution(t *testing.T) {
+	svc, db := newClaimService(t, fixedEngine(0.9))
+	seedClaimItem(t, db, "item-privacy", itemdomain.StatusInCustody, itemdomain.RiskLow, false)
+
+	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+		ItemID:     "item-privacy",
+		SearcherID: "searcher-demo",
+		Session:    claim.Session{Answers: map[string]string{"color": "black"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateClaim() error = %v", err)
+	}
+
+	owner, err := svc.GetClaim(context.Background(), created.ID, claim.Actor{ID: "searcher-demo", Role: claim.ActorRoleSearcher})
+	if err != nil {
+		t.Fatalf("owner GetClaim() error = %v", err)
+	}
+	if owner.Report != nil {
+		t.Fatalf("owner report = %+v, want nil", owner.Report)
+	}
+	if strings.Contains(fmt.Sprintf("%+v", owner), "secret-serial") {
+		t.Fatal("owner claim leaks the private profile")
+	}
+	if owner.ConfidenceBand == "" {
+		t.Fatal("owner claim has no confidence band")
+	}
+
+	institution, err := svc.GetClaim(context.Background(), created.ID, claim.Actor{ID: "institution-demo", Role: claim.ActorRoleInstitution})
+	if err != nil {
+		t.Fatalf("institution GetClaim() error = %v", err)
+	}
+	if institution.Report == nil {
+		t.Fatal("institution report is nil, want the full verification report")
+	}
+	if institution.Report.Answers["color"] != "black" {
+		t.Fatalf("report answers = %+v", institution.Report.Answers)
+	}
+	if institution.Report.Decision != verification.DecisionAutoApprove {
+		t.Fatalf("report decision = %q, want auto_approve", institution.Report.Decision)
+	}
+	if strings.Contains(fmt.Sprintf("%+v", institution.Report), "secret-serial") {
+		t.Fatal("institution report leaks the expected private value")
+	}
+
+	custodian, err := svc.GetClaim(context.Background(), created.ID, claim.Actor{ID: "bar-x", Role: claim.ActorRoleIntermediary})
+	if err != nil {
+		t.Fatalf("custodian GetClaim() error = %v", err)
+	}
+	if custodian.Report == nil {
+		t.Fatal("custodian report is nil, want the verification report")
+	}
+
+	if _, err := svc.GetClaim(context.Background(), created.ID, claim.Actor{ID: "portineria-sapienza", Role: claim.ActorRoleIntermediary}); !errors.Is(err, errs.ErrForbidden) {
+		t.Fatalf("other intermediary error = %v, want ErrForbidden", err)
+	}
+	if _, err := svc.GetClaim(context.Background(), created.ID, claim.Actor{ID: "finder-demo", Role: claim.ActorRoleFinder}); !errors.Is(err, errs.ErrForbidden) {
+		t.Fatalf("finder error = %v, want ErrForbidden", err)
+	}
+	if _, err := svc.GetClaim(context.Background(), "missing", claim.Actor{ID: "institution-demo", Role: claim.ActorRoleInstitution}); !errors.Is(err, errs.ErrNotFound) {
+		t.Fatalf("missing claim error = %v, want ErrNotFound", err)
+	}
+}
+
+func hasEvent(events []record.CustodyEventRecord, eventType string) bool {
+	for _, event := range events {
+		if event.Type == eventType {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAudit(entries []record.AuditLogRecord, action string) bool {
+	for _, entry := range entries {
+		if entry.Action == action {
+			return true
+		}
+	}
+	return false
+}

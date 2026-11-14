@@ -17,6 +17,7 @@ Example:
 		ItemService:    itemService,
 		CustodyService: custodyService,
 		SearchService:  searchService,
+		ClaimService:   claimService,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating the API server instance: %w", err)
@@ -42,6 +43,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
@@ -77,6 +79,9 @@ type Config struct {
 
 	// SearchService is the hybrid search and index service.
 	SearchService search.Service
+
+	// ClaimService is the verification and claim service.
+	ClaimService claimdomain.Service
 
 	// DemoReset replaces the demo dataset. It is optional; without it
 	// POST /api/demo/reset returns 503.
@@ -119,6 +124,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.SearchService == nil {
 		return nil, errors.New("search service is required")
 	}
+	if cfg.ClaimService == nil {
+		return nil, errors.New("claim service is required")
+	}
 
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -142,6 +150,7 @@ func New(cfg Config) (Router, error) {
 		itemService:     cfg.ItemService,
 		custodyService:  cfg.CustodyService,
 		searchService:   cfg.SearchService,
+		claimService:    cfg.ClaimService,
 		demoReset:       cfg.DemoReset,
 		demoResetSecret: cfg.DemoResetSecret,
 	}, nil
@@ -156,6 +165,7 @@ type _router struct {
 	itemService     itemdomain.Service
 	custodyService  custodydomain.Service
 	searchService   search.Service
+	claimService    claimdomain.Service
 	demoReset       func(context.Context) error
 	demoResetSecret string
 }

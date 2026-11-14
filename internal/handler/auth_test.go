@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
@@ -74,6 +75,7 @@ func newAuthRouter(t *testing.T) http.Handler {
 		ItemService:    itemdomain.New(db, itemdomain.Deps{}),
 		CustodyService: custodydomain.New(db),
 		SearchService:  search.New(db, search.Deps{}),
+		ClaimService:   claimdomain.New(db),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
@@ -40,6 +41,9 @@ type WebAPIHandler struct {
 	// Search is the hybrid search and index service.
 	Search search.Service
 
+	// Claims is the verification and claim service.
+	Claims claimdomain.Service
+
 	// DemoReset replaces the demo dataset. Nil disables the reset route.
 	DemoReset func(context.Context) error
 
@@ -55,6 +59,7 @@ func New(
 	items itemdomain.Service,
 	custodyService custodydomain.Service,
 	searchService search.Service,
+	claimService claimdomain.Service,
 	demoReset func(context.Context) error,
 	demoResetSecret string,
 ) *WebAPIHandler {
@@ -65,6 +70,7 @@ func New(
 		Items:           items,
 		Custody:         custodyService,
 		Search:          searchService,
+		Claims:          claimService,
 		DemoReset:       demoReset,
 		DemoResetSecret: demoResetSecret,
 	}

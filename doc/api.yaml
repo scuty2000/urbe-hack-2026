@@ -30,6 +30,8 @@ tags:
     description: Demo login, logout and current-session endpoints
   - name: Items
     description: Item enrollment and custodian read endpoints
+  - name: Claims
+    description: Ownership claims, verification reports and custodian review
   - name: Custody
     description: Handover acceptance/refusal and custody deadlines
   - name: Institution
@@ -280,6 +282,95 @@ paths:
                 $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+# ─── /api/claims ──────────────────────────────────────────────────────────────
+
+  /api/claims:
+    post:
+      tags: [Claims]
+      operationId: createClaim
+      summary: Submit an ownership claim
+      description: |
+        Creates a claim for the authenticated searcher. The server builds the
+        verification session from the item's discriminative attributes and the
+        supplied answers, applies the deterministic policy and atomically
+        records the claim, the verification session, the `claim_created` item
+        event and the audit entry.
+
+        A raw confidence is never accepted (unknown JSON fields are rejected).
+        The policy auto-approves low/medium risk claims at or above `0.75`,
+        keeps high-risk claims under review (review threshold `0.85`), always
+        reviews sensitive items, and rejects claims carrying a prompt-injection
+        or identity-mismatch flag. No pickup pass is issued here.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClaimPayload"
+      responses:
+        "201":
+          description: Claim created
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Path of the created claim (`/api/claims/{id}`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimOwner"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/claims/{id}:
+    parameters:
+      - $ref: "#/components/parameters/claimId"
+
+    get:
+      tags: [Claims]
+      operationId: getClaim
+      summary: Get a claim
+      description: |
+        Returns a claim to its owner (the searcher who created it) or to the
+        current custodian, the legal finder and the institution.
+
+        The searcher receives only the status, the confidence band and the
+        pickup channel. The custodian and the institution receive the full
+        verification report (questions, answers, probabilities, rationale,
+        model version, evidence, flags and the deterministic decision). The
+        item's private profile is never returned.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: The claim, in the role-safe shape
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ClaimOwner"
+                  - $ref: "#/components/schemas/ClaimInstitution"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
 # ─── /api/items ───────────────────────────────────────────────────────────────
 
@@ -896,6 +987,133 @@ components:
           items:
             $ref: "#/components/schemas/Item"
 
+    CreateClaimPayload:
+      type: object
+      required: [itemId]
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        returnChannel:
+          type: string
+          enum: [intermediary_direct, pa]
+          description: |
+            Optional. Must match the channel derived from the item state:
+            `in_custody` requires `intermediary_direct`, `transferred` requires
+            `pa`. A conflicting value is rejected with `400`.
+        answers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Searcher answers keyed by verification question.
+        evidence:
+          type: array
+          items:
+            type: string
+          description: Optional evidence references (receipt, serial, photo).
+        flags:
+          type: array
+          items:
+            type: string
+            enum: [prompt_injection, inconsistent_answers, missing_evidence, identity_mismatch]
+          description: Agent or reviewer signals that can force review or reject.
+
+    ClaimOwner:
+      type: object
+      required: [id, itemId, status, confidenceBand, returnChannel]
+      description: |
+        Searcher-safe claim view. It contains no raw confidence, no verification
+        report, no private profile and no exact coordinates.
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [submitted, under_review, approved, rejected, more_info]
+        confidenceBand:
+          type: string
+          enum: [low, medium, high]
+        returnChannel:
+          type: string
+          enum: [intermediary_direct, pa]
+        createdAt:
+          type: string
+          format: date-time
+
+    VerificationReport:
+      type: object
+      description: |
+        Full verification report for the custodian and the institution. It
+        never contains the item's private profile values.
+      properties:
+        questions:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [choice, noul, score]
+              criteria:
+                description: Optional D3 criteria for the question
+        answers:
+          type: object
+          additionalProperties:
+            type: string
+        probabilities:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              type:
+                type: string
+              noul:
+                type: number
+              score:
+                type: number
+              confidence:
+                type: number
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        rationale:
+          type: string
+        modelVersion:
+          type: string
+          example: "local"
+        evidence:
+          type: array
+          items:
+            type: string
+        flags:
+          type: array
+          items:
+            type: string
+        decision:
+          type: string
+          enum: [auto_approve, review, reject, more_info]
+        reasons:
+          type: array
+          items:
+            type: string
+
+    ClaimInstitution:
+      allOf:
+        - $ref: "#/components/schemas/ClaimOwner"
+        - type: object
+          properties:
+            confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+            report:
+              $ref: "#/components/schemas/VerificationReport"
+
     DemoResetRequest:
       type: object
       properties:
@@ -952,6 +1170,15 @@ components:
       schema:
         type: string
         pattern: "^[0-9a-fA-F-]+\\.(jpg|png|webp)$"
+
+    claimId:
+      name: id
+      in: path
+      required: true
+      description: UUID of the claim
+      schema:
+        type: string
+        format: uuid
 
   responses:
 

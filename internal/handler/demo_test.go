@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	claimdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
@@ -42,6 +43,7 @@ func newDemoRouter(t *testing.T) (http.Handler, repository.Database) {
 		ItemService:     itemdomain.New(db, itemdomain.Deps{}),
 		CustodyService:  custodydomain.New(db),
 		SearchService:   search.New(db, search.Deps{}),
+		ClaimService:    claimdomain.New(db),
 		DemoReset:       func(ctx context.Context) error { return seed.Reset(ctx, db) },
 		DemoResetSecret: "test-reset-secret",
 	})
@@ -105,6 +107,7 @@ func TestDemoResetIsUnavailableWithoutConfiguration(t *testing.T) {
 		ItemService:    itemdomain.New(db, itemdomain.Deps{}),
 		CustodyService: custodydomain.New(db),
 		SearchService:  search.New(db, search.Deps{}),
+		ClaimService:   claimdomain.New(db),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)
