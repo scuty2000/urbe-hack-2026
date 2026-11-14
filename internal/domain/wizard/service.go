@@ -100,14 +100,29 @@ func (s *service) analyzeResult(ctx context.Context, result item.CatalogResult) 
 
 	_, sensitive := item.RiskForCategory(category)
 	return Analysis{
-		ObjectType:     category,
-		PhotoPlan:      plan.PhotoPlan,
-		Prefill:        prefill,
-		PrivatePrefill: strings.TrimSpace(plan.PrivatePrefill),
-		Warnings:       append(warnings, plan.Warnings...),
-		Source:         source,
-		Sensitive:      sensitive,
+		ObjectType:        category,
+		PhotoPlan:         plan.PhotoPlan,
+		Prefill:           prefill,
+		PrivatePrefill:    strings.TrimSpace(plan.PrivatePrefill),
+		PrivateAttributes: privateAttributes(result),
+		Warnings:          append(warnings, plan.Warnings...),
+		Source:            source,
+		Sensitive:         sensitive,
 	}
+}
+
+// privateAttributes are the structured D3 observations the claim engine can
+// verify. They are stored in the item's private profile; free-text details are
+// never used as verification questions.
+func privateAttributes(result item.CatalogResult) map[string]any {
+	attributes := map[string]any{}
+	if color := NormalizeColor(result.CaseColor); color != "" {
+		attributes["case_color"] = color
+	}
+	attributes["has_crack"] = result.HasCrack
+	attributes["has_sticker"] = result.HasSticker
+	attributes["has_case"] = result.HasCase
+	return attributes
 }
 
 func documentAnalysis() Analysis {

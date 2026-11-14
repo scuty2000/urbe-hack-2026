@@ -10,6 +10,8 @@ import (
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/agent"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
+	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/seed"
@@ -93,6 +95,21 @@ func toolCall(id, name, arguments string) deepseek.ToolCall {
 		},
 	}
 }
+
+func phonePrivateAnswers() map[string]string {
+	return map[string]string{
+		"category":   "smartphone",
+		"brand":      "Apple",
+		"model":      "iPhone 17",
+		"color":      "nero",
+		"condition":  "good",
+		"case_color": "blu",
+		"has_crack":  "sì",
+		"sticker":    "gatto",
+	}
+}
+
+const phonePrivateText = "è uno smartphone apple iphone 17 nero good, custodia blu, sì crepa, adesivo gatto"
 
 func newSeededAgent(t *testing.T, deps agent.Deps) agent.Service {
 	t.Helper()
@@ -182,7 +199,7 @@ func TestMockAgentCreatesClaimFromDetails(t *testing.T) {
 	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
 		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
 		{Role: "assistant", Content: "Descrivi un dettaglio che solo il proprietario conosce."},
-		{Role: "user", Content: "è nero, ha una crepa e un adesivo a forma di gatto"},
+		{Role: "user", Content: "è nero, ha una custodia blu, una crepa e un adesivo a forma di gatto"},
 	})
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
@@ -390,6 +407,179 @@ func TestClaimAnswersMustComeFromUserText(t *testing.T) {
 	}
 }
 
+type fakeSearch struct {
+	result search.SearchResult
+}
+
+func (f fakeSearch) Search(context.Context, search.Query) ([]search.SearchResult, error) {
+	return []search.SearchResult{f.result}, nil
+}
+func (fakeSearch) IndexItem(context.Context, itemdomain.Item) error { return nil }
+func (fakeSearch) DeleteItem(context.Context, string) error         { return nil }
+
+type fakeItemReader struct {
+	item itemdomain.Item
+}
+
+func (f fakeItemReader) ItemForAgent(context.Context, string) (itemdomain.Item, error) {
+	return f.item, nil
+}
+
+func TestPreflightWrongPrivateDetailClosesBeforeLLM(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha un cinturino giallo"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "non posso verificare") {
+		t.Fatalf("reply = %+v, want a terminal rejection", reply)
+	}
+	if claims.calls != 0 || reply.ClaimID != "" {
+		t.Fatalf("claim forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
+	}
+	if len(llm.calls) != 0 {
+		t.Fatalf("LLM was called %d times after a clear contradiction", len(llm.calls))
+	}
+}
+
+func TestPreflightCorrectPrivateDetailCreatesClaimBeforeLLM(t *testing.T) {
+	llm := &scriptedLLM{}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un iphone in zona San Lorenzo"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha una custodia blu"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || reply.ClaimID == "" {
+		t.Fatalf("reply = %+v, want a created claim", reply)
+	}
+	if len(llm.calls) != 0 {
+		t.Fatalf("LLM was called %d times; the deterministic gate should decide", len(llm.calls))
+	}
+}
+
+func TestPreflightNoPrivateAttributesClosesBeforeLLM(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{}
+	db := testutil.NewTestDB(t)
+	svc := agent.New(db, agent.Deps{
+		DeepSeekKey: "test-key",
+		Client:      llm,
+		Claim:       claims,
+		Search:      fakeSearch{result: search.SearchResult{ItemID: "watch-x", Category: "orologio", FoundZone: "Testaccio"}},
+		Items: fakeItemReader{item: itemdomain.Item{
+			ID: "watch-x", Category: "orologio", Status: itemdomain.StatusInCustody,
+			RiskTier:       itemdomain.RiskHigh,
+			PrivateProfile: map[string]any{"details": "orologio con cinturino nero"},
+		}},
+	})
+	reply, err := svc.Chat(context.Background(), "searcher-demo", []agent.Message{
+		{Role: "user", Content: "ho perso un orologio in zona Testaccio"},
+		{Role: "assistant", Content: "Descrivi un dettaglio."},
+		{Role: "user", Content: "ha un cinturino giallo"},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "dettagli privati") {
+		t.Fatalf("reply = %+v, want the no-evidence close", reply)
+	}
+	if claims.calls != 0 || len(llm.calls) != 0 {
+		t.Fatalf("claims=%d llm=%d, want neither", claims.calls, len(llm.calls))
+	}
+}
+
+func TestScoreWrongPrivateDetailClosesWithoutClaim(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+			`{"item_id":"item-phone","answers":{"case_color":"giallo"}}`)}},
+		{Content: "Continuiamo a provare."},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "ha un cinturino giallo"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "non posso verificare") {
+		t.Fatalf("reply = %+v, want a terminal ownership rejection", reply)
+	}
+	if claims.calls != 0 || reply.ClaimID != "" {
+		t.Fatalf("claim was forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
+	}
+}
+
+func TestScoreNoPrivateAttributesClosesWithoutClaim(t *testing.T) {
+	claims := &recordingClaims{}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"orologio"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "score_with_d3",
+			`{"item_id":"watch-x","answers":{"color":"nero"}}`)}},
+		{Content: "Continuiamo a provare."},
+	}}
+	db := testutil.NewTestDB(t)
+	svc := agent.New(db, agent.Deps{
+		DeepSeekKey: "test-key",
+		Client:      llm,
+		Claim:       claims,
+		Search:      fakeSearch{result: search.SearchResult{ItemID: "watch-x", Category: "orologio", FoundZone: "Testaccio"}},
+		Items: fakeItemReader{item: itemdomain.Item{
+			ID: "watch-x", Category: "orologio", Status: itemdomain.StatusInCustody,
+			RiskTier:       itemdomain.RiskHigh,
+			PrivateProfile: map[string]any{"details": "orologio Apple Watch con cinturino nero"},
+		}},
+	})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "è nero"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if !reply.Done || !strings.Contains(strings.ToLower(reply.Message), "dettagli privati") {
+		t.Fatalf("reply = %+v, want a terminal no-evidence close", reply)
+	}
+	if claims.calls != 0 || reply.ClaimID != "" {
+		t.Fatalf("claim was forwarded: calls=%d id=%q", claims.calls, reply.ClaimID)
+	}
+}
+
+func TestCreateClaimToolRefusesWeakEvidence(t *testing.T) {
+	claims := &recordingClaims{created: claim.Claim{ID: "should-not-exist", Status: claim.StatusMoreInfo}}
+	llm := &scriptedLLM{steps: []deepseek.Completion{
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
+		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "create_claim",
+			`{"item_id":"item-phone","answers":{"color":"nero"}}`)}},
+		{Content: "Servono altri dettagli."},
+	}}
+	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
+
+	reply, err := svc.Chat(context.Background(), "searcher-demo",
+		[]agent.Message{{Role: "user", Content: "è nero"}})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if claims.calls != 0 {
+		t.Fatalf("CreateClaim calls = %d, want 0 on weak evidence", claims.calls)
+	}
+	if reply.ClaimID != "" {
+		t.Fatalf("reply carries a weak claim: %q", reply.ClaimID)
+	}
+}
+
 func TestProviderFailureAfterClaimReturnsPartialReply(t *testing.T) {
 	claims := &recordingClaims{created: claim.Claim{ID: "claim-partial", Status: claim.StatusUnderReview}}
 	llm := &scriptedLLM{
@@ -398,14 +588,14 @@ func TestProviderFailureAfterClaimReturnsPartialReply(t *testing.T) {
 		steps: []deepseek.Completion{
 			{ToolCalls: []deepseek.ToolCall{
 				toolCall("call-1", "search_items", `{"query":"iphone"}`),
-				toolCall("call-2", "create_claim", `{"item_id":"item-phone","answers":{"color":"nero"}}`),
+				toolCall("call-2", "create_claim", `{"item_id":"item-phone","answers":{"category":"smartphone","brand":"Apple","model":"iPhone 17","color":"nero","condition":"good","case_color":"blu","has_crack":"sì","sticker":"gatto"}}`),
 			}},
 		},
 	}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo",
-		[]agent.Message{{Role: "user", Content: "è nero"}})
+		[]agent.Message{{Role: "user", Content: phonePrivateText}})
 	if err != nil {
 		t.Fatalf("Chat() restarted the mock after a side effect: %v", err)
 	}
@@ -425,15 +615,15 @@ func TestMultipleCreateClaimCallsCreateOneClaim(t *testing.T) {
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{
 			toolCall("call-1", "search_items", `{"query":"iphone"}`),
-			toolCall("call-2", "create_claim", `{"item_id":"item-phone","answers":{"color":"nero"}}`),
-			toolCall("call-3", "create_claim", `{"item_id":"item-phone","answers":{"color":"nero"}}`),
+			toolCall("call-2", "create_claim", `{"item_id":"item-phone","answers":{"category":"smartphone","brand":"Apple","model":"iPhone 17","color":"nero","condition":"good","case_color":"blu","has_crack":"sì","sticker":"gatto"}}`),
+			toolCall("call-3", "create_claim", `{"item_id":"item-phone","answers":{"category":"smartphone","brand":"Apple","model":"iPhone 17","color":"nero","condition":"good","case_color":"blu","has_crack":"sì","sticker":"gatto"}}`),
 		}},
 		{Content: "Richiesta registrata."},
 	}}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo",
-		[]agent.Message{{Role: "user", Content: "è nero"}})
+		[]agent.Message{{Role: "user", Content: phonePrivateText}})
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -490,13 +680,13 @@ func TestCreateClaimToolUsesServerSearcher(t *testing.T) {
 	llm := &scriptedLLM{steps: []deepseek.Completion{
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-1", "search_items", `{"query":"iphone"}`)}},
 		{ToolCalls: []deepseek.ToolCall{toolCall("call-2", "create_claim",
-			`{"item_id":"item-phone","answers":{"color":"nero"},"evidence":["ricevuta"]}`)}},
+			`{"item_id":"item-phone","answers":{"category":"smartphone","brand":"Apple","model":"iPhone 17","color":"nero","condition":"good","case_color":"blu","has_crack":"sì","sticker":"gatto"},"evidence":["ricevuta"]}`)}},
 		{Content: "Ho inviato la richiesta di verifica."},
 	}}
 	svc := newSeededAgent(t, agent.Deps{DeepSeekKey: "test-key", Client: llm, Claim: claims})
 
 	reply, err := svc.Chat(context.Background(), "searcher-demo",
-		[]agent.Message{{Role: "user", Content: "è nero, ho la ricevuta"}})
+		[]agent.Message{{Role: "user", Content: phonePrivateText + ", ho la ricevuta"}})
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}

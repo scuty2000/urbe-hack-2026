@@ -387,6 +387,7 @@ export interface WizardAnalysis {
   photoPlan: WizardPhotoSlot[];
   prefill: WizardPrefill;
   privatePrefill: string;
+  privateAttributes?: Record<string, unknown>;
   warnings: string[];
   source: "d3+deepseek" | "d3+fallback" | "d3" | "manual" | string;
   isDocument: boolean;

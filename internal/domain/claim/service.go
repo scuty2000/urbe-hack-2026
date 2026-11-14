@@ -102,6 +102,12 @@ func (s *service) CreateClaim(ctx context.Context, input CreateClaimInput) (Clai
 		return Claim{}, fmt.Errorf("create claim %q: scoring: %w", itemID, err)
 	}
 	confidence := clampConfidence(result.Confidence)
+	if privateConfidence, answered := verification.PrivateConfidence(answers, result.Answers, privateKeys); answered > 0 {
+		confidence = clampConfidence(privateConfidence)
+	}
+	if verification.HasPrivateMismatch(answers, result.Answers, privateKeys) {
+		flags = mergeStrings(flags, []string{verification.FlagPrivateMismatch})
+	}
 	policy := verification.Decision(state.RiskTier, confidence, evidence, flags)
 	// Public listing attributes alone are not ownership evidence: an automatic
 	// approval must include at least one matching private attribute.
@@ -590,7 +596,8 @@ func expectedAttributes(item itemdomain.Item) (map[string]any, map[string]bool) 
 	}
 	for key, value := range item.PrivateProfile {
 		key = strings.TrimSpace(key)
-		if key == "" || profileMetadataKeys[strings.ToLower(key)] || verification.IsIdentityField(key) {
+		if key == "" || profileMetadataKeys[strings.ToLower(key)] ||
+			verification.IsIdentityField(key) || verification.IsFreeTextField(key) {
 			continue
 		}
 		if !supportedAttributeValue(value) {
@@ -658,9 +665,12 @@ func questionSet(
 		return supplied, attributes, private
 	}
 
-	questions := make(verification.Questions, len(attributes)+1)
-	for key, value := range attributes {
-		questions[key] = questionForValue(value)
+	// Ownership is decided by private evidence, not by the public listing
+	// attributes every searcher can see. Public attributes remain in the state
+	// as context for D3, but they are not questions.
+	questions := make(verification.Questions, len(private)+1)
+	for key := range private {
+		questions[key] = questionForValue(attributes[key])
 	}
 	if len(questions) == 0 {
 		// Nothing discriminative was recorded: ask the searcher for a free-text

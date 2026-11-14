@@ -8,6 +8,7 @@ import (
 
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 )
 
@@ -45,6 +46,41 @@ func (s *service) mockChat(ctx context.Context, searcherID string, messages []Me
 	if len(messagesFromUser(messages)) < 2 || len(answers) == 0 {
 		return Reply{
 			Message:    mockQuestion(results),
+			Candidates: results,
+		}, nil
+	}
+
+	item, err := s.deps.Items.ItemForAgent(ctx, results[0].ItemID)
+	if err != nil {
+		return Reply{
+			Message:    "Non riesco a leggere la scheda dell'oggetto. Riprova più tardi.",
+			Candidates: results,
+		}, nil
+	}
+	evaluation, err := s.evaluateOwnership(ctx, item, answers)
+	if err != nil {
+		return Reply{
+			Message:    "Non riesco ancora a verificare i dettagli. Puoi aggiungere un altro dettaglio che solo il proprietario conosce?",
+			Candidates: results,
+		}, nil
+	}
+	if len(evaluation.PrivateKeys) == 0 {
+		return Reply{
+			Message:    terminalNoEvidenceMessage,
+			Candidates: results,
+			Done:       true,
+		}, nil
+	}
+	if evaluation.Decision == verification.DecisionReject {
+		return Reply{
+			Message:    terminalMismatchMessage,
+			Candidates: results,
+			Done:       true,
+		}, nil
+	}
+	if evaluation.Decision == verification.DecisionMoreInfo {
+		return Reply{
+			Message:    "Non basta ancora: descrivi un dettaglio che solo il proprietario conosce, ad esempio il colore di un accessorio o un segno particolare.",
 			Candidates: results,
 		}, nil
 	}
@@ -114,6 +150,7 @@ func mockAnswers(text string) map[string]string {
 	}{
 		{[]string{"iphone", "telefono", "cellulare", "smartphone"}, "smartphone"},
 		{[]string{"portafoglio", "wallet"}, "wallet"},
+		{[]string{"orologio", "watch"}, "orologio"},
 		{[]string{"ombrello", "umbrella"}, "umbrella"},
 		{[]string{"documento", "document", "carta di identità", "patente"}, "document"},
 		{[]string{"zaino", "backpack"}, "backpack"},
@@ -141,6 +178,7 @@ func mockAnswers(text string) map[string]string {
 		{[]string{"verde", "green"}, "verde"},
 		{[]string{"grigio", "gray", "grey"}, "grigio"},
 		{[]string{"rosa", "pink"}, "rosa"},
+		{[]string{"giallo", "yellow"}, "giallo"},
 	} {
 		if !containsAny(lower, color.tokens...) {
 			continue
@@ -211,7 +249,7 @@ func mentionsCase(text string, tokens ...string) bool {
 				start = 0
 			}
 			context := text[start:position]
-			if containsAny(context, "custodia", "cover", "case ") {
+			if containsAny(context, "custodia", "cover", "case ", "cinturino", "strap") {
 				return true
 			}
 			offset = position + len(token)

@@ -2777,6 +2777,12 @@ components:
         privatePrefill:
           type: string
           example: Custodia blu, crepa visibile.
+        privateAttributes:
+          type: object
+          additionalProperties: true
+          description: |
+            Structured D3 observations (case_color, has_crack, has_sticker,
+            has_case) stored in the item private profile for claim verification.
         warnings:
           type: array
           items:

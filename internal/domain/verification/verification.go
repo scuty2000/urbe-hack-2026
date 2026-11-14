@@ -42,7 +42,73 @@ const (
 	FlagInconsistentAnswers = "inconsistent_answers"
 	FlagMissingEvidence     = "missing_evidence"
 	FlagIdentityMismatch    = "identity_mismatch"
+	FlagPrivateMismatch     = "private_mismatch"
 )
+
+// FreeTextFields are private-profile keys that hold arbitrary prose. They are
+// never used as verification questions: the model does not receive them and
+// splitting them into expected values would make ordinary wording look like a
+// secret. The wizard stores structured attributes for verification instead.
+var FreeTextFields = map[string]bool{
+	"notes": true, "note": true, "description": true, "descrizione": true,
+	"detail": true, "details": true, "dettaglio": true,
+	"comment": true, "comments": true,
+}
+
+// IsFreeTextField reports whether a normalized private-profile key is free
+// text and must not become a verification question.
+func IsFreeTextField(key string) bool {
+	return FreeTextFields[strings.ToLower(strings.TrimSpace(key))]
+}
+
+// HasPrivateMismatch reports a clear contradiction on a private, verifiable
+// attribute. The claim service and the agent use it as a hard reject: a
+// confident wrong answer is not averaged with the public fields.
+// PrivateConfidence averages the probabilities of the private attributes the
+// searcher actually answered. Missing attributes are not mismatches: one
+// correct high-signal detail is ownership evidence, while one wrong detail is
+// caught by HasPrivateMismatch.
+func PrivateConfidence(answers map[string]string, probabilities map[string]itemdomain.Answer, privateKeys map[string]bool) (float64, int) {
+	if len(privateKeys) == 0 || len(answers) == 0 {
+		return 0, 0
+	}
+	sum := 0.0
+	count := 0
+	for key := range privateKeys {
+		if strings.TrimSpace(answers[key]) == "" {
+			continue
+		}
+		answer, ok := probabilities[key]
+		if !ok {
+			continue
+		}
+		sum += AnswerProbability(answer)
+		count++
+	}
+	if count == 0 {
+		return 0, 0
+	}
+	return sum / float64(count), count
+}
+
+func HasPrivateMismatch(answers map[string]string, probabilities map[string]itemdomain.Answer, privateKeys map[string]bool) bool {
+	if len(privateKeys) == 0 || len(answers) == 0 {
+		return false
+	}
+	for key := range privateKeys {
+		if strings.TrimSpace(answers[key]) == "" {
+			continue
+		}
+		answer, ok := probabilities[key]
+		if !ok {
+			continue
+		}
+		if AnswerProbability(answer) < 0.25 {
+			return true
+		}
+	}
+	return false
+}
 
 // Model identifiers stored on every verification session.
 const (

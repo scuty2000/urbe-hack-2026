@@ -224,11 +224,11 @@ func TestDemoFlow(t *testing.T) {
 		if claim["itemId"] != "item-phone" {
 			t.Fatalf("chat claim item = %v, want item-phone", claim["itemId"])
 		}
-		if claim["status"] != "more_info" {
-			t.Fatalf("chat claim status = %v, want more_info", claim["status"])
+		if claim["status"] != "under_review" {
+			t.Fatalf("chat claim status = %v, want under_review for a high-risk item with private evidence", claim["status"])
 		}
-		if claim["confidenceBand"] != "medium" {
-			t.Fatalf("chat claim confidenceBand = %v, want medium", claim["confidenceBand"])
+		if claim["confidenceBand"] != "high" {
+			t.Fatalf("chat claim confidenceBand = %v, want high", claim["confidenceBand"])
 		}
 
 		// The institution reviews the same claim and approves it.

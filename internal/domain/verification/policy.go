@@ -35,6 +35,9 @@ func Decision(riskTier string, confidence float64, evidence []string, flags []st
 		case FlagIdentityMismatch:
 			forceReject = true
 			reasons = append(reasons, "identity document does not match")
+		case FlagPrivateMismatch:
+			forceReject = true
+			reasons = append(reasons, "a private detail does not match the item profile")
 		case FlagInconsistentAnswers:
 			forceReview = true
 			reasons = append(reasons, "answers are inconsistent")

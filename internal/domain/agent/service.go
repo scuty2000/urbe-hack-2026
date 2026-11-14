@@ -6,7 +6,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/claim"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/search"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/verification"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/deepseek"
 )
@@ -46,6 +48,15 @@ func (s *service) Chat(ctx context.Context, searcherID string, messages []Messag
 		return Reply{}, err
 	}
 
+	// The server, not the model, decides the terminal ownership outcome once
+	// the searcher has supplied a detail. This keeps a wrong private answer
+	// from turning into "let me try another question" or a forwarded claim.
+	if reply, handled, err := s.preflightChat(ctx, searcherID, normalized); err != nil {
+		return Reply{}, err
+	} else if handled {
+		return reply, nil
+	}
+
 	if s.deps.Client == nil {
 		return s.mockChat(ctx, searcherID, normalized)
 	}
@@ -54,6 +65,84 @@ func (s *service) Chat(ctx context.Context, searcherID string, messages []Messag
 		return s.mockChat(ctx, searcherID, normalized)
 	}
 	return reply, nil
+}
+
+// preflightChat is the deterministic ownership gate. After the first exchange,
+// it searches with the searcher's own words, evaluates the extracted private
+// answers with the configured engine (D3 when available) and either creates the
+// claim, asks the model for more information, or closes the conversation on a
+// clear contradiction/no verifiable private attribute.
+func (s *service) preflightChat(ctx context.Context, searcherID string, messages []Message) (Reply, bool, error) {
+	users := messagesFromUser(messages)
+	if len(users) < 2 {
+		return Reply{}, false, nil
+	}
+	text := userText(messages)
+	answers := mockAnswers(text)
+	if len(answers) == 0 {
+		return Reply{}, false, nil
+	}
+	zone := mockZone(users[0].Content)
+	results, err := s.deps.Search.Search(ctx, search.Query{
+		Text:     text,
+		Category: answers["category"],
+		Zone:     zone,
+		Limit:    searchLimit,
+	})
+	if err != nil || len(results) == 0 {
+		return Reply{}, false, nil
+	}
+	item, err := s.deps.Items.ItemForAgent(ctx, results[0].ItemID)
+	if err != nil {
+		return Reply{}, false, nil
+	}
+	evaluation, err := s.evaluateOwnership(ctx, item, answers)
+	if err != nil {
+		return Reply{}, false, nil
+	}
+	if len(evaluation.PrivateKeys) == 0 {
+		return Reply{
+			Message:    terminalNoEvidenceMessage,
+			Candidates: results,
+			Done:       true,
+		}, true, nil
+	}
+	if evaluation.Decision == verification.DecisionReject {
+		return Reply{
+			Message:    terminalMismatchMessage,
+			Candidates: results,
+			Done:       true,
+		}, true, nil
+	}
+	if evaluation.Decision == verification.DecisionMoreInfo {
+		return Reply{}, false, nil
+	}
+
+	created, err := s.deps.Claim.CreateClaim(ctx, claim.CreateClaimInput{
+		ItemID:     results[0].ItemID,
+		SearcherID: searcherID,
+		Session:    claim.Session{Answers: answers},
+	})
+	if err != nil {
+		return Reply{}, false, nil
+	}
+	if created.Status == claim.StatusRejected {
+		return Reply{
+			Message:    terminalMismatchMessage,
+			Candidates: results,
+			ClaimID:    created.ID,
+			Done:       true,
+		}, true, nil
+	}
+	if created.Status == claim.StatusMoreInfo {
+		return Reply{}, false, nil
+	}
+	return Reply{
+		Message:    mockClaimMessage(created),
+		Candidates: results,
+		ClaimID:    created.ID,
+		Done:       true,
+	}, true, nil
 }
 
 // normalizeMessages validates the client conversation and enforces the role
@@ -147,6 +236,14 @@ func (s *service) llmChat(ctx context.Context, searcherID string, messages []Mes
 			}
 			if outcome.escalated {
 				escalated = true
+			}
+			if outcome.terminal {
+				return Reply{
+					Message:    outcome.terminalMessage,
+					Candidates: candidates,
+					ClaimID:    claimID,
+					Done:       true,
+				}, nil
 			}
 			conversation = append(conversation, deepseek.Message{
 				Role:       "tool",

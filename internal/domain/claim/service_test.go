@@ -15,6 +15,7 @@ import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/errs"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/repository/record"
+	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/seed"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/testutil"
 )
 
@@ -419,6 +420,26 @@ func TestReviewClaimReclassifiesChannelAfterTransfer(t *testing.T) {
 	}
 }
 
+func TestCreateClaimRejectsClearPrivateMismatch(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	seed.Demo(t, db)
+	svc := claim.New(db)
+
+	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
+		ItemID:     "item-phone",
+		SearcherID: "searcher-demo",
+		Session: claim.Session{Answers: map[string]string{
+			"case_color": "giallo",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateClaim() error = %v", err)
+	}
+	if created.Status != claim.StatusRejected {
+		t.Fatalf("status = %q, want rejected for a wrong private detail", created.Status)
+	}
+}
+
 func TestGetClaimHidesReportFromOwnerAndExposesItToInstitution(t *testing.T) {
 	svc, db := newClaimService(t, fixedEngine(0.9))
 	seedClaimItem(t, db, "item-privacy", itemdomain.StatusInCustody, itemdomain.RiskLow, false)
@@ -426,7 +447,7 @@ func TestGetClaimHidesReportFromOwnerAndExposesItToInstitution(t *testing.T) {
 	created, err := svc.CreateClaim(context.Background(), claim.CreateClaimInput{
 		ItemID:     "item-privacy",
 		SearcherID: "searcher-demo",
-		Session:    claim.Session{Answers: map[string]string{"color": "black"}},
+		Session:    claim.Session{Answers: map[string]string{"case_color": "blu"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateClaim() error = %v", err)
@@ -453,7 +474,7 @@ func TestGetClaimHidesReportFromOwnerAndExposesItToInstitution(t *testing.T) {
 	if institution.Report == nil {
 		t.Fatal("institution report is nil, want the full verification report")
 	}
-	if institution.Report.Answers["color"] != "black" {
+	if institution.Report.Answers["case_color"] != "blu" {
 		t.Fatalf("report answers = %+v", institution.Report.Answers)
 	}
 	if institution.Report.Decision != verification.DecisionAutoApprove {

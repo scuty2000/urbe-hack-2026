@@ -66,15 +66,16 @@ type Plan struct {
 
 // Analysis is the wizard response.
 type Analysis struct {
-	ObjectType     string
-	Confidence     float64
-	PhotoPlan      []PhotoSlot
-	Prefill        Prefill
-	PrivatePrefill string
-	Warnings       []string
-	Source         string
-	IsDocument     bool
-	Sensitive      bool
+	ObjectType        string
+	Confidence        float64
+	PhotoPlan         []PhotoSlot
+	Prefill           Prefill
+	PrivatePrefill    string
+	PrivateAttributes map[string]any
+	Warnings          []string
+	Source            string
+	IsDocument        bool
+	Sensitive         bool
 }
 
 // DropPoint is one active partner with its walking distance from the report.

@@ -27,15 +27,16 @@ type WizardPrefillResponse struct {
 
 // WizardAnalysisResponse is the finder wizard analysis.
 type WizardAnalysisResponse struct {
-	ObjectType     string                  `json:"objectType"`
-	Confidence     float64                 `json:"confidence"`
-	PhotoPlan      []PhotoPlanSlotResponse `json:"photoPlan"`
-	Prefill        WizardPrefillResponse   `json:"prefill"`
-	PrivatePrefill string                  `json:"privatePrefill"`
-	Warnings       []string                `json:"warnings"`
-	Source         string                  `json:"source"`
-	IsDocument     bool                    `json:"isDocument"`
-	Sensitive      bool                    `json:"sensitive"`
+	ObjectType        string                  `json:"objectType"`
+	Confidence        float64                 `json:"confidence"`
+	PhotoPlan         []PhotoPlanSlotResponse `json:"photoPlan"`
+	Prefill           WizardPrefillResponse   `json:"prefill"`
+	PrivatePrefill    string                  `json:"privatePrefill"`
+	PrivateAttributes map[string]any          `json:"privateAttributes"`
+	Warnings          []string                `json:"warnings"`
+	Source            string                  `json:"source"`
+	IsDocument        bool                    `json:"isDocument"`
+	Sensitive         bool                    `json:"sensitive"`
 }
 
 // ReverseGeocodeRequest is the POST body for the zone lookup.
@@ -100,11 +101,12 @@ func ToWizardAnalysisResponse(analysis wizard.Analysis) WizardAnalysisResponse {
 			Color:     analysis.Prefill.Color,
 			Condition: analysis.Prefill.Condition,
 		},
-		PrivatePrefill: analysis.PrivatePrefill,
-		Warnings:       nonNilStrings(analysis.Warnings),
-		Source:         analysis.Source,
-		IsDocument:     analysis.IsDocument,
-		Sensitive:      analysis.Sensitive,
+		PrivatePrefill:    analysis.PrivatePrefill,
+		PrivateAttributes: analysis.PrivateAttributes,
+		Warnings:          nonNilStrings(analysis.Warnings),
+		Source:            analysis.Source,
+		IsDocument:        analysis.IsDocument,
+		Sensitive:         analysis.Sensitive,
 	}
 }
 

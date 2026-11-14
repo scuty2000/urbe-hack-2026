@@ -410,8 +410,17 @@ function buildPayload(): CreateItemPayload {
     payload.foundLng = lng.value;
   }
   const privateText = privateDetails.value.trim();
+  const privateProfile: Record<string, unknown> = {};
   if (privateText) {
-    payload.privateProfile = { details: privateText };
+    privateProfile.details = privateText;
+  }
+  // The structured D3 observations are the only private attributes the claim
+  // engine can verify; free-text details are never used as questions.
+  if (analysis.value?.privateAttributes) {
+    Object.assign(privateProfile, analysis.value.privateAttributes);
+  }
+  if (Object.keys(privateProfile).length > 0) {
+    payload.privateProfile = privateProfile;
   }
   return payload;
 }
