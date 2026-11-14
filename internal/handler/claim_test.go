@@ -63,7 +63,7 @@ func TestClaimHttpFlow(t *testing.T) {
 		IntermediaryID: "bar-x",
 		Category:       "umbrella",
 		Color:          "black",
-		PrivateProfile: map[string]any{"serial": "secret-serial"},
+		PrivateProfile: map[string]any{"case_color": "blu"},
 		FoundAt:        "2026-11-14T10:00:00Z",
 		FoundZone:      "San Lorenzo",
 		RightsAssigned: true,
@@ -108,7 +108,7 @@ func TestClaimHttpFlow(t *testing.T) {
 		t.Fatalf("injected claim status = %v, want rejected", injectedBody["status"])
 	}
 
-	body := `{"itemId":"` + itemID + `","answers":{"category":"umbrella","color":"black","serial":"secret-serial"},"evidence":["receipt"]}`
+	body := `{"itemId":"` + itemID + `","answers":{"category":"umbrella","color":"black","case_color":"blu"},"evidence":["receipt"]}`
 	created := doRequest(t, api, http.MethodPost, "/api/claims", body, searcher)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("POST claim status = %d (body %s)", created.Code, created.Body.String())
@@ -130,7 +130,7 @@ func TestClaimHttpFlow(t *testing.T) {
 	if claimBody["returnChannel"] != claimdomain.ReturnChannelIntermediaryDirect {
 		t.Fatalf("returnChannel = %v, want intermediary_direct", claimBody["returnChannel"])
 	}
-	for _, leaked := range []string{"confidence", "report", "privateProfile", "secret-serial"} {
+	for _, leaked := range []string{"confidence", "report", "privateProfile", "case_color"} {
 		if _, ok := claimBody[leaked]; ok {
 			t.Fatalf("owner DTO leaks %q: %+v", leaked, claimBody)
 		}

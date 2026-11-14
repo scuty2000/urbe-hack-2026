@@ -36,6 +36,19 @@ var questionAttributeKeys = map[string]bool{
 	"contents":   true,
 }
 
+// identityDocumentKeys are the only identity fields whose presence is surfaced
+// to the model as a boolean. Other identity keys (owner, via, recapito, serial,
+// imei, ...) are dropped entirely: the model never needs their names, and the
+// document report only needs the fields the document check asks about.
+var identityDocumentKeys = map[string]bool{
+	"holder":          true,
+	"number":          true,
+	"document_number": true,
+	"documentnumber":  true,
+	"name":            true,
+	"owner_name":      true,
+}
+
 // freeTextKeys are private-profile values that may contain arbitrary prose
 // (including a person's name) and are therefore excluded from the sanitized
 // profile and from the scoring attributes.
@@ -299,7 +312,9 @@ func sanitizeProfile(item itemdomain.Item) sanitizedProfile {
 			continue
 		}
 		if verification.IsIdentityField(normalized) {
-			identity[normalized] = hasContent(value)
+			if identityDocumentKeys[normalized] {
+				identity[normalized] = hasContent(value)
+			}
 			continue
 		}
 		if !questionAttributeKeys[normalized] {

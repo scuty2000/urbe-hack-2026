@@ -91,14 +91,17 @@ func TestIsIdentityFieldFailsClosed(t *testing.T) {
 	identity := []string{
 		"number", "holder", "numero_documento", "nome", "intestatario",
 		"telefono", "contact_email", "documentNumber", "date_of_birth",
-		"codice_fiscale", "residenza", "serial_number",
+		"codice_fiscale", "residenza", "serial_number", "serial", "seriale",
+		"owner", "proprietario", "via", "recapito", "imei", "targa", "plate",
+		"iban", "conto", "account", "tessera", "patente", "username", "login",
+		"nickname",
 	}
 	for _, key := range identity {
 		if !verification.IsIdentityField(key) {
 			t.Fatalf("IsIdentityField(%q) = false, want redacted", key)
 		}
 	}
-	for _, key := range []string{"serial", "case_color", "has_crack", "sticker", "notes", "contents", "detail"} {
+	for _, key := range []string{"case_color", "has_crack", "sticker", "notes", "contents", "detail", "handle"} {
 		if verification.IsIdentityField(key) {
 			t.Fatalf("IsIdentityField(%q) = true, want a discriminative item attribute", key)
 		}

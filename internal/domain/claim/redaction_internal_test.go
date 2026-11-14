@@ -48,6 +48,7 @@ func TestDocumentProfileIsRedactedBeforeD3(t *testing.T) {
 			"intestatario":     "Mario Rossi",
 			"telefono":         "333-1234567",
 			"serial":           "SN-1234",
+			"case_color":       "blu",
 		},
 		Searcher: map[string]any{"color": "white"},
 	}
@@ -56,18 +57,77 @@ func TestDocumentProfileIsRedactedBeforeD3(t *testing.T) {
 		t.Fatalf("marshalling redacted state: %v", err)
 	}
 	encoded := string(payload)
-	for _, raw := range []string{"CA00000AA", "Mario Rossi", "333-1234567"} {
+	for _, raw := range []string{"CA00000AA", "Mario Rossi", "333-1234567", "SN-1234"} {
 		if strings.Contains(encoded, raw) {
 			t.Fatalf("redacted D3 payload leaks %q: %s", raw, encoded)
 		}
 	}
-	for _, boolean := range []string{`"number":true`, `"holder":true`, `"nome":true`, `"intestatario":true`} {
+	for _, boolean := range []string{`"number":true`, `"holder":true`, `"nome":true`, `"intestatario":true`, `"serial":true`} {
 		if !strings.Contains(encoded, boolean) {
 			t.Fatalf("redacted payload lost identity boolean %s: %s", boolean, encoded)
 		}
 	}
-	if !strings.Contains(encoded, `"serial":"SN-1234"`) {
+	if !strings.Contains(encoded, `"case_color":"blu"`) {
 		t.Fatalf("redacted payload should keep discriminative attributes: %s", encoded)
+	}
+}
+
+// TestExtendedIdentityProfileIsRedactedBeforeD3 covers the cross-task review
+// profile: owner/via/recapito/serial must be excluded while case_color stays a
+// discriminative attribute.
+func TestExtendedIdentityProfileIsRedactedBeforeD3(t *testing.T) {
+	profile := map[string]any{
+		"owner":      "Mario Rossi",
+		"via":        "Via Roma 1",
+		"recapito":   "3331234567",
+		"serial":     "SN12345",
+		"case_color": "blu",
+	}
+	item := itemdomain.Item{
+		Category:       "smartphone",
+		Color:          "black",
+		RiskTier:       itemdomain.RiskHigh,
+		PrivateProfile: profile,
+	}
+
+	attributes, private := expectedAttributes(item)
+	if got := attributes["case_color"]; got != "blu" {
+		t.Fatalf("case_color = %v, want it kept as a discriminative attribute", got)
+	}
+	for _, key := range []string{"owner", "via", "recapito", "serial"} {
+		if _, ok := attributes[key]; ok {
+			t.Fatalf("expected attributes contain identity key %q: %+v", key, attributes)
+		}
+		if private[key] {
+			t.Fatalf("identity key %q must not be a private question: %+v", key, private)
+		}
+	}
+	if !private["case_color"] {
+		t.Fatalf("case_color must remain private evidence: %+v", private)
+	}
+
+	// Even if legacy code sends the raw profile as the state, RedactedState
+	// must replace every identity value with a boolean.
+	payload, err := json.Marshal(verification.RedactedState(verification.State{
+		Item:     profile,
+		Searcher: map[string]any{"case_color": "blu"},
+	}))
+	if err != nil {
+		t.Fatalf("marshalling redacted state: %v", err)
+	}
+	encoded := string(payload)
+	for _, raw := range []string{"Mario Rossi", "Via Roma 1", "3331234567", "SN12345"} {
+		if strings.Contains(encoded, raw) {
+			t.Fatalf("redacted D3 payload leaks %q: %s", raw, encoded)
+		}
+	}
+	if !strings.Contains(encoded, `"case_color":"blu"`) {
+		t.Fatalf("redacted payload lost case_color: %s", encoded)
+	}
+	for _, key := range []string{"owner", "via", "recapito", "serial"} {
+		if !strings.Contains(encoded, `"`+key+`":true`) {
+			t.Fatalf("redacted payload lost identity boolean %q: %s", key, encoded)
+		}
 	}
 }
 
