@@ -2,10 +2,10 @@ package health
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -40,27 +40,15 @@ func TestReadinessAllHealthy(t *testing.T) {
 	defer qdrant.Close()
 
 	embeddings := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("embeddings method = %s, want POST", r.Method)
+		if r.Method != http.MethodGet {
+			t.Errorf("embeddings method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("embeddings path = %s, want /v1/models", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer embeddings-key" {
 			t.Errorf("embeddings authorization = %q, want %q", got, "Bearer embeddings-key")
 		}
-
-		var payload struct {
-			Model string   `json:"model"`
-			Input []string `json:"input"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decoding embeddings payload: %v", err)
-		}
-		if payload.Model != "test-embedding-model" {
-			t.Errorf("embeddings model = %q, want %q", payload.Model, "test-embedding-model")
-		}
-		if len(payload.Input) != 1 {
-			t.Errorf("embeddings input length = %d, want 1", len(payload.Input))
-		}
-
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer embeddings.Close()
@@ -69,8 +57,7 @@ func TestReadinessAllHealthy(t *testing.T) {
 		QdrantURL:         qdrant.URL,
 		QdrantAPIKey:      "qdrant-key",
 		QdrantEnabled:     true,
-		EmbeddingsURL:     embeddings.URL,
-		EmbeddingsModel:   "test-embedding-model",
+		EmbeddingsURL:     embeddings.URL + "/v1/embeddings",
 		EmbeddingsKey:     "embeddings-key",
 		EmbeddingsEnabled: true,
 	})
@@ -121,6 +108,93 @@ func TestReadinessDisabledChecksAreHealthy(t *testing.T) {
 
 	if !status.OK || !status.DB || !status.Qdrant || !status.Embeddings {
 		t.Fatalf("status = %+v, want disabled checks to report true", status)
+	}
+}
+
+func TestReadinessCachesEmbeddingsProbe(t *testing.T) {
+	t.Parallel()
+
+	var calls int32
+	embeddings := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
+			t.Errorf("embeddings probe = %s %s, want GET /v1/models", r.Method, r.URL.Path)
+		}
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer embeddings.Close()
+
+	service := NewHealthService(fakePinger{}, Checks{
+		EmbeddingsURL:     embeddings.URL + "/v1/embeddings",
+		EmbeddingsEnabled: true,
+	})
+
+	for i := 0; i < 3; i++ {
+		status := service.Readiness(context.Background())
+		if !status.OK || !status.Embeddings {
+			t.Fatalf("readiness %d = %+v, want healthy", i, status)
+		}
+	}
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("embeddings probe calls = %d, want 1 within the cache TTL", got)
+	}
+}
+
+func TestModelsURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "embeddings endpoint",
+			input: "http://localhost:8000/v1/embeddings",
+			want:  "http://localhost:8000/v1/models",
+		},
+		{
+			name:  "trailing slash",
+			input: "http://localhost:8000/v1/embeddings/",
+			want:  "http://localhost:8000/v1/models",
+		},
+		{
+			name:  "models endpoint already",
+			input: "http://localhost:8000/v1/models",
+			want:  "http://localhost:8000/v1/models",
+		},
+		{
+			name:  "no version prefix",
+			input: "http://localhost:8000/embeddings",
+			want:  "http://localhost:8000/models",
+		},
+		{
+			name:    "missing scheme",
+			input:   "localhost:8000/v1/embeddings",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := modelsURL(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("modelsURL(%q) = %q, want error", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("modelsURL(%q) error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("modelsURL(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 

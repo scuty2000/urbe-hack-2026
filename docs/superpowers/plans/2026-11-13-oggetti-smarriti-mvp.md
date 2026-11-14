@@ -89,23 +89,14 @@ services:
     profiles: ["tunnel"]
 ```
 
-`scripts/dev-up.sh`:
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-set -a
-. ./.env
-set +a
-docker compose up -d qdrant
-go run ./cmd/webapi/ -c demo/config.yml
-```
+`scripts/dev-up.sh` loads `.env` with a literal dotenv loop (not `source`), because the CORS values contain semicolons; it then starts Qdrant and runs the API. The local `.env` is never printed or committed.
 
 `Dockerfile` (multi-stage):
 ```dockerfile
 FROM node:22-bookworm AS web
 WORKDIR /web
 COPY webui/package*.json ./
-RUN npm ci
+RUN npm install
 COPY webui/ ./
 RUN npm run build
 
@@ -138,7 +129,7 @@ In `cmd/webapi/main.go`, after `gorm.Open`, execute:
 gormDB.Exec("PRAGMA journal_mode=WAL;")
 gormDB.Exec("PRAGMA busy_timeout=5000;")
 ```
-Add `/api/health` handler that pings SQLite, Qdrant, and the embeddings endpoint with 1s timeouts and returns status booleans (never fails the request).
+Add `/api/health` handler that pings SQLite/Qdrant with 1s timeouts and probes embeddings cheaply via `GET /v1/models` (3s, short cache; no inference), returning status booleans and never failing the request.
 
 - [ ] **Step 5: Verify and commit**
 

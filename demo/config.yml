@@ -15,17 +15,3 @@ logger:
 
 db:
   filename: db/lostfound.db     # SQLite file path
-
-cors:
-  allowallorigins: false        # true = allow any origin (don't use with credentials)
-  allowedorigins:
-    - http://localhost:3000
-  allowedmethods:
-    - GET
-    - POST
-    - PUT
-    - DELETE
-    - OPTIONS
-  allowedheaders: []            # e.g. [Authorization, Content-Type]
-  allowcredentials: false       # allow cookies / auth headers cross-origin
-  maxage: 86400                 # preflight cache duration in seconds

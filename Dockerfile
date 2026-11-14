@@ -1,7 +1,7 @@
 FROM node:22-bookworm AS web
 WORKDIR /web
 COPY webui/package*.json ./
-RUN npm ci
+RUN npm install
 COPY webui/ ./
 RUN npm run build
 

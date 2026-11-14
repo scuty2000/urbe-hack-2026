@@ -203,6 +203,9 @@ func run() error {
 	}
 	// gin-contrib/cors rejects AllowedOrigins together with AllowAllOrigins.
 	if corsConfig.AllowAllOrigins {
+		if corsConfig.AllowCredentials {
+			logger.Warn("CORS allows all origins with credentials; browsers may reject this insecure combination")
+		}
 		corsConfig.AllowOrigins = nil
 	}
 

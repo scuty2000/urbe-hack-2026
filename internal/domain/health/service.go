@@ -1,11 +1,11 @@
 package health
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +15,11 @@ const (
 	dbTimeout         = time.Second
 	qdrantTimeout     = time.Second
 	embeddingsTimeout = 3 * time.Second
+
+	// embeddingsCacheTTL bounds how often the embeddings endpoint is probed.
+	// `/api/health` is public and polled by the UI, so a short cache avoids
+	// turning health checks into a request amplifier.
+	embeddingsCacheTTL = 5 * time.Second
 )
 
 // Checks configures the optional readiness probes.
@@ -34,6 +39,11 @@ type Checks struct {
 type healthService struct {
 	pinger Pinger
 	checks Checks
+
+	embeddingsMu       sync.Mutex
+	embeddingsCached   bool
+	embeddingsOK       bool
+	embeddingsCachedAt time.Time
 }
 
 // NewHealthService returns a HealthService that pings the provided Pinger for
@@ -120,32 +130,66 @@ func (s *healthService) checkQdrant(ctx context.Context) bool {
 }
 
 func (s *healthService) checkEmbeddings(ctx context.Context) bool {
-	embeddingsURL := strings.TrimSpace(s.checks.EmbeddingsURL)
-	if embeddingsURL == "" {
+	s.embeddingsMu.Lock()
+	defer s.embeddingsMu.Unlock()
+
+	if s.embeddingsCached && time.Since(s.embeddingsCachedAt) < embeddingsCacheTTL {
+		return s.embeddingsOK
+	}
+
+	s.embeddingsOK = s.probeEmbeddings(ctx)
+	s.embeddingsCachedAt = time.Now()
+	s.embeddingsCached = true
+
+	return s.embeddingsOK
+}
+
+// probeEmbeddings performs a cheap readiness probe by reading the model list
+// instead of requesting an embedding. Requesting an embedding would run the
+// full 8B model on every unauthenticated health check.
+func (s *healthService) probeEmbeddings(ctx context.Context) bool {
+	endpoint, err := modelsURL(strings.TrimSpace(s.checks.EmbeddingsURL))
+	if err != nil {
 		return false
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, embeddingsTimeout)
 	defer cancel()
 
-	payload, err := json.Marshal(map[string]any{
-		"model": s.checks.EmbeddingsModel,
-		"input": []string{"health"},
-	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return false
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, embeddingsURL, bytes.NewReader(payload))
-	if err != nil {
-		return false
-	}
-	req.Header.Set("Content-Type", "application/json")
 	if s.checks.EmbeddingsKey != "" {
 		req.Header.Set("Authorization", "Bearer "+s.checks.EmbeddingsKey)
 	}
 
 	return s.do(req)
+}
+
+// modelsURL derives the OpenAI-compatible /models endpoint from the configured
+// embeddings endpoint (e.g. http://host/v1/embeddings -> http://host/v1/models).
+func modelsURL(embeddingsURL string) (string, error) {
+	u, err := url.Parse(embeddingsURL)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("invalid embeddings URL %q", embeddingsURL)
+	}
+
+	path := strings.TrimRight(u.Path, "/")
+	switch {
+	case strings.HasSuffix(path, "/embeddings"):
+		path = strings.TrimSuffix(path, "/embeddings") + "/models"
+	case strings.HasSuffix(path, "/models"):
+		// Already a models endpoint.
+	default:
+		path += "/models"
+	}
+	u.Path = path
+
+	return u.String(), nil
 }
 
 func (s *healthService) do(req *http.Request) bool {
