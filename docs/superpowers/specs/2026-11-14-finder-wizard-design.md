@@ -45,7 +45,8 @@ finder experience without destabilizing the custody/pass/PA flows.
 - Every AI or network step has a deterministic fallback; no provider outage
   blocks enrollment.
 - No new database tables, no item state changes, no change to the final
-  `POST /api/items` contract beyond optional wizard prefill fields.
+  `POST /api/items` contract. The final write re-runs D3 (with images enabled
+  in the demo) and remains the authority; the wizard analysis is UX only.
 
 ## Non-goals
 
@@ -82,7 +83,9 @@ finder experience without destabilizing the custody/pass/PA flows.
   backend calls.
 - The final `POST /api/items` remains the only write and the authority; the
   wizard prefill is advisory. The final item service still applies the risk
-  policy and the document/sensitive floor.
+  policy and the document/sensitive floor. The demo `.env` sets
+  `API_D3_ALLOW_IMAGES=true` so the final D3 call sees the photos too; no new
+  request field carries the AI result, so a client cannot forge it.
 - Existing privacy rules, `.env` hygiene, role checks and rate limits remain.
 
 ## Approaches considered
@@ -137,9 +140,13 @@ reload restarts the wizard (acceptable; no server draft).
 
 - The finder takes/selects the first photo. The UI shows a privacy banner:
   "Non fotografare documenti, notifiche o dati personali".
-- `POST /api/finder/wizard/analyze` with the first photo (and later the
-  additional photos) returns the D3 classification, the additional photo plan,
-  the prefill and warnings.
+- `POST /api/finder/wizard/analyze` runs **once on the first photo** and returns
+  the D3 classification, the additional photo plan, the prefill and warnings.
+  Additional slot photos are attached without another AI call; a "Rianalizza"
+  action appears if the finder replaces the first photo or materially changes
+  the category. The plan is frozen after the first analysis unless the finder
+  asks for a new one; the finder's edits to prefill/private text are never
+  overwritten.
 - The UI shows the first photo plus the additional slots. Each slot has a label,
   an instruction, a required/optional flag and a camera/file input. Optional
   slots can be skipped.
@@ -172,10 +179,11 @@ reload restarts the wizard (acceptable; no server draft).
 
 ### Step 4 — drop-off point
 
-- `GET /api/drop-points?lat&lng&limit=5` returns the active points sorted by
-  walking duration (then distance, then name).
-- Each card shows name, address, area, opening hours, walking minutes, metres
-  and an "stima" badge when the routing source is the haversine fallback.
+- `POST /api/drop-points` with `{lat,lng,limit}` returns the active points
+  sorted by walking duration (then distance, then name).
+- Each card shows name, address, opening hours, walking minutes, metres and an
+  "stima" badge when the routing source is the haversine fallback. There is no
+  separate `area` field: the seed address includes the neighborhood.
 - The first point is preselected; the finder can choose another. If there is no
   location, the endpoint returns active points sorted by name with no distance
   and the UI asks for a location or manual selection.
@@ -241,6 +249,12 @@ type Geocoder interface { Reverse(ctx context.Context, lat, lng float64) (Place,
 7. Return the analysis. Never include raw photo bytes, provider tokens or
    internal errors in the response.
 
+The endpoint is called once per item (first photo). A repeated call is the
+explicit "Rianalizza" action and returns a complete new analysis; the client
+keeps its edited values except for fields the finder has not touched. The
+20/min limit therefore covers one normal call and a small number of retries, not
+one call per slot.
+
 Deterministic plan table:
 
 | Category | Additional slots |
@@ -272,16 +286,52 @@ instruction per slot, Italian copy. On any parse/timeout error, fallback.
 - The D3 result remains the factual source; the wizard never trusts the
   planner for `is_document`/`sensitive`.
 
+### Category and color normalization
+
+D3 returns English category values. The wizard maps every one of them to an
+existing or new UI category; nothing falls back to `altro` merely because the
+UI lacked an option (which would lower laptop/jewelry/watch from high to the
+default medium risk).
+
+| D3 | UI value | UI label | Risk policy |
+|---|---|---|---|
+| smartphone | smartphone | Smartphone | high |
+| laptop | laptop | Laptop | high |
+| wallet | portafoglio | Portafoglio | high |
+| keys | chiavi | Chiavi | sensitive |
+| document | documenti | Documenti / carta d'identità | sensitive |
+| jewelry | gioielli | Gioielli | high |
+| watch | orologio | Orologio | high |
+| glasses | occhiali | Occhiali | medium |
+| backpack | zaino | Zaino / borsa | medium |
+| headphones | cuffie | Cuffie / auricolari | medium |
+| book | libro | Libro / quaderno | low |
+| bottle | bottiglia | Bottiglia / borraccia | low |
+| clothing | abbigliamento | Abbigliamento | low |
+| umbrella | ombrello | Ombrello | low |
+| other | altro | Altro | default medium |
+
+`itemCategories` gains `laptop`, `gioielli`, `orologio`, `libro`, `bottiglia`.
+The colors map `black→nero`, `white→bianco`, `gray→grigio`, `red→rosso`,
+`blue→blu`, `green→verde`, `yellow→giallo`, `brown→marrone`, `pink→rosa`,
+`other→multicolore`; conditions map `new→like_new`, `good→good`, `worn→fair`,
+`damaged→poor`. The `Prefill` type has no custom-category field; `other` maps to
+`altro` and the finder can type a custom category only if they choose it.
+
 ### Drop-off domain: `internal/domain/dropoff`
 
 - `Nearest(ctx, lat, lng, limit) ([]DropPoint, error)`.
 - Load `ListIntermediaries`, keep `status == "active"` and valid coordinates.
 - Use the `Router` port. Mapbox Matrix when configured and healthy; otherwise
   haversine × 1.3 walking factor, `approximate=true`, `source="haversine"`.
+- Matrix limit: one call for up to 24 destinations (the seeded set is 7). If a
+  deployment has more, prefilter to the 24 nearest by haversine before the
+  matrix call; the "top five" remains exact for the demo scale and is labeled
+  approximate only when the provider is down.
 - Sort by duration, then distance, then name; cap at `limit` (default 5, max
   10). Return an empty list if no active points.
-- `DropPoint` response: id, name, address, area, hours, distance metres,
-  duration seconds, walking minutes, approximate, source.
+- `DropPoint` response: id, name, address, hours, distance metres, duration
+  seconds, walking minutes, approximate, source.
 
 ### Mapbox platform: `internal/platform/mapbox`
 
@@ -297,6 +347,11 @@ instruction per slot, Italian copy. On any parse/timeout error, fallback.
   5-decimal lat/lng for 1 hour; matrix keyed by 4-decimal origin + destination
   IDs for 5 minutes. Cache misses are best-effort; no external dependency fails
   the request because the service falls back.
+- Demo timeouts: `demo/config.yml` raises `readtimeout` to 10 s and
+  `writetimeout` to 60 s (matching the local `.env`), so the 10 s D3 + 15 s
+  planner budget fits the analyze request; the final submit also fits with the
+  same write budget. If the demo config is used without `.env`, these values
+  still apply.
 
 ### HTTP
 
@@ -304,10 +359,11 @@ instruction per slot, Italian copy. On any parse/timeout error, fallback.
   `payload` JSON `{slot?, note?}` + repeated `photos`; returns `Analysis`.
   Max 4 photos, 8 MB each, JPEG/PNG/WebP; no persistence; 10 s D3 + 15 s
   planner bounds; rate limit 20/min per user.
-- `GET /api/geo/reverse?lat&lng` — roles finder/intermediary; returns
-  `{zone, placeName, source}`; 60/min; no exact coordinates in logs.
-- `GET /api/drop-points?lat&lng&limit=5` — roles finder/intermediary; returns
-  `{points:[...], source, approximate}`; 60/min.
+- `POST /api/geo/reverse` with `{lat,lng}` — roles finder/intermediary; returns
+  `{zone, placeName, source}`; 60/min. POST keeps exact coordinates out of the
+  request URL, which the shared request logger records.
+- `POST /api/drop-points` with `{lat,lng,limit}` — roles finder/intermediary;
+  returns `{points:[...], source, approximate}`; 60/min.
 - Existing `POST /api/items` unchanged; the wizard sends the same payload/photos.
 - Update `doc/api.yaml` with the three paths and schemas.
 
@@ -446,6 +502,33 @@ The existing demo `bar-x` remains the presentation choice.
 - **Brand/model**: not inferred; the finder confirms them. This is deliberate.
 - **Demo accounts**: five extra partners; grouped login and seed tests keep the
   demo usable.
+
+## Builder-check resolutions
+
+The independent builder check raised seven questions; all are resolved here.
+
+1. **Analyze frequency.** Analyze runs once on the first photo; additional slot
+   photos are attached without an AI call. A "Rianalizza" action re-runs it
+   when the first photo is replaced or the category materially changes. The plan
+   is frozen until then; the finder's edited prefill/private text is never
+   overwritten.
+2. **Final write.** `POST /api/items` is unchanged; no new request field carries
+   the AI result. The demo `.env` sets `API_D3_ALLOW_IMAGES=true`, so the final
+   item service re-runs D3 with the photos and remains the authoritative
+   document/sensitive floor. A forged category cannot bypass it.
+3. **Categories.** The five missing UI categories are added and every D3
+   category has an explicit mapping (table above); no high-risk category is
+   downgraded to `altro`/medium.
+4. **`area`.** Removed from the drop-point DTO/cards; the seeded address includes
+   the neighborhood. No migration.
+5. **Coordinates in logs.** Reverse geocoding and drop points are `POST` with a
+   JSON body, so exact coordinates never appear in the logged URL query.
+6. **Matrix size.** One Mapbox Matrix call handles up to 24 destinations; the
+   seeded set is 7. Above 24, prefilter by haversine to the 24 nearest before
+   the matrix call; the demo's top five is exact.
+7. **Timeouts.** `demo/config.yml` uses 10 s read / 60 s write / 10 s shutdown,
+   matching the `.env`; the 10 s D3 + 15 s planner budget fits, and the final
+   submit fits the same write budget.
 
 ## What is left to the builder
 
