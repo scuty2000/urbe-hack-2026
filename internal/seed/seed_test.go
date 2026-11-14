@@ -22,22 +22,21 @@ func TestDemoSeedsDeterministicDataset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListUsers: %v", err)
 	}
-	if len(users) != 7 {
-		t.Fatalf("users = %d, want 7", len(users))
+	if len(users) != 12 {
+		t.Fatalf("users = %d, want 12", len(users))
 	}
 
 	intermediaries, err := db.ListIntermediaries(ctx)
 	if err != nil {
 		t.Fatalf("ListIntermediaries: %v", err)
 	}
-	if len(intermediaries) != 2 {
-		t.Fatalf("intermediaries = %d, want 2", len(intermediaries))
+	if len(intermediaries) != 7 {
+		t.Fatalf("intermediaries = %d, want 7", len(intermediaries))
 	}
-	if _, err := db.GetIntermediaryByID(ctx, "bar-x"); err != nil {
-		t.Fatalf("bar-x missing: %v", err)
-	}
-	if _, err := db.GetIntermediaryByID(ctx, "portineria-sapienza"); err != nil {
-		t.Fatalf("portineria-sapienza missing: %v", err)
+	for _, id := range []string{"bar-x", "portineria-sapienza", "tabaccheria-termini", "caffe-trastevere", "farmacia-san-giovanni", "punto-prati", "mercato-ostiense"} {
+		if _, err := db.GetIntermediaryByID(ctx, id); err != nil {
+			t.Fatalf("%s missing: %v", id, err)
+		}
 	}
 
 	tariff, err := db.GetActiveTariff(ctx)

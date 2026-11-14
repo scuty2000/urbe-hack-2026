@@ -45,6 +45,11 @@ var demoUsers = []demoUser{
 	{id: "searcher-alt", role: RoleSearcher, name: "Luca Verdi", email: "searcher-alt@example.test"},
 	{id: "bar-x", role: RoleIntermediary, name: "Bar X", email: "bar-x@example.test"},
 	{id: "portineria-sapienza", role: RoleIntermediary, name: "Portineria Sapienza", email: "portineria-sapienza@example.test"},
+	{id: "tabaccheria-termini", role: RoleIntermediary, name: "Tabaccheria Termini", email: "tabaccheria-termini@example.test"},
+	{id: "caffe-trastevere", role: RoleIntermediary, name: "Caffè Trastevere", email: "caffe-trastevere@example.test"},
+	{id: "farmacia-san-giovanni", role: RoleIntermediary, name: "Farmacia San Giovanni", email: "farmacia-san-giovanni@example.test"},
+	{id: "punto-prati", role: RoleIntermediary, name: "Punto Prati", email: "punto-prati@example.test"},
+	{id: "mercato-ostiense", role: RoleIntermediary, name: "Mercato Ostiense", email: "mercato-ostiense@example.test"},
 	{id: "institution-demo", role: RoleInstitution, name: "Comune di Roma", email: "institution-demo@example.test"},
 	{id: "admin-demo", role: RoleAdmin, name: "Admin Demo", email: "admin-demo@example.test"},
 }

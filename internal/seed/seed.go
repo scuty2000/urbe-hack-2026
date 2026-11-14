@@ -8,7 +8,7 @@ session.
 
 Demo data:
   - seven demo users (finder, two searchers, two intermediaries, institution, admin);
-  - two civic points (Bar X and Portineria Sapienza);
+  - seven civic points (two demo points and five partner points);
   - one active PA tariff (500 cents/day, 1000 cents fixed, EUR);
   - item-phone in custody at Bar X (searchable, claim approved);
   - item-wallet transferred to the institution (searchable);
@@ -200,6 +200,66 @@ func demoRows(now time.Time) demoData {
 				Status:       "active",
 				AgreementRef: "conv-2026-002",
 				Contact:      "portineria-sapienza@example.test",
+			},
+			{
+				ID:           "tabaccheria-termini",
+				Name:         "Tabaccheria Termini",
+				Address:      "Via Giolitti 34, Roma",
+				GeoLat:       41.9010,
+				GeoLng:       12.5015,
+				Hours:        "06:00-20:00",
+				Capacity:     15,
+				Status:       "active",
+				AgreementRef: "conv-2026-003",
+				Contact:      "tabaccheria-termini@example.test",
+			},
+			{
+				ID:           "caffe-trastevere",
+				Name:         "Caffè Trastevere",
+				Address:      "Piazza Mastai 9, Roma",
+				GeoLat:       41.8890,
+				GeoLng:       12.4690,
+				Hours:        "07:00-23:00",
+				Capacity:     10,
+				Status:       "active",
+				AgreementRef: "conv-2026-004",
+				Contact:      "caffe-trastevere@example.test",
+			},
+			{
+				ID:           "farmacia-san-giovanni",
+				Name:         "Farmacia San Giovanni",
+				Address:      "Via Appia Nuova 20, Roma",
+				GeoLat:       41.8850,
+				GeoLng:       12.5090,
+				Hours:        "08:30-19:30",
+				Capacity:     12,
+				Status:       "active",
+				AgreementRef: "conv-2026-005",
+				Contact:      "farmacia-san-giovanni@example.test",
+			},
+			{
+				ID:           "punto-prati",
+				Name:         "Punto Prati",
+				Address:      "Via Cola di Rienzo 100, Roma",
+				GeoLat:       41.9080,
+				GeoLng:       12.4620,
+				Hours:        "09:00-20:00",
+				Capacity:     18,
+				Status:       "active",
+				AgreementRef: "conv-2026-006",
+				Contact:      "punto-prati@example.test",
+			},
+			{
+				ID:           "mercato-ostiense",
+				Name:         "Mercato Ostiense",
+				Address:      "Via Ostiense 95, Roma",
+				GeoLat:       41.8720,
+				GeoLng:       12.4780,
+				Hours:        "07:00-15:00",
+				Capacity:     25,
+				Status:       "active",
+				AgreementRef: "conv-2026-007",
+				Contact:      "mercato-ostiense@example.test",
 			},
 		},
 		tariff: record.TariffRecord{

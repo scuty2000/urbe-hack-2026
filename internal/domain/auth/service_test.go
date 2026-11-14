@@ -167,18 +167,23 @@ func TestSeedDemoUsersIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListUsers() error = %v", err)
 	}
-	if len(users) != 7 {
-		t.Fatalf("seeded users = %d, want 7", len(users))
+	if len(users) != 12 {
+		t.Fatalf("seeded users = %d, want 12", len(users))
 	}
 
 	wantRoles := map[string]string{
-		"finder-demo":         RoleFinder,
-		"searcher-demo":       RoleSearcher,
-		"searcher-alt":        RoleSearcher,
-		"bar-x":               RoleIntermediary,
-		"portineria-sapienza": RoleIntermediary,
-		"institution-demo":    RoleInstitution,
-		"admin-demo":          RoleAdmin,
+		"finder-demo":           RoleFinder,
+		"searcher-demo":         RoleSearcher,
+		"searcher-alt":          RoleSearcher,
+		"bar-x":                 RoleIntermediary,
+		"portineria-sapienza":   RoleIntermediary,
+		"tabaccheria-termini":   RoleIntermediary,
+		"caffe-trastevere":      RoleIntermediary,
+		"farmacia-san-giovanni": RoleIntermediary,
+		"punto-prati":           RoleIntermediary,
+		"mercato-ostiense":      RoleIntermediary,
+		"institution-demo":      RoleInstitution,
+		"admin-demo":            RoleAdmin,
 	}
 	for _, u := range users {
 		want, ok := wantRoles[u.ID]

@@ -280,9 +280,14 @@ export const notificationTypeLabels: Record<string, string> = {
 
 /** Human-friendly names for the demo organisations; falls back to the raw id. */
 export const organisationLabels: Record<string, string> = {
+  "institution-demo": "Comune di Roma",
   "bar-x": "Bar X",
   "portineria-sapienza": "Portineria Sapienza",
-  "institution-demo": "Comune di Roma",
+  "tabaccheria-termini": "Tabaccheria Termini",
+  "caffe-trastevere": "Caffè Trastevere",
+  "farmacia-san-giovanni": "Farmacia San Giovanni",
+  "punto-prati": "Punto Prati",
+  "mercato-ostiense": "Mercato Ostiense",
   "searcher-demo": "Marco Bianchi",
   "searcher-alt": "Luca Verdi",
   "finder-demo": "Giulia Ferrari",
