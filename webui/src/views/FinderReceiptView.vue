@@ -131,9 +131,12 @@ function printReceipt() {
             <dd class="data-value">{{ item.status === "pending_custody" ? "In attesa che il punto confermi la custodia" : item.status }}</dd>
           </div>
           <div>
-            <dt class="data-label">Custodia legale</dt>
+            <dt class="data-label">Qualità di ritrovatore</dt>
             <dd class="data-value">
               {{ item.rightsAssigned ? "Ceduta al punto di raccolta" : "In attesa di conferma" }}
+              <span class="block text-xs text-stone-500">
+                La presa in carico sarà confermata dal punto.
+              </span>
             </dd>
           </div>
         </dl>
@@ -142,9 +145,9 @@ function printReceipt() {
           v-if="item.sensitive"
           class="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
         >
-          Oggetto sensibile: il punto di raccolta lo tratterà con un termine di
-          custodia di 24 ore. Per documenti e carte, evita di condividerne foto
-          con altre persone.
+          Oggetto sensibile: quando il punto di raccolta conferma la custodia,
+          il termine di conservazione è di 24 ore. Per documenti e carte, evita
+          di condividerne foto con altre persone.
         </div>
 
         <div class="mt-5 flex flex-col gap-2 border-t border-stone-100 pt-5 sm:flex-row">
@@ -162,7 +165,8 @@ function printReceipt() {
         <ol class="mt-3 space-y-3 text-sm leading-6 text-stone-600">
           <li class="flex gap-3">
             <span class="font-mono text-xs text-emerald-700">01</span>
-            Il punto di raccolta conferma la presa in carico dell'oggetto.
+            Il punto di raccolta conferma la presa in carico dalla dashboard:
+            solo allora inizia il termine di custodia.
           </li>
           <li class="flex gap-3">
             <span class="font-mono text-xs text-emerald-700">02</span>

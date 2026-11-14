@@ -11,14 +11,20 @@ const checkboxId = useId();
 
 const title = computed(() =>
   props.mode === "finder"
-    ? "Cessione della custodia al punto di raccolta"
-    : "Presa in carico dell'oggetto",
+    ? "Cessione della qualità di ritrovatore legale"
+    : "Cessione della qualità di ritrovatore e presa in carico",
 );
 
 const legalCopy = computed(() =>
   props.mode === "finder"
-    ? "Confermo di aver trovato l'oggetto e di consegnarlo al punto di raccolta selezionato. Con questa dichiarazione il punto di raccolta diventa il detentore legale dell'oggetto ai fini della restituzione al legittimo proprietario. I miei dati personali e le coordinate esatte del ritrovamento non saranno pubblicati."
-    : "Confermo di aver ricevuto materialmente l'oggetto dal finder e di assumerne la custodia legale presso il mio punto di raccolta. Mi impegno a conservarlo in modo sicuro, a rispettare i termini di custodia e a riconsegnarlo solo al proprietario verificato.",
+    ? "Confermo di aver trovato l'oggetto e di cedere al punto di raccolta selezionato la qualità di ritrovatore legale ai fini degli artt. 927 e seguenti del codice civile. La presa in carico fisica e il termine di custodia decorrono solo quando il punto conferma la custodia dalla propria dashboard. I miei dati personali e le coordinate esatte del ritrovamento non saranno pubblicati."
+    : "Confermo di aver ricevuto materialmente l'oggetto dal finder e di cedere a me stesso, nell'esercizio del mio punto di raccolta, la qualità di ritrovatore legale ai fini degli artt. 927 e seguenti del codice civile. La registrazione crea la scheda in attesa di custodia: la presa in carico e il termine di conservazione decorrono solo quando confermo la custodia dalla dashboard. Mi impegno a conservare l'oggetto in modo sicuro e a riconsegnarlo solo al proprietario verificato.",
+);
+
+const checkboxCopy = computed(() =>
+  props.mode === "finder"
+    ? "Dichiaro di aver letto e di accettare la cessione della qualità di ritrovatore; la presa in carico sarà confermata dal punto di raccolta dalla dashboard."
+    : "Dichiaro di aver letto e di accettare la cessione della qualità di ritrovatore a me stesso e di confermare la custodia dalla dashboard.",
 );
 </script>
 
@@ -61,8 +67,7 @@ const legalCopy = computed(() =>
         :disabled="disabled"
       />
       <span>
-        Dichiaro di aver letto e di accettare la cessione della custodia e
-        l'informativa sul trattamento dei dati.
+        {{ checkboxCopy }}
         <span class="font-medium text-rose-700">Obbligatorio per registrare l'oggetto.</span>
       </span>
     </label>

@@ -140,7 +140,8 @@ function validate(): boolean {
     errors.geo = "La longitudine deve essere compresa tra -180 e 180.";
   }
   if (!rights.value) {
-    errors.rights = "Devi accettare la cessione della custodia per continuare.";
+    errors.rights =
+      "Devi accettare la cessione della qualità di ritrovatore e la conferma della custodia dalla dashboard per continuare.";
   }
   if (foundAt.value && Number.isNaN(new Date(foundAt.value).getTime())) {
     errors.foundAt = "La data del ritrovamento non è valida.";
@@ -486,7 +487,8 @@ function resetForm() {
           <div>
             <h2 class="section-title">Punto di raccolta</h2>
             <p class="text-xs text-stone-500">
-              Consegna l'oggetto al punto scelto. Diventa il custode legale.
+              Consegna l'oggetto al punto scelto: confermerà la presa in carico
+              dalla dashboard.
             </p>
           </div>
         </div>
