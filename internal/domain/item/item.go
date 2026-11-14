@@ -38,6 +38,8 @@ const (
 	StatusPendingCustody  = "pending_custody"
 	StatusCustodyRejected = "custody_rejected"
 	StatusInCustody       = "in_custody"
+	StatusPickupDue       = "pickup_due"
+	StatusSensitivePickup = "sensitive_pickup"
 	StatusReturned        = "returned"
 )
 
@@ -104,10 +106,13 @@ type Item struct {
 	UpdatedAt        time.Time
 }
 
-// itemFromRecord maps a persisted row to the domain entity. JSON columns are
+// FromRecord maps a persisted row to the domain entity. JSON columns are
 // owned by this package, so decoding failures are surfaced instead of being
 // silently replaced with empty values.
-func itemFromRecord(row record.ItemRecord) (Item, error) {
+//
+// It is exported so the custody domain can build the item read models returned
+// by its transitions without duplicating the JSON mapping.
+func FromRecord(row record.ItemRecord) (Item, error) {
 	privateProfile := map[string]any{}
 	if row.PrivateProfile != "" {
 		if err := json.Unmarshal([]byte(row.PrivateProfile), &privateProfile); err != nil {

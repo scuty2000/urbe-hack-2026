@@ -11,10 +11,11 @@ Example:
 
 	apirouter, err := handler.New(handler.Config{
 		Logger:        logger,
-		NameService:   nameService,
-		HealthService: healthService,
-		AuthService:   authService,
-		ItemService:   itemService,
+		NameService:    nameService,
+		HealthService:  healthService,
+		AuthService:    authService,
+		ItemService:    itemService,
+		CustodyService: custodyService,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating the API server instance: %w", err)
@@ -39,6 +40,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
@@ -66,6 +68,9 @@ type Config struct {
 
 	// ItemService is the domain service for item enrollment and reads.
 	ItemService itemdomain.Service
+
+	// CustodyService is the domain service for custody transitions.
+	CustodyService custodydomain.Service
 }
 
 // Router is the public interface for the HTTP handler layer.
@@ -95,6 +100,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.ItemService == nil {
 		return nil, errors.New("item service is required")
 	}
+	if cfg.CustodyService == nil {
+		return nil, errors.New("custody service is required")
+	}
 
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -110,20 +118,22 @@ func New(cfg Config) (Router, error) {
 	engine.Use(middleware.RequestContextLogger(cfg.Logger))
 
 	return &_router{
-		engine:        engine,
-		baseLogger:    cfg.Logger,
-		nameService:   cfg.NameService,
-		healthService: cfg.HealthService,
-		authService:   cfg.AuthService,
-		itemService:   cfg.ItemService,
+		engine:         engine,
+		baseLogger:     cfg.Logger,
+		nameService:    cfg.NameService,
+		healthService:  cfg.HealthService,
+		authService:    cfg.AuthService,
+		itemService:    cfg.ItemService,
+		custodyService: cfg.CustodyService,
 	}, nil
 }
 
 type _router struct {
-	engine        *gin.Engine
-	baseLogger    *slog.Logger
-	nameService   nameservice.ServiceName
-	healthService health.HealthService
-	authService   auth.Service
-	itemService   itemdomain.Service
+	engine         *gin.Engine
+	baseLogger     *slog.Logger
+	nameService    nameservice.ServiceName
+	healthService  health.HealthService
+	authService    auth.Service
+	itemService    itemdomain.Service
+	custodyService custodydomain.Service
 }

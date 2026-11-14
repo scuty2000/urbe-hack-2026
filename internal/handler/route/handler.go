@@ -2,6 +2,7 @@ package routes
 
 import (
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
@@ -29,14 +30,24 @@ type WebAPIHandler struct {
 
 	// Items is the domain service for item enrollment and reads.
 	Items itemdomain.Service
+
+	// Custody is the domain service for accept/refuse and pickup deadlines.
+	Custody custodydomain.Service
 }
 
 // New creates a WebAPIHandler with the given domain services.
-func New(names nameservice.ServiceName, health health.HealthService, authService auth.Service, items itemdomain.Service) *WebAPIHandler {
+func New(
+	names nameservice.ServiceName,
+	health health.HealthService,
+	authService auth.Service,
+	items itemdomain.Service,
+	custodyService custodydomain.Service,
+) *WebAPIHandler {
 	return &WebAPIHandler{
-		Names:  names,
-		Health: health,
-		Auth:   authService,
-		Items:  items,
+		Names:   names,
+		Health:  health,
+		Auth:    authService,
+		Items:   items,
+		Custody: custodyService,
 	}
 }

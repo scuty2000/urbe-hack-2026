@@ -14,7 +14,7 @@ import (
 // Handler registers all route and returns the http.Handler for the API.
 // Call this method exactly once after New().
 func (rt *_router) Handler() http.Handler {
-	h := routes.New(rt.nameService, rt.healthService, rt.authService, rt.itemService)
+	h := routes.New(rt.nameService, rt.healthService, rt.authService, rt.itemService, rt.custodyService)
 
 	rt.engine.GET("/names/:id", rt.wrap(h.GetNameByID))
 	rt.engine.POST("/names", rt.wrap(h.PostNewName))
@@ -38,6 +38,15 @@ func (rt *_router) Handler() http.Handler {
 	api.GET("/items/:id",
 		middleware.RequireAnyRole(rt.authService, auth.RoleIntermediary, auth.RoleInstitution),
 		rt.wrap(h.GetItem))
+	api.POST("/items/:id/custody/accept",
+		middleware.RequireRole(rt.authService, auth.RoleIntermediary),
+		rt.wrap(h.PostCustodyAccept))
+	api.POST("/items/:id/custody/refuse",
+		middleware.RequireRole(rt.authService, auth.RoleIntermediary),
+		rt.wrap(h.PostCustodyRefuse))
+	api.POST("/institution/tick",
+		middleware.RequireRole(rt.authService, auth.RoleAdmin),
+		rt.wrap(h.PostInstitutionTick))
 	api.GET("/uploads/:filename",
 		middleware.RequireAnyRole(rt.authService, auth.RoleFinder, auth.RoleIntermediary, auth.RoleInstitution),
 		rt.wrap(h.GetUpload))

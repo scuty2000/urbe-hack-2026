@@ -240,7 +240,7 @@ func (s *service) persist(ctx context.Context, input CreateItemInput, riskTier s
 		return Item{}, fmt.Errorf("create item: %w", err)
 	}
 
-	return itemFromRecord(row)
+	return FromRecord(row)
 }
 
 // GetItem returns the item when the actor is the current custodian, its legal
@@ -263,7 +263,7 @@ func (s *service) GetItem(ctx context.Context, id string, actor Actor) (Item, er
 		return Item{}, fmt.Errorf("get item %q: %w", id, errs.ErrForbidden)
 	}
 
-	item, err := itemFromRecord(row)
+	item, err := FromRecord(row)
 	if err != nil {
 		return Item{}, fmt.Errorf("get item %q: %w", id, err)
 	}
@@ -285,10 +285,12 @@ func (s *service) ListItemsByCustodian(ctx context.Context, custodianID string) 
 
 	items := make([]Item, 0, len(rows))
 	for _, row := range rows {
-		if row.Status != StatusPendingCustody && row.Status != StatusInCustody {
+		switch row.Status {
+		case StatusPendingCustody, StatusInCustody, StatusPickupDue, StatusSensitivePickup:
+		default:
 			continue
 		}
-		item, err := itemFromRecord(row)
+		item, err := FromRecord(row)
 		if err != nil {
 			return nil, fmt.Errorf("list items for custodian %q: %w", custodianID, err)
 		}

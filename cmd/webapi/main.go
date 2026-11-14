@@ -40,6 +40,7 @@ import (
 	"github.com/gin-contrib/cors"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/health"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	nameservice "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/name"
@@ -203,6 +204,10 @@ func run() error {
 		Storage: storage.NewLocal(cfg.Storage.DataDir, cfg.Storage.MaxUploadMB),
 		D3:      cataloger,
 	})
+	custodyService := custodydomain.New(db, custodydomain.Deps{
+		MaxDays:        cfg.Civic.CustodyDays,
+		SensitiveHours: cfg.Sensitive.CustodyHours,
+	})
 
 	// Make a channel to listen for an interrupt or terminate signal from the OS.
 	// Use a buffered channel because the signal package requires it.
@@ -238,6 +243,7 @@ func run() error {
 			HealthService:  healthService,
 			AuthService:    authService,
 			ItemService:    itemService,
+			CustodyService: custodyService,
 			TrustedProxies: cfg.Web.TrustedProxies,
 		},
 	)

@@ -30,6 +30,10 @@ tags:
     description: Demo login, logout and current-session endpoints
   - name: Items
     description: Item enrollment and custodian read endpoints
+  - name: Custody
+    description: Handover acceptance/refusal and custody deadlines
+  - name: Institution
+    description: Institution operator endpoints (demo tick)
   - name: Uploads
     description: Authenticated access to item photos
 
@@ -351,8 +355,9 @@ paths:
       summary: List the authenticated intermediary's items
       description: |
         Returns the items currently held by the caller, limited to the open
-        statuses `pending_custody` and `in_custody`. Only `custodian=me` is
-        supported: an intermediary cannot browse the registry.
+        statuses `pending_custody`, `in_custody`, `pickup_due` and
+        `sensitive_pickup`. Only `custodian=me` is supported: an intermediary
+        cannot browse the registry.
       security:
         - cookieAuth: []
       parameters:
@@ -408,6 +413,122 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /api/items/{id}/custody ─────────────────────────────────────────────────
+
+  /api/items/{id}/custody/accept:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    post:
+      tags: [Custody]
+      operationId: acceptCustody
+      summary: Accept custody of an item
+      description: |
+        Acknowledges the handover for the authenticated intermediary. Only the
+        legal finder may accept, and only while the item is `pending_custody`
+        with rights already assigned and an open custody row.
+
+        On success the item becomes `in_custody` and the legal deadline is
+        stored: 7 days for ordinary items, 24 hours for sensitive ones. The
+        acceptance event and the audit entry are written in the same
+        transaction.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Custody accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustodySummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/items/{id}/custody/refuse:
+    parameters:
+      - $ref: "#/components/parameters/itemId"
+
+    post:
+      tags: [Custody]
+      operationId: refuseCustody
+      summary: Refuse custody of an item
+      description: |
+        Rejects the handover for the authenticated intermediary. The same
+        preconditions as `accept` apply: the caller must be the legal finder,
+        the item must be `pending_custody` with rights assigned and the custody
+        row must still be open.
+
+        On success the item becomes `custody_rejected`, the custody row is
+        closed and the reason is recorded on the `custody_rejected` event and
+        in the audit log.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefuseCustodyPayload"
+      responses:
+        "200":
+          description: Custody refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ─── /api/institution/tick ───────────────────────────────────────────────────
+
+  /api/institution/tick:
+    post:
+      tags: [Institution]
+      operationId: tickCustodyDeadlines
+      summary: Apply elapsed custody deadlines
+      description: |
+        Demo replacement for a scheduled job, restricted to the `admin` role.
+        Every `in_custody` item whose deadline is at or before now moves to
+        `pickup_due`; sensitive items move to `sensitive_pickup`. Each item gets
+        a `pickup_scheduled` event and an audit entry. The transition is
+        idempotent: a second call returns `updated: 0` for already-transitioned
+        items.
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Items transitioned by this tick
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TickResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -603,7 +724,7 @@ components:
           enum: [intermediary, institution]
         status:
           type: string
-          enum: [enrolled, pending_custody, custody_rejected, in_custody]
+          enum: [enrolled, pending_custody, custody_rejected, in_custody, pickup_due, sensitive_pickup]
         legalFinderId:
           type: string
         custodianId:
@@ -649,6 +770,63 @@ components:
       required:
         - items
       properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+
+    CustodySummary:
+      type: object
+      required: [itemId, status, dueAt, maxCustodyDays, daysLeft]
+      description: |
+        The accepted handover and its legal deadline. It contains no private
+        profile and no coordinates.
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [in_custody]
+        custodianType:
+          type: string
+          enum: [intermediary, institution]
+        custodianId:
+          type: string
+        legalFinderId:
+          type: string
+        maxCustodyDays:
+          type: integer
+          description: 7 for ordinary items, 1 for sensitive items
+          example: 7
+        acceptedAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+          description: 24 hours after acceptance for sensitive items
+        daysLeft:
+          type: integer
+          description: Whole days remaining before the deadline, rounded up
+          example: 7
+
+    RefuseCustodyPayload:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          example: "storage is full"
+
+    TickResult:
+      type: object
+      required: [updated, items]
+      properties:
+        updated:
+          type: integer
+          example: 1
         items:
           type: array
           items:
@@ -745,6 +923,18 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: "forbidden"
+
+    Conflict:
+      description: |
+        The item is not in a state that allows the transition — for example it
+        is already `in_custody`, has no open custody row or has no rights
+        assignment.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "item is not pending custody"
 
     InternalServerError:
       description: An unexpected server-side error occurred. Check server logs for details.

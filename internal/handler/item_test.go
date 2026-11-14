@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/auth"
+	custodydomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/custody"
 	itemdomain "github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/domain/item"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/handler"
 	"github.com/tommaso-sgroi/fantastic-gin-dealcoholized/internal/platform/storage"
@@ -47,6 +48,7 @@ func newItemRouter(t *testing.T) (http.Handler, string) {
 		ItemService: itemdomain.New(db, itemdomain.Deps{
 			Storage: storage.NewLocal(dataDir, 1),
 		}),
+		CustodyService: custodydomain.New(db),
 	})
 	if err != nil {
 		t.Fatalf("handler.New() error = %v", err)
